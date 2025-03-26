@@ -1,0 +1,407 @@
+---
+title: 'Measuring Euro Area monetary policy: going beyond monetary surprises'
+subtitle: by Umberto Collodel & Vanessa Kunzmann
+output:
+  html_document:
+    df_print: paged
+  pdf_document:
+    latex_engine: xelatex
+editor_options:
+  markdown:
+    wrap: 72
+---
+
+# Theoretical Foundation
+
+Figure 1 shows a stylized comparison between a monetary surprise a-la
+Altavilla and a combined monetary and monetary policy uncertainty
+surprise.
+
+In the left panel, before the governing council,the distribution of OIS
+quotes is centered around 0 and has a unit standard deviation. After the
+meeting, the distribution shifts to the right, centering at 1; this
+movement coincides with a tightening of the mean OIS rate.
+
+In the right panel, instead, not only the mean of the distribution
+shifts to right after the governing council, but its variance also
+increases. Although agents revised their expectation, there is more
+heterogeneity concerning the future path of the rate, with different
+agents betting on different movements of the aforementioned.
+
+The two cases could have very different implications for the behaviour
+of financial variables (e.g. stock prices, exchange rates, etc.) and
+trasmission of monetary policy (sovereign yields), and thus for real
+variables such as credit, output and inflation. In principle, one would
+expect uncertainty to hamper the effect of monetary surprises, hence
+hindering ECB decided policies.
+
+```{r setup, include=FALSE}
+library(readxl)
+library(tidyverse)
+library(showtext)
+library(zoo)
+library(ggtext)
+library(extrafont)
+font_add("Segoe UI Light", "C:/Windows/Fonts/segoeuil.ttf")
+showtext_auto()
+
+
+knitr::opts_chunk$set(echo = FALSE, message = F, warning = F)
+
+
+
+```
+
+
+```{r,fig.width=12}
+
+set.seed(16)
+
+# Create data for the first facet
+data1 <- data.frame(
+  x = c(rnorm(1000, mean = 0, sd = 1), rnorm(1000, mean = 1, sd = 2)),
+  group = factor(rep(c("Mean 0, SD 1", "Mean 1, SD 1.5"), each = 1000))
+)
+
+# Create data for the second facet
+data2 <- data.frame(
+  x = c(rnorm(1000, mean = 0, sd = 1), rnorm(1000, mean = 1, sd = 1)),
+  group = factor(rep(c("Mean 0, SD 1", "Mean 1, SD 1.5"), each = 1000))
+)
+
+# Combine data and add a facet identifier
+data1$facet <- "Monetary and Uncertainty Surprise"
+data2$facet <- "Monetary Surprise"
+data <- rbind(data1, data2)
+
+# Plot the data
+data %>% 
+mutate(facet = factor(facet, levels = c("Monetary Surprise",
+                                        "Monetary and Uncertainty Surprise"))) %>% 
+ggplot(aes(x = x, fill = group)) +
+  geom_density(alpha = 0.3, col="white") +
+  facet_wrap(~facet) +
+  theme_minimal() +
+    labs(title="Figure 1: Stylized example of combined monetary and monetary uncertainty surprise",
+       x="",
+       y="",
+       col="") +
+  theme_bw() +
+  theme(text=element_text(family="Segoe UI Light")) +
+  theme(panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank()) +
+  theme(legend.position = "none",
+        legend.text = element_text(size=14)) +
+  theme(
+    plot.title = element_text(
+      size = 22,            # Set font size
+      face = "bold", # Make the title bold and italic
+      color = "black",
+      family = "Segoe UI Light")) + 
+    theme( axis.text = element_text( size = 14 ),
+         axis.text.x = element_text( size = 16 ),
+         axis.title = element_text( size = 16 ),
+         strip.text = element_text(size = 16)) +
+  scale_fill_manual(values=c("blue", "red"))
+
+
+```
+
+# Data
+
+We retrieve daily data on OIS euro rates at different tenors
+(3m,6m,1Y,2Y,5Y and 10Y) from 2001 up to today. However, long-term rates
+are only available from 2011 onwards, so we decide to work only on this
+part of the sample (maybe use German yields before?). For each day, we
+have available the high and low quotes, and opening and closing.
+
+To proxy the standard deviation before and after governing councils, we
+use the daily range (high minus low). ADD LITERATURE We then average the
+daily range over the three days before and after, to avoid sensitivity
+to extreme observations.
+
+To provide an llustration of the (cleansed) daily data and of monetary
+policy uncertainty surprises, Fig. 2 shows the change in the 10Y OIS
+rate (from the EA-MPD database) around governing councils, and the
+constructed standard deviation, before and after. We show four different
+policy meeting dates: 7 November 2013, 3 December 2015, 7 October 2017,
+and 25 Luglio 2019. We select the 10-year rate because changes in the
+varianc of the distribution are more likely to occur at long horizons.
+
+```{r, fig.width=10, fig.height=6}
+
+dates_event=as.Date(c("2013-11-07","2015-12-03","2017-09-07",
+                      "2019-07-25"))
+
+dates_before_after <- dates_event %>% 
+  map(~ seq(from = .x - 4, to = .x + 5, by = "day")) %>% 
+  unlist() %>% 
+  as.Date(., origin = "1970-01-01")
+
+dates_before <- dates_event %>% 
+  map(~ seq(from = .x - 4, to = .x -1, by = "day")) %>% 
+  unlist() %>% 
+  as.Date(., origin = "1970-01-01")
+
+dates_after <- dates_event %>% 
+  map(~ seq(from = .x + 1, to = .x + 5, by = "day")) %>% 
+  unlist() %>% 
+  as.Date(., origin = "1970-01-01")
+
+
+
+
+ event_study_df <-read_excel("../raw_data/OIS.xls", sheet = "10Y_bid") %>%
+  slice(-1) %>% 
+  select(1:5) %>% 
+  mutate(Daily = as.numeric(Daily)) %>% 
+  mutate(Daily = as.Date(Daily, origin = "1899-12-30")) %>% 
+  setNames(c("daily","first","high","low","last")) %>% 
+  mutate_at(2:ncol(.),as.numeric) %>% 
+  filter(daily %in% dates_before_after) %>%
+  mutate(year = year(daily)) %>% 
+  mutate(before_govc = case_when(daily %in% dates_before ~1,
+                                 T ~ 0),
+         after_govc = case_when(daily %in% dates_after ~ 1,
+                                T ~ 0)) %>% 
+  group_by(year, before_govc) %>% 
+  mutate(mean_before = mean(high-low)*100) %>% 
+  ungroup() %>% 
+  group_by(year, after_govc) %>% 
+  mutate(mean_after = mean(high-low)*100) %>% 
+  ungroup() %>% 
+  mutate(correct_mean_after = lead(mean_after,1),
+         correct_mean_before = lag(mean_before,1)) %>% 
+  filter(daily %in% dates_event)
+
+   
+mean_rate_df <- read_xlsx("../../PEPP_effect/raw_data/00EA_MPD_update_january2024.xlsx", 
+          sheet = "Monetary Event Window") %>% 
+  select(date,OIS_10Y,STOXX50) %>%
+  mutate(date = as.Date(date)) %>% 
+  filter(date %in% dates_event) %>% 
+  setNames(c("daily","mean_change","stock_change"))
+  
+
+ 
+event_study_df %>%
+  inner_join(mean_rate_df) %>% 
+  pivot_longer(correct_mean_after:mean_change,names_to = "time_id",values_to = "value") %>% 
+  mutate(time_id = case_when(time_id == "correct_mean_before" ~ "Before",
+                             time_id == "correct_mean_after" ~ "After",
+                             time_id == "mean_change" ~ "Rate Δ")) %>% 
+  mutate(time_id = factor(time_id,levels = c("Rate Δ","Before","After"))) %>% 
+  ggplot(aes(time_id,value,fill=time_id)) +
+  geom_col(width=0.2,alpha=0.8,col="black") +
+  geom_segment(aes(x = 1.5, xend = 1.5, y = -Inf, yend = Inf), color = "black") + 
+  geom_hline(yintercept = 0) +
+  scale_fill_manual(values = c("#F8766D","#434343","#818181")) +
+  labs(title="Figure 2: Daily 10-year OIS rate and range change before and after governing councils",
+       y="Basis Points",
+       x="",
+       fill="",
+       caption = "**Note**: Before and after ranges are calculated as the difference between high and
+       low quote: we report three-days averages before and after the day of the governing council.
+       **Source**: Thomson Reuters") +
+  facet_wrap(~ daily, scales = "free") +
+  theme_bw() +
+   theme(text=element_text(family="Segoe UI Light")) +
+  theme(legend.position = "none") + # Remove legend
+  theme(
+    plot.title = element_text(
+      size = 18,            # Set font size
+      face = "bold", # Make the title bold and italic
+      color = "black",
+      family = "Segoe UI Light")) + # Set the font color    )) +
+  theme( axis.text = element_text( size = 14 ),
+         axis.text.x = element_text( size = 16 ),
+         axis.title = element_text( size = 16 ),
+         strip.text = element_text(size = 18)) +
+  theme(panel.grid.major.x = element_blank()) +
+  theme(plot.caption = element_text(hjust = 0,size=12))
+  
+
+
+  
+```
+
+The first panel shows the movement in the 10Y OIS following the
+2013-11-07 Governing Council: there a was a negative monetary surprise,
+a loosening of the rate by close to 5bps, and a widening in the range,
+from 4 to 8 bps.This date coincides with one of the first meetings in
+which the ECB introduced forward guidance on the future path of interest
+rates. The panel 2015-12-03 depicts a policy date in which there was a
+sizeable positive monetary surprise for the 10Y OIS. This episode
+captures the financial markets' disappointment following the ECB
+decision to increase the size of its QE program: markets evidently were
+expecting a larger increase of QE. Like the previous episode, the range
+of quotes roughly doubles, going from 5bps to more than 10bps.The third
+panel shows a day in which there was no monetary surprise and the range
+basically does not vary. Policy dates like these are surprisingly rare;
+there is usually some news for the financial markets after the whole
+monetary event.
+
+```{r}
+#Add table with factors significance and variance share
+
+fit[[2]]
+
+
+
+```
+
+```{r}
+loadings_final_df %>% 
+  ggplot(aes(Term,value,group=1)) +
+  geom_line(size=1.5,col="red") +
+  geom_point(size=4,alpha=0.3,col="red") +
+  facet_wrap(~Factor) +
+  labs(title="Figure 3: Factor Loadings",
+       col="",
+       y="",
+       x="",
+       fill="",
+       caption = "**Note**: The model decomposes movements in OIS (1m, 3m, 6m, 1y, 2y, 5y, 10y) into 
+       three policy factors: downward-sloping (Timing), hump-shaped (Path) and upward-sloping (QE).  
+       It takes three principal components from the variation in yields range around GovC meetings,
+       rotates and scales them.  
+**Source**: Authors' calculation   
+**Latest observation**: 15 June 2023.") +  
+  theme_bw() +
+  theme(text=element_text(family="Segoe UI Light")) +
+  theme(plot.caption = element_text(hjust=0)) +
+  theme(axis.text.x = element_text(vjust = 0.5, hjust=0.5)) +
+  theme( axis.text = element_text( size = 14 ),
+         axis.text.x = element_text( size = 20 ),
+         axis.title = element_text( size = 16, face = "bold" ),
+         legend.text = element_text(size=14),
+         # The new stuff
+         strip.text = element_text(size = 20)) +
+  theme(
+    plot.title = element_text(
+      size = 20,            # Set font size
+      face = "bold", # Make the title bold and italic
+      color = "black",
+      family = "Segoe UI Light")) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  theme(plot.caption = element_text(hjust = 0,size=12))
+```
+
+```{r}
+# Add indvidual time series scaled and winsorized.
+```
+
+```{r}
+time_serie_df %>% 
+  filter(year(date) >= 2015) %>% 
+  ggplot(aes(date,value, fill=Factor)) +
+  geom_col(width = 17) +
+  labs(title="Figure 4: Monetary Uncertainty Surprises over Time",
+       y="Sd",
+       x="",
+       fill="",
+       caption = "**Note**: The model decomposes movements in OIS (1m, 3m, 6m, 1y, 2y, 5y, 10y) into three policy factors: downward-sloping (Timing), hump-shaped (Path) and upward-sloping (QE). It takes three principal components  
+from the variation in yields around GovC meetings (Press Release and Press Conference), rotates and scales them. An additional model employs the same methodology for the variation of 10 years spreads (IT-DE, SP-DE   
+and FR-DE) against German bunds around GovC meetings. The movements can be interpreted as similar to a 1 standard deviation movement in the reference asset for that factor (OIS 1m, OIS 1y, OIS 10y, IT-DE 10Y Spread).  
+**Source**: Authors' calculation, Bloomberg, EA-MPD (Altavilla et al., 2019)  
+**Latest observation**: 15 June 2023.") +  
+  theme_bw() +
+  theme(
+    plot.title = element_text(
+      size = 20,            # Set font size
+      face = "bold", # Make the title bold and italic
+      color = "black",
+      family = "Segoe UI Light")) +
+  theme(text=element_text(family="Segoe UI Light")) +
+  theme(plot.caption = element_text(hjust=0)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  scale_fill_manual(values=c("#35BBCA","#0191B4","#D3DD18","#FE7A15")) +
+  theme( axis.text = element_text( size = 14 ),
+         axis.text.x = element_text( size = 20 ),
+         axis.title = element_text( size = 16 ),
+         legend.position="bottom",
+         legend.text = element_text(size=14),
+         strip.text = element_text(size = 20)) +
+  theme(plot.caption = element_text(hjust = 0,size=12))
+
+```
+
+```{r, eval=FALSE}
+# (overall correlation)
+
+
+# Get dates of govc
+
+width=23
+
+dates_cor=time_serie_df %>% 
+  select(date) %>%
+  filter(date <= "2023-06-15") %>% 
+  unique() %>% 
+  slice(-c(1:width))
+
+# Plot:
+
+df %>% 
+  pivot_wider(names_from = moment, values_from = value) %>% 
+  select(mon,uncertainty) %>% 
+  mutate(mon = abs(mon)) %>% 
+  rollapply(width = 24*3,  # window size
+            FUN = function(x) cor(x),
+            by.column = FALSE) %>% 
+  as_tibble() %>% 
+  select(mon2) %>% 
+  rowid_to_column("date") %>%
+  mutate(date = rep(dates_cor %>% pull(date),each = 3) %>% head(-2)) %>%
+  # Work on the timeline labels
+  mutate(label = case_when(date == "2017-10-26" ~ "Zero Lower Bound",
+                           date == " 2023-02-02" ~ "Tightening Cycle",
+                           date == "2021-07-22" ~ "Covid-19 Pandemic",
+                           T ~ NA)) %>% 
+  mutate(y_label = case_when(date == "2017-10-26" ~ -0.2,
+                           date == " 2023-02-02" ~ -0.3,
+                           date == "2021-07-22" ~ 0.3,
+                           T ~ NA)) %>% 
+  mutate(date_label = case_when(date == "2017-10-26" ~ date,
+                             date == " 2023-02-02" ~ date,
+                             date == "2021-07-22" ~ date,
+                             T ~ NA)) %>% 
+  mutate(yend_label = case_when(date == "2017-10-26" ~ mon2-0.02,
+                                date == " 2023-02-02" ~ mon2 -0.02,
+                                date == "2021-07-22" ~ mon2 +0.02,
+                                T ~ NA)) %>%
+  ###
+  ggplot(aes(date,mon2,group=1)) +
+  geom_line(size=1.5, col="orange") +
+  geom_smooth(method = "loess", span = 0.2, color = "red") +
+  geom_hline(yintercept = 0, size =1, linetype = "dashed") +
+  # Work on the timeline labels
+  geom_segment(aes(x = date_label,y = y_label,xend = date_label, yend =yend_label),size=0.5) +
+  geom_text(aes(x = date_label,y = y_label,label = label),hjust = 1.1,vjust = 1.1,parse = FALSE) +
+  geom_point(aes(x = date_label,y = y_label),size=2,alpha=0.5) +
+  ###
+  labs(title="Correlation - Monetary and monetary uncertainty surprises",
+       subtitle = expression(italic("2yrs rolling window")),
+       col="",
+       y="",
+       x="",
+       fill="",
+       caption = "**Note**: 
+             **Source**: Authors' calculation   
+             **Latest observation**: 15 June 2023.") +
+  ylim(-0.4,0.4) +
+  theme_bw() +
+  theme(plot.caption = element_text(hjust=0)) +
+  theme(title = element_text(size=20)) +
+  theme(axis.text.x = element_text(vjust = 0.5, hjust=0.5)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(axis.text = element_text( size = 14 ),
+        axis.text.x = element_text( size = 20 ),
+        axis.title = element_text( size = 16, face = "bold" ),
+        legend.text = element_text(size=14),
+        # The new stuff
+        strip.text = element_text(size = 20)) +
+  theme(plot.caption = element_markdown(hjust = 0,size=12))
+
+
+```
