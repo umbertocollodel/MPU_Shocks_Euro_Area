@@ -39,34 +39,19 @@ nw_vector <- ecb_pressconf_final %>%
   unname()
 
 
-# Create df with main economic events: ----
-
-
-# Let's load df with main economic events
-
-# Function to create a sequence of dates for each event
-create_date_sequence <- function(start_date, end_date) {
-  seq.Date(from = start_date, to = end_date, by = "day")
-}
-
-# Load main df: 
-
-main_events <- read.csv("raw_data/economic_events_timeline.csv") %>% 
-  mutate_at(vars(ends_with("Date")), ~ as.Date(paste0("01-", .x), format = "%d-%b-%y")) %>% 
-  rowwise() %>%
-  mutate(Date = list(create_date_sequence(Start.Date, End.Date))) %>%
-  unnest(Date)
-
 # Plot complete text: ----
 
 
 readability_df %>% 
   cbind(nw_vector) %>% 
   filter(part == "Whole text") %>% 
+  mutate(year_mon = format(date, "%Y-%m")) %>% 
+  left_join(main_events,by=c("year_mon")) %>% 
   mutate(governor = factor(governor, levels=c("Willem F. Duisenberg","Jean-Claude Trichet","Mario Draghi","Christine Lagarde"))) %>% 
   ggplot(aes(date,Flesch.Kincaid,col=governor)) +
   geom_point(aes(size=nw_vector), alpha = 0.5) +
   geom_smooth(method = "lm") +
+  geom_vline(aes(xintercept=Date)) +
   scale_size(range = c(1, 8)) +
   labs(col="",
        size="Number of words",
