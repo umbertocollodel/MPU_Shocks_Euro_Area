@@ -11,6 +11,9 @@ library(broom)
 ecb_pressconf_final <- list.files("intermediate_data/texts/") %>% 
   map_chr(~ paste0("intermediate_data/texts/",.x)) %>% 
   map(~ readtext(.x))
+
+n_meetings = length(ecb_pressconf_final[[length(ecb_pressconf_final)]]) # take number of docs in q&a folder 
+#for simplicity
   
 
 # Calculate Flesch-Kincaid score: -----
@@ -23,9 +26,9 @@ readability_df <- ecb_pressconf_final %>%
   mutate(document= str_remove(document,"\\.txt")) %>% 
   separate(document, into = c("date", "governor"), sep = "_") %>% 
   mutate(date= as.Date(date)) %>% 
-  mutate(part = c(rep("Whole text",280),
-                  rep("Introductory Statement",280),
-                  rep("Q&A",280)))
+  mutate(part = c(rep("Whole text",n_meetings),
+                  rep("Introductory Statement",n_meetings),
+                  rep("Q&A",n_meetings)))
 
 # Number of words: -----
 
