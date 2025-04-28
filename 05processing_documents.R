@@ -12,7 +12,7 @@ ecb_pressconf_final <- list.files("intermediate_data/texts/") %>%
   map_chr(~ paste0("intermediate_data/texts/",.x)) %>% 
   map(~ readtext(.x))
 
-n_meetings = length(ecb_pressconf_final[[length(ecb_pressconf_final)]]) # take number of docs in q&a folder 
+n_meetings = nrow(ecb_pressconf_final[[length(ecb_pressconf_final)]]) # take number of docs in q&a folder 
 #for simplicity
   
 
