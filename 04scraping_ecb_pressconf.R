@@ -6,7 +6,7 @@ library(crayon)
 
 # Set parameters
 
-years=seq(1998,2024,by=1)
+years=seq(1998,2025,by=1)
 
 
 # Navigate to the ECB page
@@ -58,6 +58,7 @@ dates_ecb_pressconf=years %>%
 
 
 # Filter out dates after "2021-12-16" and remove duplicates:
+# after 2021 there are three links for every meeting so every date is repeated
   
   cutoff_date <- as.Date("2021-12-16")
   dates_after_cutoff <- dates_ecb_pressconf[dates_ecb_pressconf >= cutoff_date]
@@ -113,10 +114,11 @@ rm(ecb_pressconf_text_clean,ecb_links_press_conferences)
 
 ecb_pressconf_final %>% 
   iwalk(~ if (file.exists(paste0("intermediate_data/texts/",.y,".txt"))) {
-  cat(crayon::red("File already exists. Skipping save.\n"))
+  cat(crayon::red(paste0("File ",.y,"already exists. Skipping save.\n")))
   } else {
   cat(.x, file = paste0("intermediate_data/texts/",.y,".txt"))
-    })
+    cat(crayon::green(paste0("File ",.y," saved.\n")))
+  })
   
 
 
