@@ -10,41 +10,29 @@ setAPI("AIzaSyA1O-J8XK-Y5Ymr341izyQvsDlb2UkETp4")
 
 # Write a prompt for LLM: -----
 
-prompt=c("You are a bank following the press conferences of the ECB
-Governing Council, where the decisions about the monetary policy stance is communicated
-to the public, together with an assessment of the state of the economy that motivates
-the decision and a Q&A with journalists.
+prompt=c("
+You are a bank following the press conferences of the ECB Governing Council. These conferences communicate decisions about the monetary policy stance, provide an assessment of the state of the economy, and include a Q&A session with journalists.
 
-You follow the conference to buy/sell Overnight 
-Index Swap rates at different prices to manage your exposure to 
-interest rate fluctuations.
+Your task is to manage your exposure to interest rate fluctuations by buying/selling Overnight Index Swap (OIS) rates based on the information from these conferences.
 
-From the conference you infer certain developments for key interest rates
-over the course of the short (3 months-1 year), medium (2-5 years) and long-term (10 years) 
-horizon and you buy/sell OIS instruments based on that.
+We are in [date] (format: YYYY-MM-DD).
 
-We are in [date].
+Using only the words from the conference and the information available as of [date], assess your confusion about the expected interest rate developments.
 
-Using as input only these words and the information available to you as of [date],
-how confused are you on the interest rate developments? 
-Provide separate numerical scores from 0-100 for confusion regarding
-the short horizon, medium horizon and long-term horizon.
+For each horizon (short-term: 3 months-1 year, medium-term: 2-5 years, long-term: 10 years), provide the following:
 
-Do not incorporate any data that was not available to you as of [] in your assessment.
+1. A confusion score from 0 to 100.
+2. The reason for your chosen value.
+3. The main source of confusion (introductory statement, Q&A, or both).
+4. A rephrased version of the introductory statement and Q&A answers to reduce confusion.
 
-Please, provide your assessment in a table form.
+Output the results in a table with three columns per task (one per horizon). The table should have dimensions 1x12 (number of conferences; 4 tasks * 3 horizons).
 
-The first three columns will be a sequence of numerical values idicating your confusion on the three
-distinct horizon: confusion_s, confusion_m, confusion_l
+Do not incorporate any data that was not available as of [date] in your assessment.
 
-Then, three columns with a text of explanation, less than 30 words, for your assessment, on the three
-distinct horizons: explanation_s,explanation_m, explanation_l
+Provide only the table as output, not any text.
+")
 
-Then, three columns with a text on whether the confusion stems from the introductory statement, from the Q&A, or both equally, on
-the tree distinct horizon: part_s,part_m, part_l
-
-Finally, three columns with a different wording that could have made the message clearer, if you see potential for more
-clarity: better_s,better_m,better_l")
 
 
 # Run LLM -----
@@ -100,10 +88,34 @@ df <- result %>%
   map(~ .x %>% readr::read_delim(delim = "|", trim_ws = TRUE, skip = 2)) %>%
   keep(~ nrow(.x) == 2) %>% 
   bind_rows(.id = "date") %>% 
-  select(-1,-ncol(.)) %>% 
-  filter(!str_detect(confusion_s,"--"))
+  select(-`...1`,-`...14`) %>% 
+  filter(!str_detect(confusion_s,"--")) %>% 
+  mutate(across(starts_with("confusion"), as.numeric))
+
+
+
+# Export: 
 
 writexl::write_xlsx(df,"../intermediate_data/llm_assessment.xlsx")
+
+
+# Plot: ----
+
+# Assuming df is your data frame
+df_long <- df %>%
+  mutate(across(starts_with("confusion"), as.numeric)) %>% 
+  pivot_longer(cols = starts_with("confusion"), names_to = "confusion_type", values_to = "value")
+
+ggplot(df_long, aes(x = confusion_type, y = date, fill = value)) +
+  geom_tile() +
+  scale_fill_gradient(low = "white", high = "red") +
+  theme_minimal() +
+  labs(title = "Confusion Levels Over Time",
+       x = "Confusion Type",
+       y = "Date",
+       fill = "Value")
+
+
 
 
 
