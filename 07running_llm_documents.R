@@ -1,5 +1,14 @@
+# Load necessary libraries and set parameters: -----
+
+
 library(gemini.R)
 
+
+setAPI("AIzaSyA1O-J8XK-Y5Ymr341izyQvsDlb2UkETp4")
+
+
+
+# Write a prompt for LLM: -----
 
 prompt=c("You are a bank following the press conferences of the ECB
 Governing Council, where the decisions about the monetary policy stance is communicated
@@ -38,47 +47,59 @@ Finally, three columns with a different wording that could have made the message
 clarity: better_s,better_m,better_l")
 
 
-# Run LLM
+# Run LLM -----
 
-setAPI("AIzaSyA1O-J8XK-Y5Ymr341izyQvsDlb2UkETp4")
+# Create list with all press conferences:
+
+names_ecb_presconf=list.files("../intermediate_data/texts/") %>% 
+  str_subset("\\d") %>% 
+  str_remove("\\.txt")
 
 
 ecb_pressconf=list.files("../intermediate_data/texts/") %>% 
   str_subset("\\d") %>% 
   paste0("../intermediate_data/texts/",.) %>% 
   map(~ readtext(.x)) %>% 
-  map(~ .$text)
+  map(~ .$text) %>% 
+  set_names(names_ecb_presconf)
   
-
 
 # Initialize counters
 request_count <- 0
 start_time <- Sys.time()
 
 # Function to make requests with delay and tracking
-make_request <- function(url, prompt, seed = 120) {
+make_request <- function(text, prompt, seed = 120) {
   Sys.sleep(5)  # Wait for 5 seconds between requests
   request_count <<- request_count + 1
-  gemini(url, seed = seed)
+  gemini(text, seed = seed)
+  
 }
+
+# Run Gemini LLM:
 
 result <- ecb_pressconf %>%
   map(~ paste0(prompt, "Press Conference:", .x)) %>%
-  map(~ make_request(.x, seed = 120))
+  map(~ make_request(.x, seed = 120)) %>% 
+  set_names(names_ecb_presconfresult)
 
 # Print metrics
 end_time <- Sys.time()
 total_time <- end_time - start_time
+
+
 cat("Total requests made:", request_count, "\n")
 cat("Total time taken:", total_time, "seconds\n")
 
 
 
-# Convert the table string to a dataframe
+# Convert output in proper format: ----
+
+
 df <- result %>% 
   map(~ .x %>% readr::read_delim(delim = "|", trim_ws = TRUE, skip = 2)) %>%
   keep(~ nrow(.x) == 2) %>% 
-  bind_rows() %>% 
+  bind_rows(.id = "date") %>% 
   select(-1,-ncol(.)) %>% 
   filter(!str_detect(confusion_s,"--"))
 
