@@ -1,4 +1,58 @@
 # Load necessary libraries and set parameters: -----
+new_gemini <- function(prompt, model = "2.0-flash", temperature = 1, maxOutputTokens = 8192,
+                       topK = 40, topP = 0.95, seed = 1234) {
+  
+  model_query <- paste0("gemini-", model, ":generateContent")
+  url <- paste0("https://generativelanguage.googleapis.com/v1beta/models/", model_query)
+  api_key <- Sys.getenv("GEMINI_API_KEY")
+  
+  sb <- cli_status("Gemini is answering...")
+  
+  # Create generation config
+  generation_config <- list(
+    temperature = temperature,
+    maxOutputTokens = maxOutputTokens,
+    topP = topP,
+    topK = topK,
+    seed = seed
+  )
+  
+  # Add responseModalities only for image generation model
+  if (model == "2.0-flash-exp-image-generation") {
+    generation_config$responseModalities <- list("Text", "Image")
+  }
+  
+  # Create request body as a separate list
+  request_body <- list(
+    contents = list(
+      parts = list(
+        list(text = prompt)
+      )
+    ),
+    generationConfig = generation_config
+  )
+  
+  req <- request(url) |>
+    req_url_query(key = api_key) |>
+    req_headers("Content-Type" = "application/json") |>
+    req_body_json(request_body) |>
+    req_timeout(120)  # Increase the timeout here (in seconds)
+  
+  resp <- req_perform(req)
+  
+  # Check the status code of the response
+  if (resp$status_code != 200) {
+    cli_status_clear(id = sb)
+    cli_alert_danger(paste0("Error in generate request: Status code ", resp$status_code))
+    return(NULL)
+  }
+  
+  cli_status_clear(id = sb)
+  
+  candidates <- resp_body_json(resp)$candidates
+  outputs <- unlist(lapply(candidates, function(candidate) candidate$content$parts))
+  return(outputs)
+}
 
 
 library(gemini.R)
@@ -48,9 +102,9 @@ Using only the words from the conference and the information available as of [da
 Output: for each horizon (short-term: 3 months-1 year, medium-term: 2-5 years, long-term: 10 years), provide the following:
 
 1. A confusion score from 0 to 10 (0 = no confusion, 10 = maximum confusion - float).
-2. The reason for your chosen value.
-3. The main source of confusion (introductory statement, Q&A, or both).
-4. A rephrased version of the introductory statement and Q&A answers to reduce confusion.
+2. The reason for your chosen value in a short paragraph making reference to the evaluation criteria.
+3. The main source of confusion in the confusion score (introductory statement, Q&A, or both).
+4. A rephrased version of the introductory statement and Q&A answers to reduce confusion. Keep the format of the original.
 
 Output the results in a table with three columns per task (one per horizon). 
 The table should have dimensions 1x12 (number of conferences; 4 tasks * 3 horizons).
@@ -96,7 +150,7 @@ make_request <- function(text, prompt, seed = 120) {
   
   
   request_count <<- request_count + 1
-  gemini(text, seed = seed, temperature = 0.5)
+  new_gemini(text, seed = seed, temperature = 0.5)
   
 }
 
