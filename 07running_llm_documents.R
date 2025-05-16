@@ -61,6 +61,8 @@ new_gemini <- function(prompt, model = "2.0-flash", temperature = 1, maxOutputTo
 # Libraries and API key:
 
 library(gemini.R)
+library(cli)
+library(httr2)
 
 
 setAPI("AIzaSyA1O-J8XK-Y5Ymr341izyQvsDlb2UkETp4")
@@ -165,8 +167,14 @@ make_request <- function(text, prompt, seed = 120) {
 result <- ecb_pressconf %>%
   map(~ paste0(prompt, "Press Conference:", .x)) %>%
   map2(dates_ecb_presconf, ~ gsub("\\[date\\]", .y, .x)) %>% 
-  map(~ make_request(.x, 
-                     seed = 120)) %>% 
+  map(~ tryCatch(make_request(.x, 
+                     seed = 120),
+                 error = function(e){
+                   cat(crayon::red("Press conference not processed"))
+                 }
+  ))
+  
+result=result %>% 
   set_names(names_ecb_presconf)
 
 # Print metrics: 
