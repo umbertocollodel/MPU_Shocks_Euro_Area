@@ -1,4 +1,7 @@
 # Load necessary libraries and set parameters: -----
+
+# Create custom function to send request to Gemini API with higher timeout time:
+
 new_gemini <- function(prompt, model = "2.0-flash", temperature = 1, maxOutputTokens = 8192,
                        topK = 40, topP = 0.95, seed = 1234) {
   
@@ -55,6 +58,8 @@ new_gemini <- function(prompt, model = "2.0-flash", temperature = 1, maxOutputTo
 }
 
 
+# Libraries and API key:
+
 library(gemini.R)
 
 
@@ -62,7 +67,7 @@ setAPI("AIzaSyA1O-J8XK-Y5Ymr341izyQvsDlb2UkETp4")
 
 
 
-# Write a prompt for LLM: -----
+# Write a prompt for LLM request: -----
 
 prompt=c("
 Context: You are a bank following the press conferences of the ECB Governing Council. 
@@ -105,6 +110,7 @@ Output: for each horizon (short-term: 3 months-1 year, medium-term: 2-5 years, l
 2. The reason for your chosen value in a short paragraph making reference to the evaluation criteria.
 3. The main source of confusion in the confusion score (introductory statement, Q&A, or both).
 4. A rephrased version of the introductory statement and Q&A answers to reduce confusion. Keep the format of the original.
+5. A confusion score for the rephrased version (point 4).
 
 Output the results in a table with three columns per task (one per horizon). 
 The table should have dimensions 1x12 (number of conferences; 4 tasks * 3 horizons).
@@ -117,9 +123,7 @@ Provide only the table as output, not any text.
 
 
 
-# Run LLM -----
-
-# Create list with all press conferences:
+# Create a list of press conferences with dates and names: ----
 
 dates_ecb_presconf=list.files("../intermediate_data/texts/") %>% 
   str_subset("\\d") %>% 
@@ -138,8 +142,10 @@ ecb_pressconf=list.files("../intermediate_data/texts/") %>%
   map(~ .$text) %>% 
   set_names(names_ecb_presconf)
   
+# Run LLM remotely: ----
 
 # Initialize counters
+
 request_count <- 0
 start_time <- Sys.time()
 
@@ -151,7 +157,7 @@ make_request <- function(text, prompt, seed = 120) {
   
   request_count <<- request_count + 1
   new_gemini(text, seed = seed, temperature = 0.5)
-  
+  cat(crayon::green(paste0("Press conference number",request_count," processed!\n")))
 }
 
 # Run Gemini LLM:
@@ -161,9 +167,10 @@ result <- ecb_pressconf %>%
   map2(dates_ecb_presconf, ~ gsub("\\[date\\]", .y, .x)) %>% 
   map(~ make_request(.x, 
                      seed = 120)) %>% 
-  set_names(names_ecb_presconfresult)
+  set_names(names_ecb_presconf)
 
-# Print metrics
+# Print metrics: 
+
 end_time <- Sys.time()
 total_time <- end_time - start_time
 
