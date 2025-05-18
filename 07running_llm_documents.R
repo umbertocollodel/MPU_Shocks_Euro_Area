@@ -159,7 +159,7 @@ make_request <- function(text, date, seed = 120) {
   
   result <- tryCatch({
     res <- new_gemini(text, seed = seed, temperature = 0.5)
-    saveRDS(res, file = paste0("gemini_result_", date, ".rds"))
+    saveRDS(res, file = paste0("../intermediate_data/gemini_result/", date, ".rds"))
     cat(green(paste0("✅ Press conference on ", date, " processed and saved.\n")))
     TRUE
   }, error = function(e) {
