@@ -63,6 +63,7 @@ new_gemini <- function(prompt, model = "2.0-flash", temperature = 1, maxOutputTo
 library(gemini.R)
 library(cli)
 library(httr2)
+library(readtext)
 
 
 setAPI("AIzaSyA1O-J8XK-Y5Ymr341izyQvsDlb2UkETp4")
@@ -146,44 +147,45 @@ ecb_pressconf=list.files("../intermediate_data/texts/") %>%
   
 # Run LLM remotely: ----
 
-# Initialize counters
-
-request_count <- 0
+log_file <- "failed_requests.log"
 start_time <- Sys.time()
 
-# Function to make requests with delay and tracking
-make_request <- function(text, prompt, seed = 120) {
+# Clear previous log
+if (file.exists(log_file)) file.remove(log_file)
+
+make_request <- function(text, date, seed = 120) {
   
-  Sys.sleep(5)  # Wait for 5 seconds between requests
+  Sys.sleep(5)
   
-  
-  request_count <<- request_count + 1
-  new_gemini(text, seed = seed, temperature = 0.5)
-  cat(crayon::green(paste0("Press conference number",request_count," processed!\n")))
+  result <- tryCatch({
+    res <- new_gemini(text, seed = seed, temperature = 0.5)
+    saveRDS(res, file = paste0("gemini_result_", date, ".rds"))
+    cat(green(paste0("✅ Press conference on ", date, " processed and saved.\n")))
+    TRUE
+  }, error = function(e) {
+    cat(red(paste0("❌ Error processing press conference on ", date, "\n")))
+    write(paste0(date, ": ", e$message), file = log_file, append = TRUE)
+    FALSE
+  })
 }
 
-# Run Gemini LLM:
+# Run the requests
+walk2(
+  ecb_pressconf,
+  dates_ecb_presconf,
+  ~ make_request(
+    text = paste0(prompt, "Press Conference: ", .x) %>%
+      gsub("\\[date\\]", .y, .),
+    date = .y
+  )
+)
 
-result <- ecb_pressconf %>%
-  map(~ paste0(prompt, "Press Conference:", .x)) %>%
-  map2(dates_ecb_presconf, ~ gsub("\\[date\\]", .y, .x)) %>% 
-  map(~ tryCatch(make_request(.x, 
-                     seed = 120),
-                 error = function(e){
-                   cat(crayon::red("Press conference not processed"))
-                 }
-  ))
-  
-result=result %>% 
-  set_names(names_ecb_presconf)
 
 # Print metrics: 
 
 end_time <- Sys.time()
 total_time <- end_time - start_time
 
-
-cat("Total requests made:", request_count, "\n")
 cat("Total time taken:", total_time, "seconds\n")
 
 
