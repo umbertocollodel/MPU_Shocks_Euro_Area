@@ -118,7 +118,7 @@ Output: for each horizon (short-term: 3 months-1 year, medium-term: 2-5 years, l
 
 
 Format output: Present results in a table with 5 columns (one per task) and 3 rows (one per horizon). 
-The table should have dimensions 3×5.
+The table should have dimensions 3×5. 
 
 Important: Do not incorporate any data that was not available as of [date] in your assessment.
 
@@ -254,20 +254,17 @@ writexl::write_xlsx(clean_df,"../intermediate_data/llm_assessment.xlsx")
 
 # Plot: ----
 
-# Assuming df is your data frame
-df_long <- df %>%
-  mutate(across(starts_with("confusion"), as.numeric)) %>% 
-  pivot_longer(cols = starts_with("confusion"), names_to = "confusion_type", values_to = "value")
-
-ggplot(df_long, aes(x = confusion_type, y = date, fill = value)) +
-  geom_tile() +
-  scale_fill_gradient(low = "white", high = "red") +
-  theme_minimal() +
-  labs(title = "Confusion Levels Over Time",
-       x = "Confusion Type",
-       y = "Date",
-       fill = "Value")
-
+clean_df %>%
+  pivot_longer(cols = conf_sr:ncol(.),
+               names_to = "var") %>%
+  mutate(agent = if_else(str_ends(var, "_ai"), "ai", "actual")) %>% 
+  mutate(var = str_remove(var,"_ai")) %>% 
+  filter(agent == "actual") %>% 
+  ggplot(aes(date,value,col=var)) +
+  geom_point() +
+  geom_line() +
+  facet_wrap(~ var) +
+  theme_minimal()
 
 
 
