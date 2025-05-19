@@ -116,10 +116,12 @@ Output: for each horizon (short-term: 3 months-1 year, medium-term: 2-5 years, l
 4. A rephrased version of the introductory statement and Q&A answers to reduce confusion. Keep the format of the original.
 5. A confusion score for the rephrased version (point 4).
 
-Format output: put the results in a table with 5 columns (one per task) and 3 rows (one per horizon). 
-The table should have dimensions 3×5 (3 horizons × 5 tasks).
 
-Do not incorporate any data that was not available as of [date] in your assessment.
+Format output: Present results in a table with 5 columns (one per task) and 3 rows (one per horizon). 
+The table should have dimensions 3×5.
+
+Important: Do not incorporate any data that was not available as of [date] in your assessment.
+
 
 Provide only the table as output, not any text.
 ")
@@ -195,8 +197,21 @@ total_time <- end_time - start_time
 
 cat("Total time taken:", total_time, "seconds\n")
 
-# Combine results:
+# Combine and clean results: -------
 
+# Names columns:
+
+names_col=c("date","conf_sr","conf_sr_ai","conf_mr","conf_mr_ai","conf_lr","conf_lr_ai")
+
+# Re-create a name vector in case messed up some conferences in API request:
+
+names_correct=list.files(path = "../intermediate_data/gemini_result/",
+           full.names = T) %>% 
+  str_subset("\\d") %>% 
+  str_remove("\\.txt") %>% 
+  str_extract("\\d{4}-\\d{2}-\\d{2}")
+
+# From character string to tibble:
 
 results <- list.files(path = "../intermediate_data/gemini_result/",
                     full.names = T) %>% 
@@ -206,27 +221,35 @@ results <- list.files(path = "../intermediate_data/gemini_result/",
       error = function(e){
         cat("Error")
       })
-)
+) %>% 
+  set_names(names_correct)
 
 
+# Clean further: 
 
-
-# Convert output in proper format: ----
-
-
-df <- result %>% 
-  map(~ .x %>% readr::read_delim(delim = "|", trim_ws = TRUE, skip = 2)) %>%
-  keep(~ nrow(.x) == 2) %>% 
+clean_df=results %>% 
+  map(~ tryCatch(.x %>% 
+                   slice(1) %>% 
+                   select(-1) %>% 
+                   rename_with(~ paste("Confusion Score", seq_along(.))) %>% 
+                   select(-1,-ncol(.)) %>% 
+                   mutate_all(as.numeric)
+                 ,
+                 error = function(e){
+                   cat("Error")
+                 })
+  ) %>% 
+  keep(~ !is.null(.x) && any(!is.na(.x))) %>% 
   bind_rows(.id = "date") %>% 
-  select(-`...1`,-`...14`) %>% 
-  filter(!str_detect(confusion_s,"--")) %>% 
-  mutate(across(starts_with("confusion"), as.numeric))
+  mutate(date = as.Date(date)) %>% 
+  setNames(names_col) %>% 
+  select(1:7)
 
 
 
 # Export: 
 
-writexl::write_xlsx(df,"../intermediate_data/llm_assessment.xlsx")
+writexl::write_xlsx(clean_df,"../intermediate_data/llm_assessment.xlsx")
 
 
 # Plot: ----
