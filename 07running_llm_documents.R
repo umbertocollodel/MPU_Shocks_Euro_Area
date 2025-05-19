@@ -116,8 +116,8 @@ Output: for each horizon (short-term: 3 months-1 year, medium-term: 2-5 years, l
 4. A rephrased version of the introductory statement and Q&A answers to reduce confusion. Keep the format of the original.
 5. A confusion score for the rephrased version (point 4).
 
-Output the results in a table with three columns per task (one per horizon). 
-The table should have dimensions 1x15 (number of conferences; 5 tasks * 3 horizons).
+Format output: put the results in a table with 5 columns (one per task) and 3 rows (one per horizon). 
+The table should have dimensions 3×5 (3 horizons × 5 tasks).
 
 Do not incorporate any data that was not available as of [date] in your assessment.
 
