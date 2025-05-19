@@ -64,6 +64,7 @@ library(gemini.R)
 library(cli)
 library(httr2)
 library(readtext)
+library(crayon)
 
 
 setAPI("AIzaSyA1O-J8XK-Y5Ymr341izyQvsDlb2UkETp4")
@@ -116,7 +117,7 @@ Output: for each horizon (short-term: 3 months-1 year, medium-term: 2-5 years, l
 5. A confusion score for the rephrased version (point 4).
 
 Output the results in a table with three columns per task (one per horizon). 
-The table should have dimensions 1x12 (number of conferences; 4 tasks * 3 horizons).
+The table should have dimensions 1x15 (number of conferences; 5 tasks * 3 horizons).
 
 Do not incorporate any data that was not available as of [date] in your assessment.
 
@@ -147,11 +148,16 @@ ecb_pressconf=list.files("../intermediate_data/texts/") %>%
   
 # Run LLM remotely: ----
 
+# Initialize time and log
+
 log_file <- "failed_requests.log"
 start_time <- Sys.time()
 
 # Clear previous log
+
 if (file.exists(log_file)) file.remove(log_file)
+
+# Custom function to apply gemini prompt and save resulting rds file
 
 make_request <- function(text, date, seed = 120) {
   
@@ -170,6 +176,7 @@ make_request <- function(text, date, seed = 120) {
 }
 
 # Run the requests
+
 walk2(
   ecb_pressconf,
   dates_ecb_presconf,
@@ -187,6 +194,20 @@ end_time <- Sys.time()
 total_time <- end_time - start_time
 
 cat("Total time taken:", total_time, "seconds\n")
+
+# Combine results:
+
+
+results <- list.files(path = "../intermediate_data/gemini_result/",
+                    full.names = T) %>% 
+  map(~ readRDS(.x)) %>% 
+  map(~ tryCatch(.x %>% 
+                   readr::read_delim(delim = "|", trim_ws = TRUE, skip = 2),
+      error = function(e){
+        cat("Error")
+      })
+)
+
 
 
 
