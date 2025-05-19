@@ -261,12 +261,32 @@ clean_df %>%
   mutate(var = str_remove(var,"_ai")) %>% 
   filter(agent == "actual") %>% 
   ggplot(aes(date,value,col=var)) +
-  geom_point() +
-  geom_line() +
+  geom_point(size=4,alpha=0.5) +
+  geom_line(size=1) +
   facet_wrap(~ var) +
-  theme_minimal()
+  theme_minimal() +
+  labs(col="",
+       x="",
+       y="Confusion Score") +
+  theme_bw() +
+  theme(text=element_text(family="Segoe UI Light")) +
+  theme(plot.caption = element_text(hjust=0)) +
+  theme(axis.text.x = element_text(vjust = 0.5, hjust=0.5)) +
+  theme( axis.text = element_text( size = 14 ),
+         axis.text.x = element_text( size = 20 ),
+         axis.title = element_text( size = 16, face = "bold" ),
+         legend.text = element_text(size=14),
+         # The new stuff
+         strip.text = element_text(size = 20)) +
+  theme(legend.position = "bottom") +
+  theme(plot.caption = element_text(hjust = 0,size=12))
 
 
+# Export:
 
+ggsave("../output/figures/llm_confusion_scores_actual.png",
+       width = 6,
+       height = 3.5,
+       dpi="retina")
 
 
