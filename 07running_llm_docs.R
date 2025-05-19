@@ -1,5 +1,6 @@
 # Load necessary libraries and set parameters: -----
 
+setwd("~/../Desktop/Projects/Uncertainty_surprises/code/")
 
 # Install pacman if not already installed
 if (!require("pacman")) install.packages("pacman")
