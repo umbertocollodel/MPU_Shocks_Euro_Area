@@ -121,7 +121,7 @@ For each interest rate horizon (short-term: 3 months–2 years, long-term: 5–1
 | YYYY-MM-DD   | Long-term      |                        |                                    |                                      |                          |                                                     |
 
 Column Instructions:
-- Column 1: The date of the press conference (format: YYYY-MM-DD).
+- Column 1: The date of the press conference (format: YYYY-MM-DD).You can find it in`Press Conference on`.
 - Column 2: Horizon (short-term or long-term).
 - Column 3: A confusion score from 0 to 10 (0 = no confusion, 10 = maximum confusion - float).
 - Column 4: The reason for your chosen value in a short paragraph making reference to the evaluation criteria.
@@ -135,6 +135,7 @@ Important:
 - Do not use any data not available as of [date].
 - Keep all responses concise and structured.
 - Output only the table, no additional text.
+- The prompt will include multiple press conferences. Be careful.
 ")
 
 

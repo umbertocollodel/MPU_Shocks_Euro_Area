@@ -2,7 +2,7 @@
 
 # Names columns:
 
-names_col=c("date","conf_sr","conf_sr_ai","conf_mr","conf_mr_ai","conf_lr","conf_lr_ai")
+names_col=c("date","horizon","conf_score","reason","ai_version","conf_score_ai","diff")
 
 # Re-create a name vector in case messed up some conferences in API request:
 
@@ -15,54 +15,46 @@ names_correct=list.files(path = "../intermediate_data/gemini_result/",
 # From character string to tibble:
 
 results <- list.files(path = "../intermediate_data/gemini_result/",
+                      pattern = "batch",
                     full.names = T) %>% 
   map(~ readRDS(.x)) %>% 
   map(~ tryCatch(.x %>% 
-                   readr::read_delim(delim = "|", trim_ws = TRUE, skip = 2),
+                   readr::read_delim(delim = "|", trim_ws = TRUE, skip = 1) %>% 
+                   select(-1) %>% 
+                   slice(-nrow(.)),
       error = function(e){
         cat("Error")
       })
-) %>% 
-  set_names(names_correct)
+) 
 
 
 # Clean further: 
 
 clean_df=results %>% 
-  map(~ tryCatch(.x %>% 
-                   slice(1) %>% 
-                   select(-1) %>% 
-                   rename_with(~ paste("Confusion Score", seq_along(.))) %>% 
-                   select(-1,-ncol(.)) %>% 
-                   mutate_all(as.numeric)
-                 ,
-                 error = function(e){
-                   cat("Error")
-                 })
-  ) %>% 
   keep(~ !is.null(.x) && any(!is.na(.x))) %>% 
-  bind_rows(.id = "date") %>% 
-  mutate(date = as.Date(date)) %>% 
-  setNames(names_col) %>% 
-  select(1:7)
+  bind_rows() %>% 
+  setNames(names_col) %>%
+  select(-ncol(.)) %>%
+  mutate_at(vars(contains("score")),as.numeric) %>% 
+  filter(!is.na(conf_score))
 
 
-# Combine with governor name:
-
-file_names=list.files("../intermediate_data/texts/introductory_statements/")
-
-# Extract date and governor name
-governor_df <- data.frame(
-  date = str_extract(file_names, "\\d{4}-\\d{2}-\\d{2}"),
-  governor = str_extract(file_names, "(?<=_)\\w+\\s\\w+")
-) %>% 
-  mutate(date = as.Date(date),
-         governor = ifelse(is.na(governor),"Jean-Claude Trichet",governor))
-
-
-# Join the governor name into your df
-clean_df <- clean_df %>%
-  left_join(governor_df, by = "date")
+# # Combine with governor name:
+# 
+# file_names=list.files("../intermediate_data/texts/introductory_statements/")
+# 
+# # Extract date and governor name
+# governor_df <- data.frame(
+#   date = str_extract(file_names, "\\d{4}-\\d{2}-\\d{2}"),
+#   governor = str_extract(file_names, "(?<=_)\\w+\\s\\w+")
+# ) %>% 
+#   mutate(date = as.Date(date),
+#          governor = ifelse(is.na(governor),"Jean-Claude Trichet",governor))
+# 
+# 
+# # Join the governor name into your df
+# clean_df <- clean_df %>%
+#   left_join(governor_df, by = "date")
 
 
 
@@ -74,7 +66,8 @@ writexl::write_xlsx(clean_df,"../intermediate_data/llm_assessment.xlsx")
 # Plot: ----
 
 clean_df %>%
-  pivot_longer(cols = conf_sr:conf_lr_ai,
+  select(date,horizon,conf_score,conf_score_ai) %>% 
+  pivot_longer(cols = conf_score:ncol(.),
                names_to = "var") %>%
   mutate(agent = if_else(str_ends(var, "_ai"), "ai", "actual")) %>% 
   mutate(var = str_remove(var,"_ai")) %>% 
