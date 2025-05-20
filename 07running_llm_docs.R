@@ -81,22 +81,15 @@ new_gemini <- function(prompt, model = "2.0-flash", temperature = 1, maxOutputTo
 
 # Write a prompt for LLM request: -----
 
-prompt = c("
+prompt <- c("
 Context:
-You are a bank following the press conferences of the ECB Governing Council. 
-These conferences communicate decisions about the monetary policy stance, provide an assessment 
-of the state of the economy, and include a Q&A session with journalists. 
-We are in [date].
+You are a bank following the press conferences of the ECB Governing Council. These conferences communicate decisions about the monetary policy stance, provide an assessment of the state of the economy, and include a Q&A session with journalists. We are in [date].
 
 Task:
-Manage your exposure to interest rate fluctuations by buying/selling
-Overnight Index Swap (OIS) rates based on the information from these conferences.
-Using only the words from the conference and the economic information available as of [date],
-assess your confusion about the expected interest rate developments.
+Manage your exposure to interest rate fluctuations by buying/selling Overnight Index Swap (OIS) rates based on the information from these conferences. Using only the words from the conference and the economic information available as of [date], assess your confusion about the expected interest rate developments.
 
 Confusion Definition:
-Confusion is defined as the lack of clarity or certainty about the expected 
-developments in interest rates.
+Confusion is defined as the lack of clarity or certainty about the expected developments in interest rates.
 
 Scoring Scale (0–10):
 - 0: No confusion – clear, comprehensive, no doubt.
@@ -106,14 +99,16 @@ Scoring Scale (0–10):
 - 7–8: High confusion – unclear, many ambiguities.
 - 9–10: Maximum confusion – very unclear, no guidance.
 
+Short-term vs Long-term Confusion:
+- Short-term confusion refers to uncertainty about the ECB’s likely interest rate decisions over the next 3 months to 2 years. This includes signals about the immediate policy stance, near-term inflation expectations, and short-term economic indicators.
+- Long-term confusion refers to uncertainty about the ECB’s strategic direction over a 5–10 year horizon. This includes the clarity of the ECB’s long-term inflation target, structural policy stance, and credibility of its commitment to price stability.
+
 Evaluation Criteria:
-- Clarity of Communication
-- Consistency of Information
-- Detail and Specificity
-- Context and Background
+- For short-term: clarity of near-term policy signals, inflation outlook, and immediate economic risks.
+- For long-term: clarity of strategic goals, consistency of long-term guidance, and credibility of commitment to price stability.
 
 Output:
-For each interest rate horizon (short-term: 3 months–2 years, long-term: 5–10 years), provide the following in a table:
+For each interest rate horizon (short-term and long-term), provide the following in a table:
 
 | Date         | Horizon       | Confusion Score (0–10) | Reason for Score (max 3 sentences) | Rephrased Version (as ECB Governor)  | Rephrased Version Score  | Key Differences (2–3 bullet points or 2 sentences) |
 |--------------|----------------|------------------------|------------------------------------|--------------------------------------|--------------------------|-----------------------------------------------------|
@@ -121,13 +116,11 @@ For each interest rate horizon (short-term: 3 months–2 years, long-term: 5–1
 | YYYY-MM-DD   | Long-term      |                        |                                    |                                      |                          |                                                     |
 
 Column Instructions:
-- Column 1: The date of the press conference (format: YYYY-MM-DD).You can find it in`Press Conference on`.
+- Column 1: The date of the press conference (format: YYYY-MM-DD). You can find it in `Press Conference on`.
 - Column 2: Horizon (short-term or long-term).
-- Column 3: A confusion score from 0 to 10 (0 = no confusion, 10 = maximum confusion - float).
-- Column 4: The reason for your chosen value in a short paragraph making reference to the evaluation criteria.
-- Column 5: Rewrite the ECB’s message as if you are the ECB President or Chief Economist delivering the same policy decision, but with maximum clarity, confidence, and strategic intent. 
-  Your goal is to reduce confusion, eliminate ambiguity, and provide a clear signal to markets about the rationale and future direction of policy. 
-  You may restructure, reframe, or enhance the message to improve its effectiveness — not just reword it.
+- Column 3: A confusion score from 0 to 10 (float).
+- Column 4: The reason for your chosen value in a short paragraph, referencing the evaluation criteria.
+- Column 5: Rewrite the ECB’s message as if you are the ECB President or Chief Economist delivering the same policy decision, but with maximum clarity, confidence, and strategic intent. Your goal is to reduce confusion, eliminate ambiguity, and provide a clear signal to markets about the rationale and future direction of policy.
 - Column 6: Provide a new confusion score (0–10) for the rephrased version.
 - Column 7: Summarize the key differences between the original and rephrased versions. Focus on removed ambiguities, clarified language, and strategic improvements. Limit to 2–3 bullet points or 2 sentences.
 
@@ -135,8 +128,9 @@ Important:
 - Do not use any data not available as of [date].
 - Keep all responses concise and structured.
 - Output only the table, no additional text.
-- The prompt will include multiple press conferences. Be careful.
+- The prompt will include multiple press conferences. Be careful to distinguish clearly between short-term and long-term horizons.
 ")
+
 
 
 
