@@ -81,7 +81,6 @@ new_gemini <- function(prompt, model = "2.0-flash", temperature = 1, maxOutputTo
 
 # Write a prompt for LLM request: -----
 
-
 prompt = c("
 Context:
 You are a bank following the press conferences of the ECB Governing Council. 
@@ -116,19 +115,21 @@ Evaluation Criteria:
 Output:
 For each interest rate horizon (short-term: 3 months–2 years, long-term: 5–10 years), provide the following in a table:
 
-| Horizon       | Confusion Score (0–10) | Reason for Score (max 3 sentences) | Rephrased Version (as ECB Governor)  | Rephrased Version Score  | Key Differences (2–3 bullet points or 2 sentences) |
-|---------------|------------------------|------------------------------------|--------------------------------------|--------------------------|-----------------------------------------------------|
-| Short-term    |                        |                                    |                                      |                          |                                                     |
-| Long-term     |                        |                                    |                                      |                          |                                                     |
+| Date         | Horizon       | Confusion Score (0–10) | Reason for Score (max 3 sentences) | Rephrased Version (as ECB Governor)  | Rephrased Version Score  | Key Differences (2–3 bullet points or 2 sentences) |
+|--------------|----------------|------------------------|------------------------------------|--------------------------------------|--------------------------|-----------------------------------------------------|
+| YYYY-MM-DD   | Short-term     |                        |                                    |                                      |                          |                                                     |
+| YYYY-MM-DD   | Long-term      |                        |                                    |                                      |                          |                                                     |
 
 Column Instructions:
-- Column 2: A confusion score from 0 to 10 (0 = no confusion, 10 = maximum confusion - float).
-- Column 3: The reason for your chosen value in a short paragraph making reference to the evaluation criteria.
-- Column 4: Rewrite the ECB’s message as if you are the ECB President or Chief Economist delivering the same policy decision, but with maximum clarity, confidence, and strategic intent. 
+- Column 1: The date of the press conference (format: YYYY-MM-DD).
+- Column 2: Horizon (short-term or long-term).
+- Column 3: A confusion score from 0 to 10 (0 = no confusion, 10 = maximum confusion - float).
+- Column 4: The reason for your chosen value in a short paragraph making reference to the evaluation criteria.
+- Column 5: Rewrite the ECB’s message as if you are the ECB President or Chief Economist delivering the same policy decision, but with maximum clarity, confidence, and strategic intent. 
   Your goal is to reduce confusion, eliminate ambiguity, and provide a clear signal to markets about the rationale and future direction of policy. 
   You may restructure, reframe, or enhance the message to improve its effectiveness — not just reword it.
-- Column 5: Provide a new confusion score (0–10) for the rephrased version.
-- Column 6: Summarize the key differences between the original and rephrased versions. Focus on removed ambiguities, clarified language, and strategic improvements. Limit to 2–3 bullet points or 2 sentences.
+- Column 6: Provide a new confusion score (0–10) for the rephrased version.
+- Column 7: Summarize the key differences between the original and rephrased versions. Focus on removed ambiguities, clarified language, and strategic improvements. Limit to 2–3 bullet points or 2 sentences.
 
 Important:
 - Do not use any data not available as of [date].
@@ -190,15 +191,33 @@ make_request <- function(text, date, seed = 120) {
 
 # Run the requests
 
-walk2(
-  ecb_pressconf,
-  dates_ecb_presconf,
-  ~ make_request(
-    text = paste0(prompt, "Press Conference: ", .x) %>%
-      gsub("\\[date\\]", .y, .),
-    date = .y
-  )
-)
+# Define batch size
+batch_size <- 6
+
+# Split into batches
+batches <- split(seq_along(ecb_pressconf), ceiling(seq_along(ecb_pressconf) / batch_size))
+
+# Loop over batches
+for (i in seq_along(batches)) {
+  batch_indices <- batches[[i]]
+  batch_dates <- dates_ecb_presconf[batch_indices]
+  batch_names <- names_ecb_presconf[batch_indices]
+  batch_texts <- ecb_pressconf[batch_indices]
+  
+  # Combine all press conferences in the batch
+  batch_input <- map2_chr(batch_texts, batch_dates, ~ {
+    paste0("Press Conference on ", .y, ":\n", .x, "\n\n")
+  }) %>% paste(collapse = "\n---\n")
+  
+  # Inject into prompt
+  full_prompt <- gsub("\\[date\\]", paste(batch_dates, collapse = ", "), prompt)
+  full_prompt <- paste0(full_prompt, batch_input)
+  
+  # Save with batch ID
+  batch_id <- paste0("batch_", i)
+  
+  make_request(text = full_prompt, date = batch_id)
+}
 
 
 # Print metrics: 
