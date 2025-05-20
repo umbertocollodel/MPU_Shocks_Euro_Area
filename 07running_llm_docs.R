@@ -99,6 +99,10 @@ Scoring Scale (0–10):
 - 7–8: High confusion – unclear, many ambiguities.
 - 9–10: Maximum confusion – very unclear, no guidance.
 
+
+Note: Confusion scores can be decimal values (e.g., 6.5, 3.2) to reflect more precise assessments.
+
+
 Short-term vs Long-term Confusion:
 - Short-term confusion refers to uncertainty about the ECB’s likely interest rate decisions over the next 3 months to 2 years. This includes signals about the immediate policy stance, near-term inflation expectations, and short-term economic indicators.
 - Long-term confusion refers to uncertainty about the ECB’s strategic direction over a 5–10 year horizon. This includes the clarity of the ECB’s long-term inflation target, structural policy stance, and credibility of its commitment to price stability.
