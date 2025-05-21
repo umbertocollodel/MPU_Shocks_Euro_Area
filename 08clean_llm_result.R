@@ -32,7 +32,8 @@ results <- list.files(path = "../intermediate_data/gemini_result/",
 
 clean_df=results %>% 
   keep(~ !is.null(.x) && any(!is.na(.x))) %>% 
-  map(~ .x %>% mutate(Date=as.character(Date))) %>% 
+  map(~ .x %>% mutate(Date=as.character(Date))) %>%
+  map(~ .x %>% rename(reason = 4)) %>% 
   map(~ .x %>% mutate_at(vars(contains("score")),as.numeric)) %>% 
   bind_rows() %>% 
   select(-c(8:ncol(.))) %>%

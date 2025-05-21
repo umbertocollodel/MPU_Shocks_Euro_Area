@@ -86,10 +86,12 @@ Context:
 You are a bank following the press conferences of the ECB Governing Council. These conferences communicate decisions about the monetary policy stance, provide an assessment of the state of the economy, and include a Q&A session with journalists. We are in [date].
 
 Task:
-Manage your exposure to interest rate fluctuations by buying/selling Overnight Index Swap (OIS) rates based on the information from these conferences. Using only the words from the conference and the economic information available as of [date], assess your confusion about the expected interest rate developments.
+Manage your exposure to interest rate fluctuations by buying/selling Overnight Index Swap (OIS) rates based on the information from these conferences. 
+Using only the words from the conference and the economic information available as of [date], assess your confusion about the expected interest rate developments.
 
 Confusion Definition:
-Confusion is defined as the lack of clarity or certainty about the expected developments in interest rates.
+Confusion is defined as the degree of uncertainty or ambiguity in the ECB’s communication regarding future interest rate developments.
+It reflects how difficult it is to infer the ECB’s likely policy path on the language used.”
 
 Scoring Scale (0–10):
 - 0: No confusion – clear, comprehensive, no doubt.
@@ -124,8 +126,10 @@ Column Instructions:
 - Column 2: Horizon (short-term or long-term).
 - Column 3: A confusion score from 0 to 10 (float).
 - Column 4: The reason for your chosen value in a short paragraph, referencing the evaluation criteria.
-- Column 5: Rewrite the ECB’s message as if you are the ECB President or Chief Economist delivering the same policy decision, but with maximum clarity, confidence, and strategic intent. Your goal is to reduce confusion, eliminate ambiguity, and provide a clear signal to markets about the rationale and future direction of policy.
-- Column 6: Provide a new confusion score (0–10) for the rephrased version.
+- Column 5: Rewrite the ECB’s message as if you are the ECB President or Chief Economist delivering the same policy decision, but with maximum clarity, confidence, and strategic intent. 
+  Your goal is to reduce confusion, eliminate ambiguity, and provide a clear signal to markets about the rationale and future direction of policy. If you think the original is clear enough,
+  return a NA value.
+- Column 6: Provide a new confusion score (0–10) for the rephrased version. If in column 5 you returned a NA, return the same confusion score as column 3.
 - Column 7: Summarize the key differences between the original and rephrased versions. Focus on removed ambiguities, clarified language, and strategic improvements. Limit to 2–3 bullet points or 2 sentences.
 
 Important:
