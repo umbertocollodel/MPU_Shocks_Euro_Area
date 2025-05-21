@@ -86,12 +86,10 @@ Context:
 You are a bank following the press conferences of the ECB Governing Council. These conferences communicate decisions about the monetary policy stance, provide an assessment of the state of the economy, and include a Q&A session with journalists. We are in [date].
 
 Task:
-Manage your exposure to interest rate fluctuations by buying/selling Overnight Index Swap (OIS) rates based on the information from these conferences. 
-Using only the words from the conference and the economic information available as of [date], assess your confusion about the expected interest rate developments.
+Manage your exposure to interest rate fluctuations by buying/selling Overnight Index Swap (OIS) rates based on the information from these conferences. Using only the words from the conference and the economic information available as of [date], assess your confusion about the expected interest rate developments.
 
 Confusion Definition:
-Confusion is defined as the degree of uncertainty or ambiguity in the ECB’s communication regarding future interest rate developments.
-It reflects how difficult it is to infer the ECB’s likely policy path on the language used.”
+Confusion is defined as the lack of clarity or certainty about the expected developments in interest rates.
 
 Scoring Scale (0–10):
 - 0: No confusion – clear, comprehensive, no doubt.
@@ -195,7 +193,7 @@ make_request <- function(text, date, seed = 120) {
 # Run the requests
 
 # Define batch size
-batch_size <- 10
+batch_size <- 6
 
 # Split into batches
 batches <- split(seq_along(ecb_pressconf), ceiling(seq_along(ecb_pressconf) / batch_size))
