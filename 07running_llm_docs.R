@@ -15,7 +15,9 @@ pacman::p_load(
   stringr,
   purrr,
   readr,
-  writexl
+  writexl,
+  scales,
+  showtext
 )
 
 setAPI("AIzaSyA1O-J8XK-Y5Ymr341izyQvsDlb2UkETp4")

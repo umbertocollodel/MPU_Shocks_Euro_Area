@@ -62,5 +62,11 @@ clean_df=results %>%
 
 # Export: 
 
-writexl::write_xlsx(clean_df,"../intermediate_data/llm_assessment.xlsx")
+writexl::write_xlsx(clean_df,
+                    paste0("../intermediate_data/llm_assessment_",
+                           batch_size,
+                           "batch_"
+                           ,Sys.Date(),
+                           ".xlsx")
+)
 
