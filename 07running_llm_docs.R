@@ -20,7 +20,7 @@ pacman::p_load(
   showtext
 )
 
-setAPI("AIzaSyA1O-J8XK-Y5Ymr341izyQvsDlb2UkETp4")
+setAPI("AIzaSyCuO5OO2jN5URX6q3FNlmzwWzLoiFgCPs0")
 
 # Create custom function to send request to Gemini API with higher timeout time:
 
@@ -85,7 +85,7 @@ new_gemini <- function(prompt, model = "2.0-flash", temperature = 1, maxOutputTo
 
 prompt <- c("
 Context:
-You are simulating the Euro area interest rate swap market, composed of 100 individual traders.
+You are simulating the Euro area interest rate swap market, composed of 50 individual traders.
 Each trader represents a unique combination of risk aversion and exposure to interest rate movements.
 These traders interpret the ECB Governing Council press conference, which communicates monetary policy decisions, economic assessments, and includes a Q&A session with journalists.
 Each trader then makes a trading decision in the swap market based on their interpretation.
@@ -97,7 +97,7 @@ Each trader independently interprets the ECB’s communication and updates their
 Their trading decisions reflect their personal characteristics (understanding, biases, and risk preferences) as well as a shared perception of the ECB’s message clarity and credibility.
 
 Task:
-For each of the 100 traders, simulate their individual trading action in the interest rate swap market across the five tenors.
+For each of the 50 traders, simulate their individual trading action in the interest rate swap market across the five tenors.
 For each tenor, the trader must:
    - Provide an expected price direction: Up / Down / Unchanged
    - Provide a new expected swap rate (in percent)
