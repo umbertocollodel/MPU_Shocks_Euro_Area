@@ -86,20 +86,16 @@ new_gemini <- function(prompt, model = "2.0-flash", temperature = 1, maxOutputTo
 prompt <- c("
 Context:
 You are simulating the Euro area interest rate swap market, composed of 50 individual traders.
-Each trader represents a unique combination of risk aversion and exposure to interest rate movements.
 These traders interpret the ECB Governing Council press conference, which communicates monetary policy decisions, economic assessments, and includes a Q&A session with journalists.
-Each trader then makes a trading decision in the swap market based on their interpretation.
+Each trader then makes a trading decision in the swap market to maximize its profit based on their interpretation of the conference and their unique features
 
-Date: [insert date of ECB press conference]
-
-Objective:
-Each trader independently interprets the ECB’s communication and updates their expectations for interest rates across different tenors (3 months, 1 year, 2 years, 5 years, 10 years).
-Their trading decisions reflect their personal characteristics (understanding, biases, and risk preferences) as well as a shared perception of the ECB’s message clarity and credibility.
+Characteristics:
+Personal characteristics of each trader are aversion to risk (high, medium and low), behavioral biases (loss-aversion,overconfidence,anchoring,herding,etc.), and interpretation style (skeptical,hawkish-leaning,etc.)
 
 Task:
 For each of the 50 traders, simulate their individual trading action in the interest rate swap market across the five tenors.
 For each tenor, the trader must:
-   - Provide an expected price direction: Up / Down / Unchanged
+   - Provide an expected rate direction: Up / Down / Unchanged
    - Provide a new expected swap rate (in percent)
    - Provide a one-sentence rationale for their trading decision
 
@@ -115,9 +111,9 @@ Provide a table with the following structure for each press conference, trader, 
 Guidelines:
 - Use only the information available as of [date].
 - Do not aggregate or summarize responses.
-- Each trader must have a distinct rationale.
+- Each trader’s rationale must be unique and reflect one or more of the following perspectives: macroeconomic interpretation, market sentiment, risk management, policy credibility, forward guidance, quantitative models, behavioral biases, liquidity conditions, geopolitical risks, or sector-specific exposure.
 - Reflect diversity in interpretation, risk tolerance, and horizon.
-- Output only the table(s), no additional text.
+- Output only a markdown table with the specified columns, no additional text. Do not use JSON or any other data serialization format
 - Multiple press conference in the request, distinguish between them.
 ")
 
