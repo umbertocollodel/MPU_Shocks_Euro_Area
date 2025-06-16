@@ -87,22 +87,23 @@ prompt <- c("
 Context:
 You are simulating the Euro area interest rate swap market, composed of 50 individual traders.
 These traders interpret the ECB Governing Council press conference, which communicates monetary policy decisions, economic assessments, and includes a Q&A session with journalists.
-Each trader then makes a trading decision in the swap market to maximize its profit based on their interpretation of the conference and their unique features
+Each trader then makes a trading decision to maximize its profit based on their interpretation of the conference and its unique features.
 
 Characteristics:
 Personal characteristics of each trader are aversion to risk (high, medium and low), behavioral biases (loss-aversion,overconfidence,anchoring,herding,etc.), and interpretation style (skeptical,hawkish-leaning,etc.)
 
 Task:
+You are given a certain number of distinct ECB press conferences.
 For each of the 50 traders, simulate their individual trading action in the interest rate swap market across the five tenors.
 For each tenor, the trader must:
    - Provide an expected rate direction: Up / Down / Unchanged
    - Provide a new expected swap rate (in percent)
-   - Provide a one-sentence rationale for their trading decision
+   - Provide a one-sentence rationale for trading decision
 
 Output:
 Provide a table with the following structure for each press conference, trader, and interest rate tenor:
 
-| Date       | Trader ID | Tenor   | Expected Direction | New Expected Rate (%) | Rationale (1 sentence)         |
+| Date       | Trader ID | Tenor   | Expected Direction | New Expected Rate (%) | Rationale (1 sentence)          |
 |------------|-----------|---------|--------------------|------------------------|--------------------------------|
 | YYYY-MM-DD | T001      | 3M      | Up                 | 3.15                   | [Trader's rationale]           |
 | YYYY-MM-DD | T001      | 1Y      | Down               | 2.85                   | [Trader's rationale]           |
