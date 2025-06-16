@@ -85,58 +85,38 @@ new_gemini <- function(prompt, model = "2.0-flash", temperature = 1, maxOutputTo
 
 prompt <- c("
 Context:
-You are a bank following the press conferences of the ECB Governing Council. These conferences communicate decisions about the monetary policy stance, provide an assessment of the state of the economy, and include a Q&A session with journalists. We are in [date].
+You are simulating the Euro area interest rates swap market, composed of 100 traders.
+Each trader represents a unique combination of risk aversion and exposure to interest rate movements. 
+These traders interpret the ECB Governing Council press conference, which communicates monetary policy decisions for the Euro area, economic assessments, and includes a Q&A session with journalists, and
+base their trade on interest rate swaps on that.
+
+Date: [insert date of ECB press conference]
+
+Objective:
+Each trader independently interprets the ECB’s communication and updates their expectations for interest rates across different tenors (3 months, 1 year, 2 years, 5 years, 10 years). 
+Their ensuing trade in swaps reflects their personal features (understanding, biases, and risk preferences) as well as a common unobservable 'clarity' and 'credibility' of the ECB message. 
 
 Task:
-Manage your exposure to interest rate fluctuations by buying/selling Overnight Index Swap (OIS) rates based on the information from these conferences. Using only the words from the conference and the economic information available as of [date], assess your confusion about the expected interest rate developments.
-
-Confusion Definition:
-Confusion is defined as the lack of clarity or certainty about the expected developments in interest rates.
-
-Scoring Scale (0–10):
-- 0: No confusion – clear, comprehensive, no doubt.
-- 1–2: Minimal confusion – mostly clear, minor ambiguities.
-- 3–4: Low confusion – generally clear, some uncertainty.
-- 5–6: Moderate confusion – mixed signals, significant ambiguities.
-- 7–8: High confusion – unclear, many ambiguities.
-- 9–10: Maximum confusion – very unclear, no guidance.
-
-
-Note: Confusion scores can be decimal values (e.g., 6.5, 3.2) to reflect more precise assessments.
-g
-
-Short-term vs Long-term Confusion:
-- Short-term confusion refers to uncertainty about the ECB’s likely interest rate decisions over the next 3 months to 2 years. This includes signals about the immediate policy stance, near-term inflation expectations, and short-term economic indicators.
-- Long-term confusion refers to uncertainty about the ECB’s strategic direction over a 5–10 year horizon. This includes the clarity of the ECB’s long-term inflation target, structural policy stance, and credibility of its commitment to price stability.
-
-Evaluation Criteria:
-- For short-term: clarity of near-term policy signals, inflation outlook, and immediate economic risks.
-- For long-term: clarity of strategic goals, consistency of long-term guidance, and credibility of commitment to price stability.
+For each of the 100 traders, simulate their individual trading action in the interest rate swap market across different tenors (3 months, 1 year, 2 years, 5 years, 10 years). Each trader will:
+- Provide an expected price direction: Up / Down / Unchanged.
+- Provide a new expected swap rate (in percent).
+- Provide a one-sentence rationale for their trading decision, reflecting their interpretation of the ECB message and their personal profile.
 
 Output:
-For each interest rate horizon (short-term and long-term), provide the following in a table:
+Provide a table with the following structure for each press conference, trader, and interest rate tenor:
 
-| Date         | Horizon       | Confusion Score (0–10) | Reason for Score (max 3 sentences) | Rephrased Version (as ECB Governor)  | Rephrased Version Score  | Key Differences (2–3 bullet points or 2 sentences) |
-|--------------|----------------|------------------------|------------------------------------|--------------------------------------|--------------------------|-----------------------------------------------------|
-| YYYY-MM-DD   | Short-term     |                        |                                    |                                      |                          |                                                     |
-| YYYY-MM-DD   | Long-term      |                        |                                    |                                      |                          |                                                     |
+| Date       | Trader ID | Tenor   | Expected Direction | New Expected Rate (%) | Rationale (1 sentence)          |
+|------------|-----------|---------|--------------------|------------------------|--------------------------------|
+| YYYY-MM-DD | T001      | 3M      | Up                 | 3.15                   | [Trader's rationale]           |
+| YYYY-MM-DD | T001      | 1Y      | Down               | 2.85                   | [Trader's rationale]           |
+| ...        | ...       | ...     | ...                | ...                    | ...                            |
 
-Column Instructions:
-- Column 1: The date of the press conference (format: YYYY-MM-DD). You can find it in `Press Conference on`.
-- Column 2: Horizon (short-term or long-term).
-- Column 3: A confusion score from 0 to 10 (float).
-- Column 4: The reason for your chosen value in a short paragraph, referencing the evaluation criteria.
-- Column 5: Rewrite the ECB’s message as if you are the ECB President or Chief Economist delivering the same policy decision, but with maximum clarity, confidence, and strategic intent. 
-  Your goal is to reduce confusion, eliminate ambiguity, and provide a clear signal to markets about the rationale and future direction of policy. If you think the original is clear enough,
-  return a NA value.
-- Column 6: Provide a new confusion score (0–10) for the rephrased version. If in column 5 you returned a NA, return the same confusion score as column 3.
-- Column 7: Summarize the key differences between the original and rephrased versions. Focus on removed ambiguities, clarified language, and strategic improvements. Limit to 2–3 bullet points or 2 sentences.
-
-Important:
-- Do not use any data not available as of [date].
-- Keep all responses concise and structured.
-- Output only the table, no additional text.
-- The prompt will include multiple press conferences. Be careful to distinguish clearly between short-term and long-term horizons.
+Guidelines:
+- Use only the information available as of [date].
+- Do not aggregate or summarize responses.
+- Each trader should have a distinct rationale.
+- Reflect diversity in interpretation, risk tolerance, and horizon.
+- Output only the table(s), no additional text.
 ")
 
 
