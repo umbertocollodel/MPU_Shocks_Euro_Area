@@ -85,7 +85,7 @@ new_gemini <- function(prompt, model = "2.0-flash", temperature = 1, maxOutputTo
 
 prompt <- c("
 Context:
-You are simulating the Euro area interest rate swap market, composed of 50 individual traders.
+You are simulating the Euro area interest rate swap market, composed of 25 individual traders.
 These traders interpret the ECB Governing Council press conference, which communicates monetary policy decisions, economic assessments, and includes a Q&A session with journalists.
 Each trader then makes a trading decision to maximize its profit based on their interpretation of the conference and its unique features.
 
@@ -94,7 +94,7 @@ Personal characteristics of each trader are aversion to risk (high, medium and l
 
 Task:
 You are given a certain number of distinct ECB press conferences.
-For each of the 50 traders, simulate their individual trading action in the interest rate swap market across the five tenors.
+For each of the 25 traders, simulate their individual trading action in the interest rate swap market across the five tenors.
 For each tenor, the trader must:
    - Provide an expected rate direction: Up / Down / Unchanged
    - Provide a new expected swap rate (in percent)
@@ -154,26 +154,37 @@ if (file.exists(log_file)) file.remove(log_file)
 
 # Custom function to apply gemini prompt and save resulting rds file
 
-make_request <- function(text, date, seed = 120) {
+
+make_request <- function(text, date, seed = 120, max_attempts = 5) {
   
-  Sys.sleep(5)
+  for (attempt in 1:max_attempts) {
+    
+    Sys.sleep(5 * attempt) # Exponential backoff
+    
+    result <- tryCatch({
+      res <- new_gemini(text, seed = seed, temperature = 1)
+      saveRDS(res, file = paste0("../intermediate_data/gemini_result/", date, ".rds"))
+      cat(crayon::green(paste0("✅ Press conference on ", date, " processed and saved.\n")))
+      return(TRUE)
+    }, error = function(e) {
+      cat(crayon::red(paste0("❌ Error processing press conference on ", date, "\n")))
+      write(paste0(date, ": ", e$message), file = log_file, append = TRUE)
+      return(FALSE)
+    })
+    
+    if (result) break# Exit loop if successful
+  }
   
-  result <- tryCatch({
-    res <- new_gemini(text, seed = seed, temperature = 1)
-    saveRDS(res, file = paste0("../intermediate_data/gemini_result/", date, ".rds"))
-    cat(green(paste0("✅ Press conference on ", date, " processed and saved.\n")))
-    TRUE
-  }, error = function(e) {
-    cat(red(paste0("❌ Error processing press conference on ", date, "\n")))
-    write(paste0(date, ": ", e$message), file = log_file, append = TRUE)
-    FALSE
-  })
+  if (!result) {
+    cat(crayon::red(paste0("❌ All attempts failed for ", date, "\n")))
+  }
 }
+
 
 # Run the requests
 
 # Define batch size
-batch_size <- 10
+batch_size <- 8
 
 # Split into batches
 batches <- split(seq_along(ecb_pressconf), ceiling(seq_along(ecb_pressconf) / batch_size))
