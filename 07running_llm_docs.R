@@ -177,7 +177,7 @@ make_request <- function(text, date, seed = 120) {
 # Run the requests
 
 # Define batch size
-batch_size <- 6
+batch_size <- 10
 
 # Split into batches
 batches <- split(seq_along(ecb_pressconf), ceiling(seq_along(ecb_pressconf) / batch_size))
