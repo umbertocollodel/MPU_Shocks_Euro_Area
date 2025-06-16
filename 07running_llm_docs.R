@@ -85,27 +85,28 @@ new_gemini <- function(prompt, model = "2.0-flash", temperature = 1, maxOutputTo
 
 prompt <- c("
 Context:
-You are simulating the Euro area interest rates swap market, composed of 100 traders.
-Each trader represents a unique combination of risk aversion and exposure to interest rate movements. 
-These traders interpret the ECB Governing Council press conference, which communicates monetary policy decisions for the Euro area, economic assessments, and includes a Q&A session with journalists, and
-base their trade on interest rate swaps on that.
+You are simulating the Euro area interest rate swap market, composed of 100 individual traders.
+Each trader represents a unique combination of risk aversion and exposure to interest rate movements.
+These traders interpret the ECB Governing Council press conference, which communicates monetary policy decisions, economic assessments, and includes a Q&A session with journalists.
+Each trader then makes a trading decision in the swap market based on their interpretation.
 
 Date: [insert date of ECB press conference]
 
 Objective:
-Each trader independently interprets the ECB’s communication and updates their expectations for interest rates across different tenors (3 months, 1 year, 2 years, 5 years, 10 years). 
-Their ensuing trade in swaps reflects their personal features (understanding, biases, and risk preferences) as well as a common unobservable 'clarity' and 'credibility' of the ECB message. 
+Each trader independently interprets the ECB’s communication and updates their expectations for interest rates across different tenors (3 months, 1 year, 2 years, 5 years, 10 years).
+Their trading decisions reflect their personal characteristics (understanding, biases, and risk preferences) as well as a shared perception of the ECB’s message clarity and credibility.
 
 Task:
-For each of the 100 traders, simulate their individual trading action in the interest rate swap market across different tenors (3 months, 1 year, 2 years, 5 years, 10 years). Each trader will:
-- Provide an expected price direction: Up / Down / Unchanged.
-- Provide a new expected swap rate (in percent).
-- Provide a one-sentence rationale for their trading decision, reflecting their interpretation of the ECB message and their personal profile.
+For each of the 100 traders, simulate their individual trading action in the interest rate swap market across the five tenors.
+For each tenor, the trader must:
+   - Provide an expected price direction: Up / Down / Unchanged
+   - Provide a new expected swap rate (in percent)
+   - Provide a one-sentence rationale for their trading decision
 
 Output:
 Provide a table with the following structure for each press conference, trader, and interest rate tenor:
 
-| Date       | Trader ID | Tenor   | Expected Direction | New Expected Rate (%) | Rationale (1 sentence)          |
+| Date       | Trader ID | Tenor   | Expected Direction | New Expected Rate (%) | Rationale (1 sentence)         |
 |------------|-----------|---------|--------------------|------------------------|--------------------------------|
 | YYYY-MM-DD | T001      | 3M      | Up                 | 3.15                   | [Trader's rationale]           |
 | YYYY-MM-DD | T001      | 1Y      | Down               | 2.85                   | [Trader's rationale]           |
@@ -114,7 +115,7 @@ Provide a table with the following structure for each press conference, trader, 
 Guidelines:
 - Use only the information available as of [date].
 - Do not aggregate or summarize responses.
-- Each trader should have a distinct rationale.
+- Each trader must have a distinct rationale.
 - Reflect diversity in interpretation, risk tolerance, and horizon.
 - Output only the table(s), no additional text.
 ")
