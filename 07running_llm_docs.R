@@ -85,7 +85,7 @@ new_gemini <- function(prompt, model = "2.0-flash", temperature = 1, maxOutputTo
 
 prompt <- c("
 Context:
-You are simulating the Euro area interest rate swap market, composed of 25 individual traders.
+You are simulating the Euro area interest rate swap market, composed of 10 individual traders.
 These traders interpret the ECB Governing Council press conference, which communicates monetary policy decisions, economic assessments, and includes a Q&A session with journalists.
 Each trader then makes a trading decision to maximize its profit based on their interpretation of the conference and its unique features.
 
@@ -94,7 +94,7 @@ Personal characteristics of each trader are aversion to risk (high, medium and l
 
 Task:
 You are given a certain number of distinct ECB press conferences.
-For each of the 25 traders, simulate their individual trading action in the interest rate swap market across the five tenors.
+For each of the 10 traders, simulate their individual trading action in the interest rate swap market across the five tenors.
 For each tenor, the trader must:
    - Provide an expected rate direction: Up / Down / Unchanged
    - Provide a new expected swap rate (in percent)
@@ -184,7 +184,7 @@ make_request <- function(text, date, seed = 120, max_attempts = 5) {
 # Run the requests
 
 # Define batch size
-batch_size <- 8
+batch_size <- 6
 
 # Split into batches
 batches <- split(seq_along(ecb_pressconf), ceiling(seq_along(ecb_pressconf) / batch_size))
