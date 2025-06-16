@@ -112,8 +112,7 @@ Provide a table with the following structure for each press conference, trader, 
 Guidelines:
 - Use only the information available as of [date].
 - Do not aggregate or summarize responses.
-- Each trader’s rationale must be unique and reflect one or more of the following perspectives: macroeconomic interpretation, market sentiment, risk management, policy credibility, forward guidance, quantitative models, behavioral biases, liquidity conditions, geopolitical risks, or sector-specific exposure.
-- Reflect diversity in interpretation, risk tolerance, and horizon.
+- Reflect diversity in interpretation, risk tolerance, and horizon. Rationale must be unique for trader, but can be different across tenors.s
 - Output only a markdown table with the specified columns, no additional text. Do not use JSON or any other data serialization format
 - Multiple press conference in the request, distinguish between them.
 ")
@@ -160,7 +159,7 @@ make_request <- function(text, date, seed = 120) {
   Sys.sleep(5)
   
   result <- tryCatch({
-    res <- new_gemini(text, seed = seed, temperature = 0.7)
+    res <- new_gemini(text, seed = seed, temperature = 1)
     saveRDS(res, file = paste0("../intermediate_data/gemini_result/", date, ".rds"))
     cat(green(paste0("✅ Press conference on ", date, " processed and saved.\n")))
     TRUE
