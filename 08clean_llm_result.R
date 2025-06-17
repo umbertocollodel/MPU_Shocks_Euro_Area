@@ -2,7 +2,7 @@
 
 # Names columns:
 
-names_col=c("date","horizon","conf_score","reason","ai_version","conf_score_ai","diff")
+names_col=c("date","id","tenor","direction","rate","reason")
 
 # Re-create a name vector in case messed up some conferences in API request:
 
@@ -20,7 +20,7 @@ results <- list.files(path = "../intermediate_data/gemini_result/",
   map(~ readRDS(.x)) %>% 
   map(~ tryCatch(.x %>% 
                    readr::read_delim(delim = "|", trim_ws = TRUE, skip = 1) %>% 
-                   select(-1) %>% 
+                   select(-1,-ncol(.)) %>% 
                    slice(-nrow(.)),
       error = function(e){
         cat("Error")
@@ -31,14 +31,12 @@ results <- list.files(path = "../intermediate_data/gemini_result/",
 # Clean further: 
 
 clean_df=results %>% 
-  keep(~ !is.null(.x) && any(!is.na(.x))) %>% 
-  map(~ .x %>% mutate(Date=as.character(Date))) %>%
-  map(~ .x %>% rename(reason = 4)) %>% 
-  map(~ .x %>% mutate_at(vars(contains("score")),as.numeric)) %>% 
-  bind_rows() %>% 
-  select(-c(8:ncol(.))) %>%
-  setNames(names_col) %>%
-  filter(!is.na(conf_score))
+  keep(~ !is.null(.x) && any(!is.na(.x))) %>%
+  map(~ .x %>% setNames(names_col)) %>%
+  map(~ .x %>% slice(-1)) %>% 
+  map(~ .x %>% mutate(date=as.character(date))) %>%
+  map(~ .x %>% mutate_at(vars(contains("rate")),as.numeric)) %>% 
+  bind_rows() 
 
 
 # # Combine with governor name:
