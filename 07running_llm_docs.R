@@ -85,16 +85,16 @@ new_gemini <- function(prompt, model = "2.0-flash", temperature = 1, maxOutputTo
 
 prompt <- c("
 Context:
-You are simulating the Euro area interest rate swap market, composed of 10 individual traders.
+You are simulating the Euro area interest rate swap market, composed of 20 individual traders.
 These traders interpret the ECB Governing Council press conference, which communicates monetary policy decisions, economic assessments, and includes a Q&A session with journalists.
-Each trader then makes a trading decision to maximize its profit based on their interpretation of the conference and its unique features.
+Each trader then makes a trading decision to maximize its profit based on his interpretation of the conference and his unique features.
 
 Characteristics:
-Personal characteristics of each trader are aversion to risk (high, medium and low), behavioral biases (loss-aversion,overconfidence,anchoring,herding,etc.), and interpretation style (skeptical,hawkish-leaning,etc.)
+Personal characteristics of each trader are aversion to risk (high, medium and low), behavioral biases and interpretation style.
 
 Task:
 You are given a certain number of distinct ECB press conferences.
-For each of the 10 traders, simulate their individual trading action in the interest rate swap market across the five tenors.
+For each of the 20 traders, simulate their individual trading action in the interest rate swap market across three tenors (3months, 2years, 10years).
 For each tenor, the trader must:
    - Provide an expected rate direction: Up / Down / Unchanged
    - Provide a new expected swap rate (in percent)
@@ -112,7 +112,7 @@ Provide a table with the following structure for each press conference, trader, 
 Guidelines:
 - Use only the information available as of [date].
 - Do not aggregate or summarize responses.
-- Reflect diversity in interpretation, risk tolerance, and horizon. Rationale must be unique for trader, but can be different across tenors.s
+- Reflect diversity in interpretation, risk tolerance, and horizon. Rationale must be unique for trader, but can be different across tenors.
 - Output only a markdown table with the specified columns, no additional text. Do not use JSON or any other data serialization format
 - Multiple press conference in the request, distinguish between them.
 ")
@@ -184,7 +184,7 @@ make_request <- function(text, date, seed = 120, max_attempts = 5) {
 # Run the requests
 
 # Define batch size
-batch_size <- 4
+batch_size <- 3
 
 # Split into batches
 batches <- split(seq_along(ecb_pressconf), ceiling(seq_along(ecb_pressconf) / batch_size))
