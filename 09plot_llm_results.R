@@ -112,3 +112,38 @@ ggplot(spread_df, aes(x = date, y = diff_10y_3m)) +
 
 # Save
 ggsave("../output/figures/tenor_spread_sd_highlighted_beautiful.png", dpi = 320, width = 10, height = 6)
+
+
+
+
+
+# Calculate percentage of each direction per tenor and date
+direction_pct_df <- clean_df %>%
+  group_by(date, tenor, direction) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  group_by(date, tenor) %>%
+  mutate(percentage = count / sum(count) * 100) %>%
+  ungroup() %>% 
+  filter(direction %in% c("Up","Down","Unchanged"))
+
+
+# Get a subset of dates to show as breaks (e.g., every 10th unique date)
+date_breaks <- unique(direction_pct_df$date)[seq(1, length(unique(direction_pct_df$date)), by = 6)]
+
+ggplot(direction_pct_df, aes(x = date, y = percentage, fill = direction)) +
+  geom_bar(stat = "identity", position = "stack") +
+  facet_wrap(~ tenor, ncol = 1) +
+  scale_fill_manual(values = c("Up" = "#D7263D", "Down" = "#1B9AAA", "Unchanged" = "#CCCCCC")) +
+  scale_x_discrete(breaks = date_breaks) +
+  labs(
+    title = "Distribution of Rate Change Directions Over Time by Tenor",
+    x = "", y = "%", fill = "Direction"
+  ) +
+  theme_minimal(base_family = "Segoe UI") +
+  theme(axis.text.x = element_text(angle = 270, hjust = 1))
+
+
+
+# Save the plot
+ggsave("../output/figures/direction_percentage_heatmap.png", dpi = 320, width = 10, height = 8)
+
