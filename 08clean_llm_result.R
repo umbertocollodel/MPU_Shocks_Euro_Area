@@ -36,7 +36,8 @@ clean_df=results %>%
   map(~ .x %>% slice(-1)) %>% 
   map(~ .x %>% mutate(date=as.character(date))) %>%
   map(~ .x %>% mutate_at(vars(contains("rate")),as.numeric)) %>% 
-  bind_rows() 
+  bind_rows() %>% 
+  filter(tenor %in% c("3M","2Y","10Y"))
 
 
 # # Combine with governor name:
