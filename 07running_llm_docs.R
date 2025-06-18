@@ -20,7 +20,7 @@ pacman::p_load(
   showtext
 )
 
-setAPI("AIzaSyCuO5OO2jN5URX6q3FNlmzwWzLoiFgCPs0")
+setAPI(Sys.getenv("MY_API_KEY"))
 
 # Create custom function to send request to Gemini API with higher timeout time:
 
