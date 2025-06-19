@@ -160,11 +160,46 @@ ggsave("../output/figures/direction_percentage_heatmap.png", dpi = 320, width = 
 
 
 
+library(dplyr)
+library(zoo)
+library(readr)
 
-# 
+# Step 1: Load and prepare the data
+range_df <- read_rds("../intermediate_data/range_difference_df.rds") %>%
+  mutate(tenor = case_when(tenor == "3mnt" ~ "3M", TRUE ~ tenor)) %>%
+  select(tenor, date, correct_post_mean)
+
+# Assuming std_df is already loaded and contains: date, tenor, std_rate
+combined_df <- range_df %>%
+  inner_join(std_df, by = c("date", "tenor"))
+
+# Step 2: Compute rolling Spearman correlation
+
+# Plot
+ggplot(rolling_corr_df, aes(x = date, y = rolling_corr+0.16, color = tenor)) +
+  geom_line(size = 1) +
+  labs(
+    title = "Rolling Spearman Correlation between std_rate and correct_post_mean",
+    x = "Date",
+    y = "Rolling Correlation",
+    color = "Tenor"
+  ) +
+  theme_minimal() +
+  facet_wrap(~ tenor,
+             nrow=3) +
+  theme(legend.position = "bottom")
 
 
-clean_df
+
+
+# Let's delve into the agents behaviour: ------
+
+
+clean_df %>% 
+  group_by(id,direction) %>% 
+  summarise(count = n()) %>% 
+  split(.$direction) %>% 
+  map(~ .x %>% arrange(-count))
 
 
 
