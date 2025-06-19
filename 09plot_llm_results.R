@@ -1,7 +1,15 @@
-library(dplyr)
-library(ggplot2)
-library(showtext)
-library(tidyr)
+# Read LLM cleaned results: -----
+
+
+
+clean_df=read_xlsx("../intermediate_data/llm_assessment_3batch_2025-06-17.xlsx")
+
+
+
+
+
+# Figure: standard deviation over time for ech tenor ------ 
+
 
 # Enable Segoe UI font
 font_add("Segoe UI", regular = "C:/Windows/Fonts/segoeui.ttf")
@@ -24,8 +32,13 @@ std_df <- std_df %>%
   mutate(highlight = std_rate > p95) %>% 
   mutate(date =as.Date(date))
 
-ggplot(std_df, aes(x = date, y = std_rate, color = tenor)) +
+std_df %>% 
+  group_by(tenor) %>% 
+  mutate(mean = mean(std_rate,na.rm=T)) %>% 
+  ungroup() %>% 
+  ggplot(aes(x = date, y = std_rate, color = tenor)) +
   geom_line() +
+  geom_line(aes(y=mean),size=1.5,linetype="dashed") +
   geom_point(aes(size = highlight), shape = 21, fill = "white", stroke = 1.2) +
   facet_wrap(~ tenor, nrow = 3, scales = "free_y") +
   scale_size_manual(values = c("FALSE" = 2, "TRUE" = 4), guide = "none") +
@@ -43,7 +56,8 @@ ggplot(std_df, aes(x = date, y = std_rate, color = tenor)) +
 ggsave("../output/figures/naive_prompt_sd.png",
        dpi = "retina")
 
-# Compute correlation matrix
+# Table: compute correlation matrix across sd tenors ----
+
 cor_matrix <- std_df %>%
   select(date, tenor, std_rate) %>%
   pivot_wider(names_from = tenor, values_from = std_rate) %>%
@@ -53,11 +67,7 @@ cor_matrix <- std_df %>%
 print(cor_matrix)
 
 
-
-
-# Font setup
-font_add("Segoe UI", regular = "C:/Windows/Fonts/segoeui.ttf")
-showtext_auto()
+# Figure: difference between 10 years and 3months standard deviation: -----
 
 # Compute spread
 spread_df <- std_df %>%
@@ -115,7 +125,7 @@ ggsave("../output/figures/tenor_spread_sd_highlighted_beautiful.png", dpi = 320,
 
 
 
-
+# Figure: percentage of direction for each tenor and date -----
 
 # Calculate percentage of each direction per tenor and date
 direction_pct_df <- clean_df %>%
@@ -146,4 +156,48 @@ ggplot(direction_pct_df, aes(x = date, y = percentage, fill = direction)) +
 
 # Save the plot
 ggsave("../output/figures/direction_percentage_heatmap.png", dpi = 320, width = 10, height = 8)
+
+
+
+
+
+# 
+
+
+clean_df
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
