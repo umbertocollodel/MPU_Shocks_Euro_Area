@@ -183,10 +183,11 @@ std_df %>%
   theme(axis.text.x = element_text(angle = 270, hjust = 1))
 
 
-ggsave("../output/figures/naive_prompt_sd.png",
+ggsave("../output/figures/naive_prompt_correlation_sd_range.png",
        dpi = "retina")
   
 
+# Correlation between market-based measure and in-vitro llm measure: ----
 
 # Step 1: Load and prepare the data
 range_df <- read_rds("../intermediate_data/range_difference_df.rds") %>%
@@ -194,36 +195,42 @@ range_df <- read_rds("../intermediate_data/range_difference_df.rds") %>%
   select(tenor, date, correct_post_mean)
 
 # Assuming std_df is already loaded and contains: date, tenor, std_rate
+
 combined_df <- range_df %>%
   inner_join(std_df, by = c("date", "tenor"))
 
+
 # Step 2: Compute rolling Spearman correlation
 
-# Plot
-ggplot(rolling_corr_df, aes(x = date, y = rolling_corr+0.16, color = tenor)) +
-  geom_line(size = 1) +
-  labs(
-    title = "Rolling Spearman Correlation between std_rate and correct_post_mean",
-    x = "Date",
-    y = "Rolling Correlation",
-    color = "Tenor"
-  ) +
-  theme_minimal() +
-  facet_wrap(~ tenor,
-             nrow=3) +
-  theme(legend.position = "bottom")
+
+# Ensure the data is sorted
+combined_df <- combined_df %>% arrange(date)
+
+# Select only the two columns needed
+rolling_corr_df <- combined_df %>%
+  select(date, tenor, std_rate, correct_post_mean) %>%
+  group_by(tenor) %>%
+  group_split() %>%
+  purrr::map_dfr(~ {
+    df <- .x
+    if (nrow(df) >= 12) {
+      df$rolling_corr <- rollapply(
+        data = df[, c("std_rate", "correct_post_mean")],
+        width = 12,
+        FUN = function(w) cor(w[, 1], w[, 2], method = "spearman", use = "complete.obs"),
+        by.column = FALSE,
+        align = "right",
+        fill = NA
+      )
+    } else {
+      df$rolling_corr <- NA
+    }
+    df
+  })
 
 
 
 
-# Let's delve into the agents behaviour: ------
-
-
-clean_df %>% 
-  group_by(id,direction) %>% 
-  summarise(count = n()) %>% 
-  split(.$direction) %>% 
-  map(~ .x %>% arrange(-count))
 
 
 
