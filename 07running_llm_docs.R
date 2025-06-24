@@ -17,7 +17,8 @@ pacman::p_load(
   readr,
   writexl,
   scales,
-  showtext
+  showtext,
+  readxl
 )
 
 setAPI(Sys.getenv("MY_API_KEY"))

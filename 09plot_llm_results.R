@@ -19,7 +19,8 @@ showtext_auto()
 # Calculate standard deviation of rate by date and tenor
 std_df <- clean_df %>%
   group_by(date, tenor) %>%
-  summarise(std_rate = sd(rate), .groups = "drop")
+  summarise(std_rate = sd(rate),
+            range_rate = max(rate) - min(rate),.groups = "drop")
 
 # Calculate 95th percentile threshold for each tenor
 thresholds <- std_df %>%
@@ -160,9 +161,32 @@ ggsave("../output/figures/direction_percentage_heatmap.png", dpi = 320, width = 
 
 
 
-library(dplyr)
-library(zoo)
-library(readr)
+
+# Figure: correlation between standard deviation and range rates
+
+
+std_df %>% 
+  pivot_longer(std_rate:range_rate,names_to = "type",values_to = "value") %>% 
+  mutate(type = ifelse(type == "std_rate","SD","Range")) %>% 
+  ggplot(aes(x = date, y = value, color = type)) +
+  geom_line(size=1) +
+  facet_wrap(~ tenor, nrow = 3, scales = "free_y") +
+  scale_size_manual(values = c("FALSE" = 2, "TRUE" = 4), guide = "none") +
+  scale_x_date(date_breaks = "9 months", date_labels = "%b %Y") +  # Adjust as needed
+  labs(
+    title = "Correlation between SD and Range of Rates by Tenor Over Time",
+    x = "Date",
+    y = "Standard Deviation of Rate",
+    color = "Measure"
+  ) +
+  theme_minimal(base_family = "Segoe UI") +
+  theme(axis.text.x = element_text(angle = 270, hjust = 1))
+
+
+ggsave("../output/figures/naive_prompt_sd.png",
+       dpi = "retina")
+  
+
 
 # Step 1: Load and prepare the data
 range_df <- read_rds("../intermediate_data/range_difference_df.rds") %>%
