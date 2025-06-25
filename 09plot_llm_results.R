@@ -250,7 +250,38 @@ rolling_corr_df <- combined_df %>%
 
 
 
+# Mistakes for the E(x) over time: ------
 
+mean_llm_df <- clean_df %>% 
+  group_by(date,tenor) %>% 
+  mutate(date = as.Date(date))
+
+
+actual_ois_df <- read_xlsx("../raw_data/ois_daily_data.xlsx",skip=1) %>%
+  select(1,2,4,6) %>% 
+  setNames(c("date","3M","2Y","10Y")) %>% 
+  mutate(date = as.Date(date)) %>% 
+  pivot_longer(`3M`:`10Y`,names_to = "tenor",values_to = "actual_rate")
+  
+
+
+
+# Assuming mean_llm_df and actual_ois_df are already loaded in your environment
+# Join and compute error
+joined_df <- merge(mean_llm_df, actual_ois_df,by=c("date","tenor")) %>%
+  as_tibble() %>% 
+  mutate(error = actual_rate - rate)
+
+# Plot error by tenor over time
+ggplot(joined_df, aes(x = date, y = error, color = id)) +
+  geom_line() +
+  geom_hline(yintercept = 0) + 
+  facet_wrap(~ tenor, nrow=3) +
+  labs(title = "Error by Tenor Over Time",
+       x = "Date",
+       y = "Error (Actual - LLM Mean Rate)",
+       color = "Tenor") +
+  theme_minimal()
 
 
 
