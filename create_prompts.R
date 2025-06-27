@@ -1,6 +1,6 @@
 # Multiple prompts for LLM request: -----
 
-prompt <- c("
+prompt_naive <- c("
 Context:
 You are simulating the Euro area interest rate swap market, composed of 20 individual traders.
 These traders interpret the ECB Governing Council press conference, which communicates monetary policy decisions, economic assessments, and includes a Q&A session with journalists.
