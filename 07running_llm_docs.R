@@ -145,6 +145,14 @@ ecb_pressconf=list.files("../intermediate_data/texts/") %>%
   map(~ .$text) %>% 
   set_names(names_ecb_presconf)
 
+# Retrieve OIS rates pre-conference: ----
+
+ois_daily_df <- read_xlsx("../raw_data/ois_daily_data.xlsx",skip = 1) %>% 
+  select(1,2,4,6) %>% 
+  setNames(c("date","3M","2Y","10Y"))
+
+
+
 # Run LLM remotely: ----
 
 # Initialize time and log
@@ -197,13 +205,27 @@ batches <- split(seq_along(ecb_pressconf), ceiling(seq_along(ecb_pressconf) / ba
 for (i in seq_along(batches)) {
   batch_indices <- batches[[i]]
   batch_dates <- dates_ecb_presconf[batch_indices]
-  batch_names <- names_ecb_presconf[batch_indices]
+  batch_ois_values <- ois_daily_df[batch_dates,-1] %>% 
+    split(seq_len(nrow(.))) %>% 
+    map(function(tbl_row) {
+      vec <- as.character(tbl_row[1, ])
+      names(vec) <- names(tbl_row)
+      paste(paste0(names(vec), ": ", vec), collapse = ", ")
+    })
+  
   batch_texts <- ecb_pressconf[batch_indices]
   
-  # Combine all press conferences in the batch
-  batch_input <- map2_chr(batch_texts, batch_dates, ~ {
-    paste0("Press Conference on ", .y, ":\n", .x, "\n\n")
-  }) %>% paste(collapse = "\n---\n")
+  
+  # Combine all press conferences in the batch with OIS values
+  batch_input <- pmap_chr(
+    list(batch_texts, batch_dates, batch_ois_values),
+    function(text, date, ois_values) {
+      paste0("Press Conference on ", date, "\n",
+             "OIS rates pre-conference: ", ois_values, "\n", 
+             "Text:",text, "\n\n")
+    }
+  ) %>% paste(collapse = "\n---\n")
+  
   
   # Inject into prompt
   full_prompt <- gsub("\\[date\\]", paste(batch_dates, collapse = ", "), prompt)
