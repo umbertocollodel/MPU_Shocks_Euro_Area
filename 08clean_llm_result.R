@@ -63,6 +63,9 @@ clean_df=results %>%
 
 writexl::write_xlsx(clean_df,
                     paste0("../intermediate_data/llm_assessment_",
+                           name_prompt_request,
+                           ,
+                           "_",
                            batch_size,
                            "batch_"
                            ,Sys.Date(),
