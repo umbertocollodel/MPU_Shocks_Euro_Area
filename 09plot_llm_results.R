@@ -2,7 +2,13 @@
 
 
 
-clean_df=read_xlsx("../intermediate_data/llm_assessment_3batch_2025-06-17.xlsx")
+clean_df=read_xlsx(paste0("../intermediate_data/llm_assessment_",
+                                 name_prompt_request,
+                                 "_",
+                                 batch_size,
+                                 "batch_"
+                                 ,Sys.Date(),
+                                 ".xlsx"))
 
 
 
@@ -54,9 +60,12 @@ std_df %>%
   theme(axis.text.x = element_text(angle = 270, hjust = 1))
 
 
-ggsave("../output/figures/naive_prompt_sd.png",
+ggsave(paste0("../output/figures/",
+       name_prompt_request,
+       "sd.png"),
        dpi = "retina",
        bg = "white")
+
 
 # Table: compute correlation matrix across sd tenors ----
 
@@ -123,11 +132,15 @@ ggplot(spread_df, aes(x = date, y = diff_10y_3m)) +
   )
 
 # Save
-ggsave("../output/figures/tenor_spread_sd_highlighted_beautiful.png", 
+ggsave(paste0(
+       "../output/figures/",
+       name_prompt_request,
+       "tenor_spread_sd.png"), 
        dpi = 320, 
        width = 10, 
        height = 6,
        bg = "white")
+
 
 
 
@@ -171,7 +184,9 @@ ggplot(direction_pct_df, aes(x = date, y = percentage, fill = direction)) +
 
 
 # Save the plot
-ggsave("../output/figures/direction_percentage_heatmap.png", 
+ggsave(paste0("../output/figures/",
+       name_prompt_request,
+       "direction_percentage_heatmap.png"), 
        dpi = 320, 
        width = 10,
        height = 8,
@@ -179,32 +194,6 @@ ggsave("../output/figures/direction_percentage_heatmap.png",
 
 
 
-
-
-# Figure: correlation between standard deviation and range rates
-
-
-std_df %>% 
-  pivot_longer(std_rate:range_rate,names_to = "type",values_to = "value") %>% 
-  mutate(type = ifelse(type == "std_rate","SD","Range")) %>% 
-  ggplot(aes(x = date, y = value, color = type)) +
-  geom_line(size=1) +
-  facet_wrap(~ tenor, nrow = 3, scales = "free_y") +
-  scale_size_manual(values = c("FALSE" = 2, "TRUE" = 4), guide = "none") +
-  scale_x_date(date_breaks = "9 months", date_labels = "%b %Y") +  # Adjust as needed
-  labs(
-    title = "Correlation between SD and Range of Rates by Tenor Over Time",
-    x = "Date",
-    y = "Standard Deviation of Rate",
-    color = "Measure"
-  ) +
-  theme_minimal(base_family = "Segoe UI") +
-  theme(axis.text.x = element_text(angle = 270, hjust = 1))
-
-
-ggsave("../output/figures/naive_prompt_correlation_sd_range.png",
-       dpi = "retina",
-       bg="white")
   
 
 # Correlation between market-based measure and in-vitro llm measure: ----
@@ -285,10 +274,18 @@ ggplot(joined_df, aes(x = date, y = error, color = id)) +
 
 
 
+ggsave(paste0("../output/figures/",
+              name_prompt_request,
+              "expected_value_error.png"), 
+       dpi = 320, 
+       width = 10,
+       height = 8,
+       bg="white")
 
 
 
 
+# Add rolling correlation plot and best forecaster error!!
 
 
 
