@@ -112,7 +112,6 @@ For each of the 20 traders, simulate their individual trading action in the inte
 For each tenor, the trader must:
    - Provide an expected rate direction: Up / Down / Unchanged
    - Provide a new expected swap rate (in percent, to two decimal places)
-   - Provide a one-sentence rationale for the trading decision
 
 Output:
 Provide a table with the following structure for each press conference, trader, and interest rate tenor:

@@ -22,7 +22,7 @@ pacman::p_load(
   tidyverse
 )
 
-setAPI(Sys.getenv("a"))
+setAPI("AIzaSyCuO5OO2jN5URX6q3FNlmzwWzLoiFgCPs0")
 
 # Create custom function to send request to Gemini API with higher timeout time: ----
 
@@ -88,9 +88,9 @@ new_gemini <- function(prompt, model = "2.0-flash", temperature = 1, maxOutputTo
 source("create_prompts.R")
 
 
-prompt_request=prompt_anchor_values
+prompt_request=prompt_microstructure
 
-name_prompt_request=deparse(substitute(prompt_anchor_values))
+name_prompt_request=deparse(substitute(prompt_microstructure))
 
 # Create a list of press conferences with dates and names: ----
 
