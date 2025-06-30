@@ -116,11 +116,11 @@ For each tenor, the trader must:
 Output:
 Provide a table with the following structure for each press conference, trader, and interest rate tenor:
 
-| Date       | Trader ID | Tenor   | Expected Direction | New Expected Rate (%) | Rationale (1 sentence)          |
-|------------|-----------|---------|--------------------|------------------------|--------------------------------|
-| YYYY-MM-DD | T001      | 3M      | Up                 | 3.15                   | [Trader's rationale]           |
-| YYYY-MM-DD | T001      | 2Y      | Down               | 2.85                   | [Trader's rationale]           |
-| ...        | ...       | ...     | ...                | ...                    | ...                            |
+| Date       | Trader ID | Tenor   | Expected Direction | New Expected Rate (%)  |
+|------------|-----------|---------|--------------------|------------------------|
+| YYYY-MM-DD | T001      | 3M      | Up                 | 3.15                   |
+| YYYY-MM-DD | T001      | 2Y      | Down               | 2.85                   |
+| ...        | ...       | ...     | ...                | ...                    |
 
 Guidelines:
 - At the beginning of each press conference text, we provide the value of OIS rates just before the conference. If not available, it is marked as NA.
