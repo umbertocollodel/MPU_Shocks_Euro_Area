@@ -1,0 +1,134 @@
+# Script to compare different prompt specifications
+library(RColorBrewer)
+
+
+# Prepare complete df: ---------
+
+
+name_prompts=c("anchor","microstructure","naive")
+
+
+prompts_df <- list.files("../intermediate_data/",full.names = T) %>%
+  str_subset("xlsx") %>% 
+  str_subset("3batch") %>% 
+  map(~ .x %>% read_xlsx()) %>% 
+  set_names(name_prompts) %>% 
+  bind_rows(.id = "prompt_name") %>% 
+  select(-reason)
+  
+
+
+
+# Figure: compare mistakes for E(x) across prompts and time: -----
+
+
+mean_llm_df <- prompts_df %>% 
+  group_by(date,tenor,prompt_name) %>% 
+  mutate(date = as.Date(date)) %>%
+  summarise(rate = mean(rate,na.rm=T))
+  
+
+
+actual_ois_df <- read_xlsx("../raw_data/ois_daily_data.xlsx",skip=1) %>%
+  select(1,2,4,6) %>% 
+  setNames(c("date","3M","2Y","10Y")) %>% 
+  mutate(date = as.Date(date)) %>% 
+  pivot_longer(`3M`:`10Y`,names_to = "tenor",values_to = "actual_rate")
+
+
+
+# Join and compute error
+joined_df <- merge(mean_llm_df, actual_ois_df,by=c("date","tenor")) %>%
+  as_tibble() %>% 
+  mutate(error = actual_rate - rate)
+
+# Plot error by tenor over time
+ggplot(joined_df, aes(x = date, y = error, color = prompt_name)) +
+  geom_line(size=1.2) +
+  geom_point(size=2,alpha=0.6) +
+  geom_hline(yintercept = 0) + 
+  facet_wrap(~ tenor, nrow=3) +
+  labs(title = "Error by Tenor Over Time",
+       x = "Date",
+       y = "Error (Actual - LLM Mean Rate)",
+       color = "Tenor") +
+  theme_minimal()
+
+
+
+# Figure: compare median error by prompt and tenor (overall)
+
+
+median_error_df <- joined_df %>% 
+  group_by(tenor,prompt_name) %>% 
+  summarise(median_error = mean(error,na.rm = T)) %>% 
+  arrange(median_error) %>%
+  mutate(prompt_name = fct_reorder(prompt_name, median_error, mean)) %>% 
+  mutate(tenor = factor(tenor,levels=c("3M","2Y","10Y")))
+  
+
+# Plot
+median_error_df %>% 
+ggplot(aes(x = tenor, y = median_error*100, fill = prompt_name)) +
+  geom_col(position="dodge",
+           width=0.5,
+           col="white") +
+  scale_fill_brewer(palette = "Set2") +
+  labs(title = "",
+       x = "",
+       y = "Median Error (Bps)",
+       fill = "Prompt Name") +
+  theme_minimal()
+
+
+# Best forecaster -----
+
+
+# Join forecasts with actuals
+joined_df_best <- merge(prompts_df %>% mutate(date=as.Date(date)),
+                   actual_ois_df,by=c("date","tenor")) %>%
+  as_tibble() %>% 
+  mutate(abs_error = abs(actual_rate - rate))
+
+# Select best forecast per date and tenor (by id)
+best_forecasts_df <- joined_df_best %>%
+  group_by(date, tenor) %>%
+  slice_min(abs_error, with_ties = FALSE) %>%
+  ungroup() %>% 
+  mutate(error = actual_rate - rate)
+
+# Plot 1: Error over time by tenor
+ggplot(best_forecasts_df, aes(x = date, y = error*100, color = prompt_name)) +
+  geom_line(size = 1.2) +
+  geom_point(size = 2, alpha = 0.6) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  facet_wrap(~ tenor, nrow = 3) +
+  labs(title = "Error by Tenor Over Time (Best ID at Each Date)",
+       x = "",
+       y = "Error (Actual - Forecast Rate)",
+       color = "Prompt Name") +
+  theme_minimal()
+
+
+median_error_df <- best_forecasts_df%>% 
+  group_by(tenor,prompt_name) %>% 
+  summarise(median_error = median(error,na.rm = T)) %>% 
+  arrange(median_error) %>%
+  mutate(prompt_name = fct_reorder(prompt_name, median_error, mean)) %>% 
+  mutate(tenor = factor(tenor,levels=c("3M","2Y","10Y")))
+
+
+# Plot
+median_error_df %>% 
+  ggplot(aes(x = tenor, y = median_error*100, fill = prompt_name)) +
+  geom_col(position="dodge",
+           width=0.5,
+           col="white") +
+  scale_fill_brewer(palette = "Set2") +
+  labs(title = "",
+       x = "",
+       y = "Median Error (Bps)",
+       fill = "Prompt Name") +
+  theme_minimal()
+
+
