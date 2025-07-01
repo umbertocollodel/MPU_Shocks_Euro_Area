@@ -22,7 +22,7 @@ pacman::p_load(
   tidyverse
 )
 
-setAPI("AIzaSyCuO5OO2jN5URX6q3FNlmzwWzLoiFgCPs0")
+setAPI("aS")
 
 # Create custom function to send request to Gemini API with higher timeout time: ----
 
