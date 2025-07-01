@@ -215,7 +215,7 @@ batches <- split(seq_along(ecb_pressconf), ceiling(seq_along(ecb_pressconf) / ba
 for (i in seq_along(batches)) {
   batch_indices <- batches[[i]]
   batch_dates <- dates_ecb_presconf[batch_indices]
-  batch_ois_values <- ois_daily_df[batch_dates,-1] %>% 
+  batch_ois_values <- ois_daily_df[as.character(batch_dates),-1] %>% 
     split(seq_len(nrow(.))) %>% 
     map(function(tbl_row) {
       vec <- as.character(tbl_row[1, ])
