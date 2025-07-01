@@ -54,6 +54,17 @@ ggplot(joined_df, aes(x = date, y = error, color = prompt_name)) +
        color = "Tenor") +
   theme_minimal()
 
+# Save error over time plot
+ggsave(
+  filename = "../output/figures/error_over_time_by_prompt.png",
+  plot = last_plot(),  # or assign your ggplot to a variable and use it here
+  dpi = 320,
+  width = 10,
+  height = 8,
+  bg = "white"
+)
+
+
 
 
 # Figure: compare median error by prompt and tenor (overall)
@@ -79,6 +90,19 @@ ggplot(aes(x = tenor, y = median_error*100, fill = prompt_name)) +
        y = "Median Error (Bps)",
        fill = "Prompt Name") +
   theme_minimal()
+
+
+
+
+# Save median error plot
+ggsave(
+  filename = "../output/figures/median_error_by_prompt.png",
+  plot = last_plot(), # or use your plot variable
+  dpi = 320,
+  width = 8,
+  height = 6,
+  bg = "white"
+)
 
 
 # Best forecaster -----
@@ -110,21 +134,22 @@ ggplot(best_forecasts_df, aes(x = date, y = error*100, color = prompt_name)) +
   theme_minimal()
 
 
-median_error_df <- best_forecasts_df%>% 
+mean_error_df <- best_forecasts_df%>% 
   group_by(tenor,prompt_name) %>% 
-  summarise(median_error = median(error,na.rm = T)) %>% 
-  arrange(median_error) %>%
-  mutate(prompt_name = fct_reorder(prompt_name, median_error, mean)) %>% 
+  summarise(mean_error = mean(error,na.rm = T)) %>% 
+  arrange(mean_error) %>%
+  mutate(prompt_name = fct_reorder(prompt_name, mean_error, mean)) %>% 
   mutate(tenor = factor(tenor,levels=c("3M","2Y","10Y")))
 
 
 # Plot
-median_error_df %>% 
-  ggplot(aes(x = tenor, y = median_error*100, fill = prompt_name)) +
+mean_error_df %>% 
+  ggplot(aes(x = tenor, y = mean_error*100, fill = prompt_name)) +
   geom_col(position="dodge",
            width=0.5,
            col="white") +
   scale_fill_brewer(palette = "Set2") +
+  ylim(-50,0) +
   labs(title = "",
        x = "",
        y = "Median Error (Bps)",
