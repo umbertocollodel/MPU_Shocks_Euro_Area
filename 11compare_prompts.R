@@ -176,6 +176,29 @@ mean_error_df %>%
        x = "",
        y = "Median Error (Bps)",
        fill = "Prompt Name") +
-  theme_minimal()
+  theme_minimal() +
+  theme_minimal(base_family = "Segoe UI") +
+  theme(plot.caption = element_text(hjust=0)) +
+  theme(axis.text.x = element_text(vjust = 0.5, hjust=0.5)) +
+  theme( axis.text = element_text( size = 14 ),
+         axis.text.x = element_text( size = 24),
+         axis.title = element_text( size = 20, face = "bold" ),
+         legend.text = element_text(size=18),
+         # The new stuff
+         strip.text = element_text(size = 24)) +
+  theme(legend.position = "bottom") +
+  theme(plot.caption = element_text(hjust = 0,size=26))
+
+
+# Save median error plot
+ggsave(
+  filename = "../output/figures/median_error_by_prompt_best.png",
+  plot = last_plot(), # or use your plot variable
+  dpi = 320,
+  width = 8,
+  height = 6,
+  bg = "white"
+)
+
 
 
