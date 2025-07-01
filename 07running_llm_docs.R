@@ -22,7 +22,7 @@ pacman::p_load(
   tidyverse
 )
 
-setAPI("a")
+setAPI("AIzaSyCuO5OO2jN5URX6q3FNlmzwWzLoiFgCPs0")
 
 # Create custom function to send request to Gemini API with higher timeout time: ----
 
@@ -88,9 +88,9 @@ new_gemini <- function(prompt, model = "2.0-flash", temperature = 1, maxOutputTo
 source("create_prompts.R")
 
 
-prompt_request=prompt_microstructure
+prompt_request=prompt_history_surprises_mean
 
-name_prompt_request=deparse(substitute(prompt_microstructure))
+name_prompt_request=deparse(substitute(prompt_history_surprises_mean))
 
 # Create a list of press conferences with dates and names: ----
 
@@ -111,11 +111,55 @@ ecb_pressconf=list.files("../intermediate_data/texts/") %>%
   map(~ .$text) %>% 
   set_names(names_ecb_presconf)
 
-# Retrieve OIS rates pre-conference: ----
+# Retrieve OIS rates pre and post-conference: ----
 
-ois_daily_df <- read_xlsx("../raw_data/ois_daily_data.xlsx",skip = 1) %>% 
-  select(1,2,4,6) %>% 
-  setNames(c("date","3M","2Y","10Y"))
+
+# Define the structure
+horizons <- c("3M", "2Y", "10Y")
+leads <- 1:3
+
+
+# Build the column order to match the narrative
+
+ordered_cols <- c("date", unlist(lapply(leads, function(l) {
+  unlist(lapply(horizons, function(h) {
+    c(paste0("before_", h, "_lead", l), paste0("after_", h, "_lead", l))
+  }))
+})))
+
+
+
+
+
+ois_daily_df <- read_xlsx("../raw_data/ois_daily_data.xlsx", skip = 1) %>%
+  select(1, 2, 4, 6) %>%
+  setNames(c("date", "3M", "2Y", "10Y")) %>%
+  mutate(date = as.character(date)) %>%
+  mutate(
+    after_3M = lag(`3M`),
+    after_2Y = lag(`2Y`),
+    after_10Y = lag(`10Y`),
+    next_day = lag(date)
+  ) %>%
+  filter(date %in% dates_ecb_presconf) %>%
+  select(date, `3M`, `2Y`, `10Y`, after_3M, after_2Y, after_10Y) %>%
+  rename_with(~ paste0("before_", .), c(`3M`, `2Y`, `10Y`)) %>%
+  {
+    df <- .
+    lead_df <- map_dfc(1:3, function(lead_n) {
+      df %>%
+        select(starts_with("before_"), starts_with("after_")) %>%
+        rename_with(~ paste0(.x, "_lead", lead_n)) %>%
+        mutate(across(everything(), ~ lead(.x, lead_n)))
+    })
+    bind_cols(df, lead_df)
+  } %>% 
+  select(date,contains("lead")) %>% 
+  select(all_of(ordered_cols))
+
+
+
+
 
 
 
@@ -176,7 +220,7 @@ for (i in seq_along(batches)) {
     map(function(tbl_row) {
       vec <- as.character(tbl_row[1, ])
       names(vec) <- names(tbl_row)
-      paste(paste0(names(vec), ": ", vec), collapse = ", ")
+      paste(paste0(vec), collapse = ", ")
     })
   
   batch_texts <- ecb_pressconf[batch_indices]
@@ -187,7 +231,14 @@ for (i in seq_along(batches)) {
     list(batch_texts, batch_dates, batch_ois_values),
     function(text, date, ois_values) {
       paste0("Press Conference on ", date, "\n",
-             "OIS rates pre-conference: ", ois_values, "\n", 
+             "Mean OIS rates surrounding the past 3 ECB press conferences (ordered from most recent to oldest):\n",
+             "1. 3-month rate before the conference\n",
+             "2. 3-month rate after the conference\n",
+             "3. 2-year rate before the conference\n",
+             "4. 2-year rate after the conference\n",
+             "5. 10-year rate before the conference\n",
+             "6. 10-year rate after the conference\n",
+             "Values (in order): ", ois_values, "\n\n",
              "Text:",text, "\n\n")
     }
   ) %>% paste(collapse = "\n---\n")
