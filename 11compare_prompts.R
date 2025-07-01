@@ -51,8 +51,20 @@ ggplot(joined_df, aes(x = date, y = error, color = prompt_name)) +
   labs(title = "Error by Tenor Over Time",
        x = "Date",
        y = "Error (Actual - LLM Mean Rate)",
-       color = "Tenor") +
-  theme_minimal()
+       color = "") +
+  theme_minimal(base_family = "Segoe UI") +
+  theme(plot.caption = element_text(hjust=0)) +
+  theme(axis.text.x = element_text(vjust = 0.5, hjust=0.5)) +
+  theme( axis.text = element_text( size = 14 ),
+         axis.text.x = element_text( size = 24),
+         axis.title = element_text( size = 20, face = "bold" ),
+         legend.text = element_text(size=18),
+         # The new stuff
+         strip.text = element_text(size = 24)) +
+  theme(legend.position = "bottom") +
+  theme(plot.caption = element_text(hjust = 0,size=26)) +
+  theme(axis.text.x = element_text(angle = 270, hjust = 1)) 
+
 
 # Save error over time plot
 ggsave(
@@ -88,8 +100,18 @@ ggplot(aes(x = tenor, y = median_error*100, fill = prompt_name)) +
   labs(title = "",
        x = "",
        y = "Median Error (Bps)",
-       fill = "Prompt Name") +
-  theme_minimal()
+       fill = "") +
+  theme_minimal(base_family = "Segoe UI") +
+  theme(plot.caption = element_text(hjust=0)) +
+  theme(axis.text.x = element_text(vjust = 0.5, hjust=0.5)) +
+  theme( axis.text = element_text( size = 14 ),
+         axis.text.x = element_text( size = 24),
+         axis.title = element_text( size = 20, face = "bold" ),
+         legend.text = element_text(size=18),
+         # The new stuff
+         strip.text = element_text(size = 24)) +
+  theme(legend.position = "bottom") +
+  theme(plot.caption = element_text(hjust = 0,size=26))
 
 
 
