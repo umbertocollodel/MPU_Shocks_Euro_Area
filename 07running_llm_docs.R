@@ -22,7 +22,10 @@ pacman::p_load(
   tidyverse
 )
 
-setAPI("a")
+# Set API key for Gemini: ----
+# Ensure you have set the environment variable GEMINI_API_KEY with your API key
+setAPI(Sys.getenv("GEMINI_API_KEY"))
+
 
 # Create custom function to send request to Gemini API with higher timeout time: ----
 
