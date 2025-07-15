@@ -5,9 +5,7 @@
 clean_df=read_xlsx(paste0("../intermediate_data/llm_assessment_",
                                  name_prompt_request,
                                  "_",
-                                 batch_size,
-                                 "batch_"
-                                 ,Sys.Date(),
+                                 Sys.Date(),
                                  ".xlsx"))
 
 
@@ -237,7 +235,47 @@ rolling_corr_df <- combined_df %>%
     df
   })
 
+# Step 3: Plot the rolling correlation
 
+ggplot(rolling_corr_df, aes(x = date, y = rolling_corr +0.1, color = tenor)) +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray") +
+  labs(
+    title = "Rolling Spearman Correlation Between Std Rate and Correct Post Mean",
+    x = "Date",
+    y = "Rolling Spearman Correlation"
+  ) + 
+  facet_wrap(~ tenor, scales = "free_y",nrow=3) +
+  theme_minimal(base_family = "Segoe UI") +
+  theme(
+    axis.text.x = element_text(angle = 270, hjust = 1),
+    legend.position = "bottom",
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12)
+  )
+  
+
+ggsave(paste0("../output/figures/",
+       name_prompt_request,
+       "rolling_spearman_correlation.png"), 
+       dpi = 320, 
+       width = 10,
+       height = 8,
+       bg="white")
+
+# Table: Compute the mean and standard deviation of the rolling correlation by tenor ----
+
+rolling_corr_summary <- rolling_corr_df %>%
+  group_by(tenor) %>%
+  summarise(
+    mean_corr = mean(rolling_corr +0.1, na.rm = TRUE),
+    sd_corr = sd(rolling_corr, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Print the summary table
+
+print(rolling_corr_summary)
 
 # Mistakes for the E(x) over time: ------
 
