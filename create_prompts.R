@@ -16,7 +16,7 @@ Task:
 You are given a certain number of distinct ECB press conferences.
 For each of the 40 traders, simulate their individual trading action in the interest rate swap market across three tenors (3 months, 2 years, 10 years).
 For each tenor, the trader must:
-   - Provide an expected rate direction: Up / Down / Unchanged
+   - Provide an expected rate direction: Up / Down / Unchanged (relative to the implied pre-conference rate)
    - Provide a new expected swap rate (in percent, to two decimal places)
 
 Output:
