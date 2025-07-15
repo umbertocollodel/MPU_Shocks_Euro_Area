@@ -14,20 +14,19 @@ Each trader has the following attributes:
 
 Task:
 You are given a certain number of distinct ECB press conferences.
-For each of the 20 traders, simulate their individual trading action in the interest rate swap market across three tenors (3 months, 2 years, 10 years).
+For each of the 40 traders, simulate their individual trading action in the interest rate swap market across three tenors (3 months, 2 years, 10 years).
 For each tenor, the trader must:
    - Provide an expected rate direction: Up / Down / Unchanged
    - Provide a new expected swap rate (in percent, to two decimal places)
-   - Provide a one-sentence rationale for the trading decision
 
 Output:
 Provide a table with the following structure for each press conference, trader, and interest rate tenor:
 
-| Date       | Trader ID | Tenor   | Expected Direction | New Expected Rate (%) | Rationale (1 sentence)          |
-|------------|-----------|---------|--------------------|------------------------|--------------------------------|
-| YYYY-MM-DD | T001      | 3M      | Up                 | 3.15                   | [Trader's rationale]           |
-| YYYY-MM-DD | T001      | 2Y      | Down               | 2.85                   | [Trader's rationale]           |
-| ...        | ...       | ...     | ...                | ...                    | ...                            |
+| Date       | Trader ID | Tenor   | Expected Direction | New Expected Rate (%)  |
+|------------|-----------|---------|--------------------|------------------------|
+| YYYY-MM-DD | T001      | 3M      | Up                 | 3.15                   |
+| YYYY-MM-DD | T001      | 2Y      | Down               | 2.85                   |
+| ...        | ...       | ...     | ...                | ...                    | 
 
 Guidelines:
 - Use only the information available as of [date].
@@ -91,7 +90,7 @@ Each trader has the following attributes:
 - Interpretation Style (1 per trader): e.g., Fundamentalist, Sentiment Reader, Quantitative, Skeptic, Narrative-Driven.
 
 Market Structure:
-The composition of the euro OIS market evolves over time. Based on the date of the ECB press conference, use the following market composition to assign institutional roles to the 20 traders:
+The composition of the euro OIS market evolves over time. Based on the date of the ECB press conference, use the following market composition to assign institutional roles to the 40 traders:
 
 - 1998–2002: Banks 80%, Hedge Funds 5%, Pension Funds 5%, Insurance Firms 5%, Central Banks 4%, Others 1%
 - 2003–2007: Banks 70%, Hedge Funds 10%, Pension Funds 7%, Insurance Firms 7%, Central Banks 5%, Others 1%
@@ -108,7 +107,7 @@ Assign each trader one of these institutional roles based on the date of the pre
 
 Task:
 You are given a certain number of distinct ECB press conferences.
-For each of the 20 traders, simulate their individual trading action in the interest rate swap market across three tenors (3 months, 2 years, 10 years).
+For each of the 40 traders, simulate their individual trading action in the interest rate swap market across three tenors (3 months, 2 years, 10 years).
 For each tenor, the trader must:
    - Provide an expected rate direction: Up / Down / Unchanged
    - Provide a new expected swap rate (in percent, to two decimal places)
