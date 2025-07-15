@@ -2,20 +2,20 @@
 
 # Names columns:
 
-names_col=c("date","id","tenor","direction","rate","reason")
+names_col=c("date","id","tenor","direction","rate")
 
 # Re-create a name vector in case messed up some conferences in API request:
 
 names_correct=list.files(path = "../intermediate_data/gemini_result/",
            full.names = T) %>% 
-  str_subset("\\d") %>% 
+  str_subset("\\d{4}-\\d{2}-\\d{2}") %>% 
   str_remove("\\.txt") %>% 
   str_extract("\\d{4}-\\d{2}-\\d{2}")
 
 # From character string to tibble:
 
 results <- list.files(path = "../intermediate_data/gemini_result/",
-                      pattern = "batch",
+                      pattern = "\\d{4}-\\d{2}-\\d{2}",
                     full.names = T) %>% 
   map(~ readRDS(.x)) %>% 
   map(~ tryCatch(.x %>% 
