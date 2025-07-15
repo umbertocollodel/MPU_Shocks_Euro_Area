@@ -114,6 +114,8 @@ ecb_pressconf=list.files("../intermediate_data/texts/") %>%
 # This version is designed to be called by furrr::future_map
 process_single_conference <- function(conf_date, conf_text, prompt_template, log_file_path, seed = 120, max_attempts = 5) {
 
+cat(crayon::yellow(paste0("🔄 Starting processing for ", conf_date, "\n")))
+
   # Construct the full prompt for this single conference
   full_prompt_for_conf <- gsub("\\[date\\]", conf_date, prompt_template) # Replace [date] with current date
   full_prompt_for_conf <- paste0(full_prompt_for_conf,
