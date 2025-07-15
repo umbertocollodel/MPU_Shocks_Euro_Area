@@ -1,8 +1,6 @@
 # Load necessary libraries and set parameters: -----
 
-setwd("~/../Desktop/Projects/Uncertainty_surprises/code/")
-
-# Install pacman if not already installed
+# Ensure pacman is loaded
 if (!require("pacman")) install.packages("pacman")
 
 # Load and install all required packages
@@ -19,25 +17,23 @@ pacman::p_load(
   scales,
   showtext,
   readxl,
-  tidyverse
+  tidyverse,
+  future, # New: for parallel processing setup
+  furrr   # New: for parallel mapping
 )
 
 # Set API key for Gemini: ----
 # Ensure you have set the environment variable GEMINI_API_KEY with your API key
 setAPI(Sys.getenv("GEMINI_API_KEY"))
-
-
 # Create custom function to send request to Gemini API with higher timeout time: ----
 
 new_gemini <- function(prompt, model = "2.0-flash", temperature = 1, maxOutputTokens = 1000000,
                        topK = 40, topP = 0.95, seed = 1234) {
-  
+
   model_query <- paste0("gemini-", model, ":generateContent")
   url <- paste0("https://generativelanguage.googleapis.com/v1beta/models/", model_query)
   api_key <- Sys.getenv("GEMINI_API_KEY")
-  
-  sb <- cli_status("Gemini is answering...")
-  
+
   # Create generation config
   generation_config <- list(
     temperature = temperature,
@@ -46,12 +42,12 @@ new_gemini <- function(prompt, model = "2.0-flash", temperature = 1, maxOutputTo
     topK = topK,
     seed = seed
   )
-  
-  # Add responseModalities only for image generation model
+
+  # Add responseModalities only for image generation model (not relevant for this task but good to keep)
   if (model == "2.0-flash-exp-image-generation") {
     generation_config$responseModalities <- list("Text", "Image")
   }
-  
+
   # Create request body as a separate list
   request_body <- list(
     contents = list(
@@ -61,155 +57,132 @@ new_gemini <- function(prompt, model = "2.0-flash", temperature = 1, maxOutputTo
     ),
     generationConfig = generation_config
   )
-  
+
   req <- request(url) |>
     req_url_query(key = api_key) |>
     req_headers("Content-Type" = "application/json") |>
     req_body_json(request_body) |>
     req_timeout(120)  # Increase the timeout here (in seconds)
-  
+
   resp <- req_perform(req)
-  
+
   # Check the status code of the response
   if (resp$status_code != 200) {
-    cli_status_clear(id = sb)
-    cli_alert_danger(paste0("Error in generate request: Status code ", resp$status_code))
-    return(NULL)
+    # Using stop() will trigger the tryCatch in the calling function
+    stop(paste0("Error in generate request: Status code ", resp$status_code, " - ", resp_body_string(resp)))
   }
-  
-  cli_status_clear(id = sb)
-  
+
   candidates <- resp_body_json(resp)$candidates
   outputs <- unlist(lapply(candidates, function(candidate) candidate$content$parts))
   return(outputs)
 }
 
 
-
 # Retrieve prompts and set prompt parameter: -----
 
-source("create_prompts.R")
+source("create_prompts.R") # Ensure this file exists and defines prompt_naive
 
 
-prompt_request=prompt_microstructure
+prompt_request=prompt_naive
 
-name_prompt_request=deparse(substitute(prompt_microstructure))
+name_prompt_request=deparse(substitute(prompt_history_surprises_mean))
 
 # Create a list of press conferences with dates and names: ----
 
-dates_ecb_presconf=list.files("../intermediate_data/texts/") %>% 
-  str_subset("\\d") %>% 
-  str_remove("\\.txt") %>% 
-  str_extract("\\d{4}-\\d{2}-\\d{2}")
+dates_ecb_presconf=list.files("../intermediate_data/texts/") %>%
+  str_subset("\\d") %>%
+  str_remove("\\.txt") %>%
+  str_extract("\\d{4}-\\d{2}-\\d{2}") %>%
+  sort() # Ensure chronological order for OIS lookups
 
-names_ecb_presconf=list.files("../intermediate_data/texts/") %>% 
-  str_subset("\\d") %>% 
-  str_remove("\\.txt")
-
-
-ecb_pressconf=list.files("../intermediate_data/texts/") %>% 
-  str_subset("\\d") %>% 
-  paste0("../intermediate_data/texts/",.) %>% 
-  map(~ readtext(.x)) %>% 
-  map(~ .$text) %>% 
-  set_names(names_ecb_presconf)
-
-# Retrieve OIS rates pre-conference: ----
-
-ois_daily_df <- read_xlsx("../raw_data/ois_daily_data.xlsx",skip = 1) %>% 
-  select(1,2,4,6) %>% 
-  setNames(c("date","3M","2Y","10Y"))
+names_ecb_presconf=list.files("../intermediate_data/texts/") %>%
+  str_subset("\\d") %>%
+  str_remove("\\.txt") %>%
+  sort() # Match sorted dates
 
 
+ecb_pressconf=list.files("../intermediate_data/texts/") %>%
+  str_subset("\\d") %>%
+  paste0("../intermediate_data/texts/",.) %>%
+  map(~ readtext(.x)) %>%
+  map(~ .$text) %>%
+  set_names(names_ecb_presconf) %>%
+  .[names_ecb_presconf] # Ensure order matches sorted names_ecb_presconf
 
-# Run LLM remotely: ----
+
+# Custom function to process a single conference -----
+# This version is designed to be called by furrr::future_map
+process_single_conference <- function(conf_date, conf_text, prompt_template, log_file_path, seed = 120, max_attempts = 5) {
+
+  # Construct the full prompt for this single conference
+  full_prompt_for_conf <- gsub("\\[date\\]", conf_date, prompt_template) # Replace [date] with current date
+  full_prompt_for_conf <- paste0(full_prompt_for_conf,
+                                 "Press Conference on ", conf_date, "\n",
+                                 "Text:", conf_text, "\n\n")
+
+  for (attempt in 1:max_attempts) {
+    Sys.sleep(5 * attempt) # Exponential backoff
+
+    result <- tryCatch({
+      res <- new_gemini(full_prompt_for_conf, seed = seed, temperature = 1)
+      saveRDS(res, file = paste0("../intermediate_data/gemini_result/", conf_date, ".rds"))
+      cat(crayon::green(paste0("✅ Press conference on ", conf_date, " processed and saved.\n")))
+      return(TRUE)
+    }, error = function(e) {
+      cat(crayon::red(paste0("❌ Error processing press conference on ", conf_date, ": ", e$message, "\n")))
+      write(paste0(conf_date, ": ", e$message), file = log_file_path, append = TRUE)
+      return(FALSE)
+    })
+
+    if (result) break # Exit loop if successful
+  }
+
+  if (!result) {
+    cat(crayon::red(paste0("❌ All attempts failed for ", conf_date, "\n")))
+  }
+  return(result) # Return success/failure status
+}
+
+
+# Run LLM remotely in parallel: ----
 
 # Initialize time and log
-
 log_file <- "failed_requests.log"
 start_time <- Sys.time()
 
 # Clear previous log
-
 if (file.exists(log_file)) file.remove(log_file)
 
-# Custom function to apply gemini prompt and save resulting rds file
+# Set up a parallel plan (e.g., using all available cores minus one)
+# Adjust 'workers' based on your system's capabilities and API rate limits.
+# Be mindful of potential API rate limits; too many concurrent requests might lead to errors.
+plan(multisession, workers = 4) # Adjust the number of workers as needed
 
 
-make_request <- function(text, date, seed = 120, max_attempts = 5) {
-  
-  for (attempt in 1:max_attempts) {
-    
-    Sys.sleep(5 * attempt) # Exponential backoff
-    
-    result <- tryCatch({
-      res <- new_gemini(text, seed = seed, temperature = 1)
-      saveRDS(res, file = paste0("../intermediate_data/gemini_result/", date, ".rds"))
-      cat(crayon::green(paste0("✅ Press conference on ", date, " processed and saved.\n")))
-      return(TRUE)
-    }, error = function(e) {
-      cat(crayon::red(paste0("❌ Error processing press conference on ", date, "\n")))
-      write(paste0(date, ": ", e$message), file = log_file, append = TRUE)
-      return(FALSE)
-    })
-    
-    if (result) break# Exit loop if successful
-  }
-  
-  if (!result) {
-    cat(crayon::red(paste0("❌ All attempts failed for ", date, "\n")))
-  }
-}
 
+# Prepare arguments for future_map: a list where each element corresponds to a single conference
+# We'll map over the dates_ecb_presconf, and pass the corresponding text
+cat(crayon::blue("Starting parallel processing of individual conferences...\n"))
 
-# Run the requests
+results_parallel <- future_map2(
+  dates_ecb_presconf, # First argument: conference dates
+  ecb_pressconf,       # Second argument: conference texts (names match dates)
+  ~ process_single_conference(
+    conf_date = .x,
+    conf_text = .y,
+    prompt_template = prompt_request,
+    log_file_path = log_file,
+    seed = 120 # You can make this dynamic if needed
+  ),
+  .options = furrr_options(seed = TRUE) # Ensure reproducibility of random seeds
+)
 
-# Define batch size
-batch_size <- 3
-
-# Split into batches
-batches <- split(seq_along(ecb_pressconf), ceiling(seq_along(ecb_pressconf) / batch_size))
-
-# Loop over batches
-for (i in seq_along(batches)) {
-  batch_indices <- batches[[i]]
-  batch_dates <- dates_ecb_presconf[batch_indices]
-  batch_ois_values <- ois_daily_df[batch_dates,-1] %>% 
-    split(seq_len(nrow(.))) %>% 
-    map(function(tbl_row) {
-      vec <- as.character(tbl_row[1, ])
-      names(vec) <- names(tbl_row)
-      paste(paste0(names(vec), ": ", vec), collapse = ", ")
-    })
-  
-  batch_texts <- ecb_pressconf[batch_indices]
-  
-  
-  # Combine all press conferences in the batch with OIS values
-  batch_input <- pmap_chr(
-    list(batch_texts, batch_dates, batch_ois_values),
-    function(text, date, ois_values) {
-      paste0("Press Conference on ", date, "\n",
-             "OIS rates pre-conference: ", ois_values, "\n", 
-             "Text:",text, "\n\n")
-    }
-  ) %>% paste(collapse = "\n---\n")
-  
-  
-  # Inject into prompt
-  full_prompt <- gsub("\\[date\\]", paste(batch_dates, collapse = ", "), prompt_request)
-  full_prompt <- paste0(full_prompt, batch_input)
-  
-  # Save with batch ID
-  batch_id <- paste0("batch_", i)
-  
-  make_request(text = full_prompt, date = batch_id)
-}
-
-
-# Print metrics: 
-
+# Print metrics:
 end_time <- Sys.time()
 total_time <- end_time - start_time
 
+cat(crayon::blue("Parallel processing complete.\n"))
 cat("Total time taken:", total_time, "seconds\n")
+
+# Don't forget to close the parallel workers when done
+plan(sequential)

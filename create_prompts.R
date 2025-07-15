@@ -13,10 +13,10 @@ Each trader has the following attributes:
 - Interpretation Style (1 per trader): e.g., Fundamentalist, Sentiment Reader, Quantitative, Skeptic, Narrative-Driven.
 
 Task:
-You are given a certain number of distinct ECB press conferences.
+You are given the text of a single ECB press conference.
 For each of the 40 traders, simulate their individual trading action in the interest rate swap market across three tenors (3 months, 2 years, 10 years).
 For each tenor, the trader must:
-   - Provide an expected rate direction: Up / Down / Unchanged (relative to the implied pre-conference rate)
+   - Provide an expected rate direction: Up / Down / Unchanged (relative to the pre-conference rate)
    - Provide a new expected swap rate (in percent, to two decimal places)
 
 Output:
@@ -33,7 +33,6 @@ Guidelines:
 - Do not aggregate or summarize responses.
 - Reflect diversity in interpretation, risk tolerance, and horizon. Rationale must be unique for each trader and can vary across tenors.
 - Output only a markdown table with the specified columns, no additional text. Do not use JSON or any other data serialization format.
-- If multiple press conferences are included, clearly distinguish between them using the 'Date' field.
 ")
 
 
