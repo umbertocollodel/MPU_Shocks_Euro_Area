@@ -2,7 +2,7 @@
 
 prompt_naive <- c("
 Context:
-You are simulating the Euro area interest rate swap market, composed of 20 individual traders.
+You are simulating the Euro area interest rate swap market, composed of 40 individual traders.
 These traders interpret the ECB Governing Council press conference, which communicates monetary policy decisions, economic assessments, and includes a Q&A session with journalists.
 Each trader then makes a trading decision to maximize profit based on their interpretation of the conference and their unique characteristics.
 
