@@ -85,7 +85,7 @@ source("create_prompts.R") # Ensure this file exists and defines prompt_naive
 
 prompt_request=prompt_naive
 
-name_prompt_request=deparse(substitute(prompt_history_surprises_mean))
+name_prompt_request=deparse(substitute(prompt_naive)) # Get the name of the prompt variable
 
 # Create a list of press conferences with dates and names: ----
 
@@ -156,7 +156,7 @@ if (file.exists(log_file)) file.remove(log_file)
 # Set up a parallel plan (e.g., using all available cores minus one)
 # Adjust 'workers' based on your system's capabilities and API rate limits.
 # Be mindful of potential API rate limits; too many concurrent requests might lead to errors.
-plan(multisession, workers = 4) # Adjust the number of workers as needed
+plan(multisession, workers = 3) # Adjust the number of workers as needed
 
 
 
