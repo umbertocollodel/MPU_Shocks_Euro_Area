@@ -25,9 +25,9 @@ Provide a table with the following structure for each press conference, trader, 
 
 | Date       | Trader ID | Tenor   | Expected Direction | New Expected Rate (%)  | Confidence (%) |
 |------------|-----------|---------|--------------------|------------------------|--------------- |                  
-| YYYY-MM-DD | T001      | 3M      | Up                 | 3.15                   |                |
-| YYYY-MM-DD | T001      | 2Y      | Down               | 2.85                   |                |
-| ...        | ...       | ...     | ...                | ...                    |                |
+| YYYY-MM-DD | T001      | 3M      | Up                 | 3.15                   |      65        |
+| YYYY-MM-DD | T001      | 2Y      | Down               | 2.85                   |      80        |
+| ...        | ...       | ...     | ...                | ...                    |      ...       |
 
 Guidelines:
 - Use only the information available as of [date].
