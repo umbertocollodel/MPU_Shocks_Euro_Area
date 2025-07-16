@@ -158,7 +158,7 @@ if (file.exists(log_file)) file.remove(log_file)
 # Set up a parallel plan (e.g., using all available cores minus one)
 # Adjust 'workers' based on your system's capabilities and API rate limits.
 # Be mindful of potential API rate limits; too many concurrent requests might lead to errors.
-plan(multisession, workers = 3) # Adjust the number of workers as needed
+plan(multisession, workers = 5) # Adjust the number of workers as needed
 
 
 
