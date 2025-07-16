@@ -2,11 +2,11 @@
 
 # Names columns:
 
-names_col=c("date","id","tenor","direction","rate")
+names_col=c("date","id","tenor","direction","rate","confidence")
 
 # Re-create a name vector in case messed up some conferences in API request:
 
-names_correct=list.files(path = "../intermediate_data/gemini_result/",
+names_correct=list.files(path = "../intermediate_data/gemini_result/prompt_naive/",
            full.names = T) %>% 
   str_subset("\\d{4}-\\d{2}-\\d{2}") %>% 
   str_remove("\\.txt") %>% 
@@ -14,7 +14,7 @@ names_correct=list.files(path = "../intermediate_data/gemini_result/",
 
 # From character string to tibble:
 
-results <- list.files(path = "../intermediate_data/gemini_result/",
+results <- list.files(path = "../intermediate_data/gemini_result/prompt_naive/",
                       pattern = "\\d{4}-\\d{2}-\\d{2}",
                     full.names = T) %>% 
   map(~ readRDS(.x)) %>% 
@@ -36,6 +36,7 @@ clean_df=results %>%
   map(~ .x %>% slice(-1)) %>% 
   map(~ .x %>% mutate(date=as.character(date))) %>%
   map(~ .x %>% mutate_at(vars(contains("rate")),as.numeric)) %>% 
+  map(~ .x %>% mutate_at(vars(contains("confidence")),as.numeric)) %>% 
   bind_rows() %>% 
   filter(tenor %in% c("3M","2Y","10Y"))
 
@@ -62,9 +63,8 @@ clean_df=results %>%
 # Export: 
 
 writexl::write_xlsx(clean_df,
-                    paste0("../intermediate_data/llm_assessment_",
-                           name_prompt_request,
-                           "_",
+                    paste0("../intermediate_data/aggregate_gemini_result/prompt_naive/",
+                           "2.5flash_",
                            Sys.Date(),
                            ".xlsx")
 )
