@@ -127,7 +127,7 @@ cat(crayon::yellow(paste0("🔄 Starting processing for ", conf_date, "\n")))
 
     result <- tryCatch({
       res <- new_gemini(full_prompt_for_conf, seed = seed, temperature = 1)
-      saveRDS(res, file = paste0("../intermediate_data/gemini_result/", conf_date, ".rds"))
+      saveRDS(res, file = paste0("../intermediate_data/gemini_result/", name_prompt_request ,"/",conf_date, ".rds"))
       cat(crayon::green(paste0("✅ Press conference on ", conf_date, " processed and saved.\n")))
       return(TRUE)
     }, error = function(e) {
