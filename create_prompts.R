@@ -18,7 +18,7 @@ For each of the 30 traders, simulate their individual trading action in the inte
 For each tenor, the trader must:
    - Provide an expected rate direction: Up / Down / Unchanged (relative to the pre-conference rate)
    - Provide a new expected swap rate (in percent, to two decimal places)
-   - Provide a confidence score (0–100%) reflecting how strongly the trader believes in his forecast.
+   - Provide a confidence score (0–100%) reflecting how strongly the trader believes in his forecast, based on their interpretation of the press conference and their own characteristics.
 
 Output:
 Provide a table with the following structure for each press conference, trader, and interest rate tenor:
