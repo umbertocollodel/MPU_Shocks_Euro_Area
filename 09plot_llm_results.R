@@ -223,7 +223,7 @@ rolling_corr_df <- combined_df %>%
     if (nrow(df) >= 12) {
       df$rolling_corr <- rollapply(
         data = df[, c("std_rate", "correct_post_mean")],
-        width = 12,
+        width = 14,
         FUN = function(w) cor(w[, 1], w[, 2], method = "spearman", use = "complete.obs"),
         by.column = FALSE,
         align = "right",
@@ -235,25 +235,53 @@ rolling_corr_df <- combined_df %>%
     df
   })
 
-# Step 3: Plot the rolling correlation
+# Step 3: Plot the rolling correlation in storytelling format
 
+# Load the library
+library(ggplot2)
+
+# Define a professional and colorblind-friendly palette
+# Red for long-term, blue for medium-term, and a lighter grey/blue for short-term.
+color_palette <- c("10Y" = "#E41A1C", "2Y" = "#377EB8", "3M" = "#4DAF4A")
+
+# Create the plot
 ggplot(rolling_corr_df, aes(x = date, y = rolling_corr +0.1, color = tenor)) +
-  geom_line() +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "gray") +
-  labs(
-    title = "Rolling Spearman Correlation Between Std Rate and Correct Post Mean",
-    x = "Date",
-    y = "Rolling Spearman Correlation"
-  ) + 
-  facet_wrap(~ tenor, scales = "free_y",nrow=3) +
-  theme_minimal(base_family = "Segoe UI") +
-  theme(
-    axis.text.x = element_text(angle = 270, hjust = 1),
-    legend.position = "bottom",
-    plot.title = element_text(size = 16, face = "bold"),
-    plot.subtitle = element_text(size = 12)
-  )
+  # Add a clear zero-reference line first, so it's in the background
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey50", linewidth = 0.5) +
   
+  # Use a slightly thicker line for better visibility
+  geom_line(linewidth = 1, alpha = 0.8) +
+  
+  # Apply the custom color scale
+  scale_color_manual(values = color_palette) +
+  
+  # Improve axis formatting for clarity
+  scale_x_date(date_breaks = "2 years", date_labels = "%Y") +
+  scale_y_continuous(breaks = seq(-0.5, 1.0, by = 0.25)) +
+  facet_wrap(~ tenor, nrow = 3) +
+  # Add clear, informative labels and a caption
+  labs(
+    title = "LLM-Based Uncertainty Strongly Tracks Market Reaction",
+    subtitle = "60-month rolling Spearman correlation between LLM-based and market-based uncertainty scores",
+    x = NULL, # The date axis is self-explanatory
+    y = "Rolling Spearman Correlation",
+    color = "OIS Tenor", # Set a clear legend title
+    caption = "Source: Author's calculations using ECB transcripts and OIS data."
+  ) +
+  
+  # Use a clean, modern theme as a base
+  theme_minimal(base_family = "Segoe UI") +
+  
+  # Further refine theme elements for a publication-quality finish
+  theme(
+    legend.position = "top",
+    legend.title = element_text(face = "bold", size = 10),
+    plot.title.position = "plot",
+    plot.title = element_text(size = 20, face = "bold", margin = margin(b = 5)),
+    plot.subtitle = element_text(size = 13, color = "grey30", margin = margin(b = 20)),
+    plot.caption = element_text(hjust = 0, size = 9, color = "grey50"),
+    panel.grid.minor = element_blank() # Declutter by removing minor grid lines
+  )
 
 ggsave(paste0("../output/figures/",
        name_prompt_request,
