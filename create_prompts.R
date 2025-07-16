@@ -2,7 +2,7 @@
 
 prompt_naive <- c("
 Context:
-You are simulating the Euro area interest rate swap market, composed of 40 individual traders.
+You are simulating the Euro area interest rate swap market, composed of 30 individual traders.
 These traders interpret the ECB Governing Council press conference, which communicates monetary policy decisions, economic assessments, and includes a Q&A session with journalists.
 Each trader then makes a trading decision to maximize profit based on their interpretation of the conference and their unique characteristics.
 
@@ -14,19 +14,20 @@ Each trader has the following attributes:
 
 Task:
 You are given the text of a single ECB press conference.
-For each of the 40 traders, simulate their individual trading action in the interest rate swap market across three tenors (3 months, 2 years, 10 years).
+For each of the 30 traders, simulate their individual trading action in the interest rate swap market across three tenors (3 months, 2 years, 10 years).
 For each tenor, the trader must:
    - Provide an expected rate direction: Up / Down / Unchanged (relative to the pre-conference rate)
    - Provide a new expected swap rate (in percent, to two decimal places)
+   - Provide a provide a confidence score (0–100%) reflecting how strongly the trader believes in his forecast.
 
 Output:
 Provide a table with the following structure for each press conference, trader, and interest rate tenor:
 
-| Date       | Trader ID | Tenor   | Expected Direction | New Expected Rate (%)  |
-|------------|-----------|---------|--------------------|------------------------|
-| YYYY-MM-DD | T001      | 3M      | Up                 | 3.15                   |
-| YYYY-MM-DD | T001      | 2Y      | Down               | 2.85                   |
-| ...        | ...       | ...     | ...                | ...                    | 
+| Date       | Trader ID | Tenor   | Expected Direction | New Expected Rate (%)  | Confidence (%) |
+|------------|-----------|---------|--------------------|------------------------|--------------- |                  
+| YYYY-MM-DD | T001      | 3M      | Up                 | 3.15                   |                |
+| YYYY-MM-DD | T001      | 2Y      | Down               | 2.85                   |                |
+| ...        | ...       | ...     | ...                | ...                    |                |
 
 Guidelines:
 - Use only the information available as of [date].
