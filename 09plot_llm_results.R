@@ -21,10 +21,14 @@ showtext_auto()
 
 # Assuming your cleaned data is in `clean_df`
 # Calculate standard deviation of rate by date and tenor
+
 std_df <- clean_df %>%
   group_by(date, tenor) %>%
-  summarise(std_rate = sd(rate),
-            range_rate = max(rate) - min(rate),.groups = "drop")
+  summarise(
+    std_rate = wtd.var(rate, weights = confidence) %>% sqrt(),
+    range_rate = max(rate) - min(rate),
+    .groups = "drop"
+  )
 
 # Calculate 95th percentile threshold for each tenor
 thresholds <- std_df %>%
@@ -37,25 +41,45 @@ std_df <- std_df %>%
   mutate(highlight = std_rate > p95) %>% 
   mutate(date =as.Date(date))
 
-std_df %>% 
-  group_by(tenor) %>% 
-  mutate(mean = mean(std_rate,na.rm=T)) %>% 
-  ungroup() %>% 
-  ggplot(aes(x = date, y = std_rate, color = tenor)) +
-  geom_line() +
-  geom_line(aes(y=mean),size=1.5,linetype="dashed") +
+
+# Define custom color palette
+color_palette <- c("10Y" = "#E41A1C", "2Y" = "#377EB8", "3M" = "#4DAF4A")
+
+# Prepare the data with group-wise mean
+std_df <- std_df %>%
+  group_by(tenor) %>%
+  mutate(mean = mean(std_rate, na.rm = TRUE)) %>%
+  ungroup()
+
+# Create the plot
+ggplot(std_df, aes(x = date, y = std_rate, color = tenor)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey70", linewidth = 0.4) +
+  geom_line(linewidth = 1, alpha = 0.85) +
+  geom_line(aes(y = mean), size = 1.2, linetype = "dashed", color = "black") +
   geom_point(aes(size = highlight), shape = 21, fill = "white", stroke = 1.2) +
   facet_wrap(~ tenor, nrow = 3, scales = "free_y") +
+  scale_color_manual(values = color_palette) +
   scale_size_manual(values = c("FALSE" = 2, "TRUE" = 4), guide = "none") +
-  scale_x_date(date_breaks = "9 months", date_labels = "%b %Y") +  # Adjust as needed
+  scale_x_date(date_breaks = "2 years", date_labels = "%Y") +
   labs(
     title = "Standard Deviation of Rates by Tenor Over Time",
-    x = "Date",
+    subtitle = "Weighted standard deviation of OIS rates by tenor, with highlighted events",
+    x = NULL,
     y = "Standard Deviation of Rate",
-    color = "Tenor"
+    color = "OIS Tenor",
+    caption = "Source: Author's calculations using OIS data."
   ) +
   theme_minimal(base_family = "Segoe UI") +
-  theme(axis.text.x = element_text(angle = 270, hjust = 1))
+  theme(
+    legend.position = "top",
+    legend.title = element_text(face = "bold", size = 10),
+    plot.title.position = "plot",
+    plot.title = element_text(size = 18, face = "bold", margin = margin(b = 5)),
+    plot.subtitle = element_text(size = 13, color = "grey30", margin = margin(b = 15)),
+    plot.caption = element_text(hjust = 0, size = 9, color = "grey50"),
+    axis.text.x = element_text(angle = 270, hjust = 1),
+    panel.grid.minor = element_blank()
+  )
 
 
 ggsave(paste0("../output/figures/",
@@ -308,8 +332,11 @@ print(rolling_corr_summary)
 # Mistakes for the E(x) over time: ------
 
 mean_llm_df <- clean_df %>% 
-  group_by(date,tenor) %>% 
-  mutate(date = as.Date(date))
+  group_by(date,tenor) %>%
+  filter(grepl("^\\d{4}-\\d{2}-\\d{2}$", date)) %>%  # Keep only valid YYYY-MM-DD format
+  mutate(date = as.Date(date)) |> 
+  summarise(rate = weighted.mean(rate, confidence, na.rm = TRUE), .groups = "drop")
+
 
 
 actual_ois_df <- read_xlsx("../raw_data/ois_daily_data.xlsx",skip=1) %>%
@@ -328,15 +355,43 @@ joined_df <- merge(mean_llm_df, actual_ois_df,by=c("date","tenor")) %>%
   mutate(error = actual_rate - rate)
 
 # Plot error by tenor over time
-ggplot(joined_df, aes(x = date, y = error, color = id)) +
-  geom_line() +
-  geom_hline(yintercept = 0) + 
+ggplot(joined_df, aes(x = date, y = error)) +
+  # Add a subtle zero-reference line
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey70") +
+  
+  # Plot the lines
+  geom_line(linewidth = 0.8, col = "#377EB8") +
   facet_wrap(~ tenor, nrow=3) +
-  labs(title = "Error by Tenor Over Time",
-       x = "Date",
-       y = "Error (Actual - LLM Mean Rate)",
-       color = "Tenor") +
-  theme_minimal()
+  
+  # Format axes for clarity
+  scale_x_date(date_breaks = "4 years", date_labels = "%Y") +
+  
+  # Add informative labels and a clear title
+  labs(
+    title = "LLM-Predicted Rates Closely Track Actual Market Outcomes",
+    subtitle = "Comparison of predicted mean OIS rates vs. actual rates post-ECB press conference",
+    x = NULL, # Date axis is self-explanatory
+    y = "OIS Rate (%)",
+    color = NULL, # Legend title is not needed with descriptive labels
+    caption = "Source: Author's calculations using ECB transcripts and OIS data."
+  ) +
+  
+  # Apply a clean theme as a base
+  theme_minimal(base_family = "Segoe UI") +
+  
+  # Refine theme elements for a publication-quality finish
+  theme(
+    legend.position = "top",
+    legend.text = element_text(size = 11),
+    plot.title.position = "plot",
+    plot.title = element_text(size = 20, face = "bold", margin = margin(b = 5)),
+    plot.subtitle = element_text(size = 13, color = "grey30", margin = margin(b = 20)),
+    plot.caption = element_text(hjust = 0, size = 9, color = "grey50"),
+    panel.grid.minor = element_blank(),
+    # Add a border around the facets to clearly separate them
+    panel.border = element_rect(colour = "grey80", fill = NA, linewidth = 0.5),
+    strip.text = element_text(face = "bold", size = 12) # Make facet titles (10Y, 2Y, 3M) stand out
+  )
 
 
 
@@ -351,7 +406,7 @@ ggsave(paste0("../output/figures/",
 
 
 
-# Add rolling correlation plot and best forecaster error!!
+
 
 
 
