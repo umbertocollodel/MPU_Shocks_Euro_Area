@@ -29,7 +29,7 @@ setAPI(Sys.getenv("GEMINI_API_KEY"))
 
 # Create custom function to send request to Gemini API with higher timeout time: ----
 
-new_gemini <- function(prompt, model = "2.0-flash", temperature = 1, maxOutputTokens = 1000000,
+new_gemini <- function(prompt, model = "2.5-flash", temperature = 1, maxOutputTokens = 1000000,
                        topK = 40, topP = 0.95, seed = 1234) {
 
   model_query <- paste0("gemini-", model, ":generateContent")
