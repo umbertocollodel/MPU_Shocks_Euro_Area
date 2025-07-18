@@ -172,7 +172,7 @@ if (file.exists(log_file)) file.remove(log_file)
 
 dir.create(paste0("../intermediate_data/gemini_result/", name_prompt_request), recursive = TRUE, showWarnings = FALSE)
 
-plan(multisession, workers = 5)
+plan(multisession, workers = 6) # Adjust number of workers based on your system
 
 cat(crayon::blue("Starting parallel processing of individual conferences...\n"))
 
