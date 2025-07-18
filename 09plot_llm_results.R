@@ -1,298 +1,362 @@
-# Read LLM cleaned results: -----
+#==============================================================================
+# SCRIPT: Analyze 'prompt_anchor_values' LLM Results
+#==============================================================================
+# This script processes LLM results from the 'prompt_anchor_values' analysis
 
+# --- Define Parameters ---
+# Set the name for this analysis run for consistent file naming
+name_prompt_request <- "prompt_history_surprises"
+# Set the batch size if it's a variable you use
+# batch_size <- "your_batch_size"
 
-
-clean_df=read_xlsx(paste0("../intermediate_data/llm_assessment_",
-                                 name_prompt_request,
-                                 "_",
-                                 batch_size,
-                                 "batch_"
-                                 ,Sys.Date(),
-                                 ".xlsx"))
-
-
-
-
-
-# Figure: standard deviation over time for ech tenor ------ 
-
-
-# Enable Segoe UI font
+# Enable Segoe UI font (ensure it's installed on your system)
 font_add("Segoe UI", regular = "C:/Windows/Fonts/segoeui.ttf")
 showtext_auto()
 
-# Assuming your cleaned data is in `clean_df`
-# Calculate standard deviation of rate by date and tenor
+
+#------------------------------------------------------------------------------
+## 2. LOAD AND PROCESS LLM ASSESSMENT DATA
+#------------------------------------------------------------------------------
+
+# --- Read LLM cleaned results ---
+# Note: Using a fixed name for now. Update the paste0 call if batch_size and Sys.Date() are needed.
+clean_df <- read_xlsx(paste0("../intermediate_data/llm_assessment_",
+ name_prompt_request, 
+ Sys.Date(),
+ ".xlsx"))
+
+
+#------------------------------------------------------------------------------
+## 3. PLOT 1: LLM RESPONSE UNCERTAINTY (STANDARD DEVIATION)
+#------------------------------------------------------------------------------
+
+# --- Calculate standard deviation and highlight extremes ---
 std_df <- clean_df %>%
   group_by(date, tenor) %>%
-  summarise(std_rate = sd(rate),
-            range_rate = max(rate) - min(rate),.groups = "drop")
+  summarise(std_rate = sd(rate, na.rm = TRUE), .groups = "drop") %>%
+  mutate(date = as.Date(date))
 
-# Calculate 95th percentile threshold for each tenor
+# Calculate 95th percentile threshold to highlight high uncertainty
 thresholds <- std_df %>%
   group_by(tenor) %>%
-  summarise(p95 = quantile(std_rate, 0.95,na.rm=T), .groups = "drop")
+  summarise(p95 = quantile(std_rate, 0.95, na.rm = TRUE), .groups = "drop")
 
-# Join thresholds back to std_df and flag high values
+# Join thresholds and create highlight flag
 std_df <- std_df %>%
   left_join(thresholds, by = "tenor") %>%
-  mutate(highlight = std_rate > p95) %>% 
-  mutate(date =as.Date(date))
+  mutate(highlight = std_rate > p95)
 
-std_df %>% 
-  group_by(tenor) %>% 
-  mutate(mean = mean(std_rate,na.rm=T)) %>% 
-  ungroup() %>% 
-  ggplot(aes(x = date, y = std_rate, color = tenor)) +
-  geom_line() +
-  geom_line(aes(y=mean),size=1.5,linetype="dashed") +
-  geom_point(aes(size = highlight), shape = 21, fill = "white", stroke = 1.2) +
+# --- Create the plot ---
+plot_std_dev <- ggplot(std_df, aes(x = date, y = std_rate)) +
+  geom_line(aes(color = tenor), linewidth = 0.8) +
+  geom_point(data = . %>% filter(highlight), aes(fill = tenor), shape = 21, size = 3, stroke = 1) +
   facet_wrap(~ tenor, nrow = 3, scales = "free_y") +
-  scale_size_manual(values = c("FALSE" = 2, "TRUE" = 4), guide = "none") +
-  scale_x_date(date_breaks = "9 months", date_labels = "%b %Y") +  # Adjust as needed
+  scale_color_manual(values = c("10Y" = "#d73027", "2Y" = "#4575b4", "3M" = "#91bfdb"), guide = "none") +
+  scale_fill_manual(values = c("10Y" = "#d73027", "2Y" = "#4575b4", "3M" = "#91bfdb"), guide = "none") +
+  scale_x_date(date_breaks = "2 years", date_labels = "%Y") +
   labs(
-    title = "Standard Deviation of Rates by Tenor Over Time",
-    x = "Date",
-    y = "Standard Deviation of Rate",
-    color = "Tenor"
+    title = "LLM Response Uncertainty Over Time",
+    subtitle = "Standard deviation of LLM rate predictions. Points highlight values above the 95th percentile.",
+    x = NULL,
+    y = "Standard Deviation of Predicted Rate"
   ) +
   theme_minimal(base_family = "Segoe UI") +
-  theme(axis.text.x = element_text(angle = 270, hjust = 1))
+  theme(
+    plot.title.position = "plot",
+    plot.title = element_text(size = 20, face = "bold", margin = margin(b = 5)),
+    plot.subtitle = element_text(size = 13, color = "grey30", margin = margin(b = 20)),
+    panel.grid.minor = element_blank(),
+    panel.border = element_rect(colour = "grey80", fill = NA),
+    strip.text = element_text(face = "bold", size = 12)
+  )
+
+print(plot_std_dev)
+
+# --- Save the plot ---
+ggsave(
+  filename = paste0("../output/figures/", name_prompt_request, "_sd.png"),
+  plot = plot_std_dev,
+  dpi = 320, width = 10, height = 8, bg = "white"
+)
 
 
-ggsave(paste0("../output/figures/",
-       name_prompt_request,
-       "sd.png"),
-       dpi = "retina",
-       bg = "white")
+#------------------------------------------------------------------------------
+## 4. PLOT 2: SPREAD IN LLM UNCERTAINTY (10Y vs 3M)
+#------------------------------------------------------------------------------
 
-
-# Table: compute correlation matrix across sd tenors ----
-
-cor_matrix <- std_df %>%
-  select(date, tenor, std_rate) %>%
-  pivot_wider(names_from = tenor, values_from = std_rate) %>%
-  select(-date) %>%
-  cor(use = "pairwise.complete.obs")
-
-print(cor_matrix)
-
-
-# Figure: difference between 10 years and 3months standard deviation: -----
-
-# Compute spread
+# --- Compute spread ---
 spread_df <- std_df %>%
   filter(tenor %in% c("10Y", "3M")) %>%
   select(date, tenor, std_rate) %>%
   pivot_wider(names_from = tenor, values_from = std_rate) %>%
-  mutate(diff_10y_3m = `10Y` - `3M`)
+  mutate(diff_10y_3m = `10Y` - `3M`) %>%
+  drop_na(diff_10y_3m)
 
-# Compute quantiles
+# --- Compute quantiles for highlighting ---
 quantiles <- quantile(spread_df$diff_10y_3m, probs = c(0.05, 0.95), na.rm = TRUE)
 
-# Add highlight category
+# --- Add highlight category ---
 spread_df <- spread_df %>%
   mutate(
     highlight = case_when(
-      diff_10y_3m > quantiles[2] ~ "Above 95th Percentile",
-      diff_10y_3m < quantiles[1] ~ "Below 5th Percentile",
+      diff_10y_3m > quantiles[2] ~ "High Spread",
+      diff_10y_3m < quantiles[1] ~ "Low Spread",
       TRUE ~ "Normal"
     )
   )
 
-# Define custom colors
-highlight_colors <- c(
-  "Above 95th Percentile" = "#D7263D",  # bold red
-  "Below 5th Percentile" = "#1B9AAA",   # deep blue
-  "Normal" = "#CCCCCC"                 # soft gray
-)
+# --- Define custom colors ---
+highlight_colors <- c("High Spread" = "#D7263D", "Low Spread" = "#1B9AAA", "Normal" = "grey80")
 
-# Plot
-ggplot(spread_df, aes(x = date, y = diff_10y_3m)) +
-  geom_area(fill = "#F4F4F4", alpha = 0.5) +
-  geom_line(color = "#333333", size = 0.8) +
-  geom_point(aes(color = highlight), size = 4, alpha = 0.8) +
-  geom_hline(yintercept = quantiles, linetype = "dotted", color = "#999999") +
+# --- Create the plot ---
+plot_spread <- ggplot(spread_df, aes(x = date, y = diff_10y_3m)) +
+  geom_area(fill = "grey95", alpha = 0.8) +
+  geom_hline(yintercept = 0, color = "grey50") +
+  geom_hline(yintercept = quantiles, linetype = "dotted", color = "grey50") +
+  geom_line(color = "grey30", linewidth = 0.8) +
+  geom_point(aes(color = highlight), size = 3) +
   scale_color_manual(values = highlight_colors) +
+  scale_x_date(date_breaks = "2 years", date_labels = "%Y") +
   labs(
-    title = "Volatility Spread Between 10Y and 3M Tenors",
-    subtitle = "Standard Deviation Difference with Highlighted Extremes",
-    x = "Date",
-    y = "Std Dev Spread (10Y - 3M)",
-    color = ""
+    title = "Spread in LLM Uncertainty Between 10Y and 3M Tenors",
+    subtitle = "Difference in standard deviation (10Y - 3M). Points highlight values outside the 5th-95th percentile range.",
+    x = NULL, y = "Uncertainty Spread (10Y - 3M)", color = ""
   ) +
   theme_minimal(base_family = "Segoe UI") +
-  scale_x_date(date_breaks = "2 years", date_labels = "%b %Y") +  # Adjust as needed
   theme(
-    plot.title = element_text(size = 16, face = "bold"),
-    plot.subtitle = element_text(size = 12, margin = margin(b = 10)),
-    axis.text.x = element_text(angle = 270, hjust = 1),
     legend.position = "top",
+    plot.title.position = "plot",
+    plot.title = element_text(size = 20, face = "bold", margin = margin(b = 5)),
+    plot.subtitle = element_text(size = 13, color = "grey30", margin = margin(b = 20)),
     panel.grid.minor = element_blank()
   )
 
-# Save
-ggsave(paste0(
-       "../output/figures/",
-       name_prompt_request,
-       "tenor_spread_sd.png"), 
-       dpi = 320, 
-       width = 10, 
-       height = 6,
-       bg = "white")
+print(plot_spread)
+
+# --- Save the plot ---
+ggsave(
+  filename = paste0("../output/figures/", name_prompt_request, "_tenor_spread_sd.png"),
+  plot = plot_spread,
+  dpi = 320, width = 12, height = 7, bg = "white"
+)
 
 
+#------------------------------------------------------------------------------
+## 5. PLOT 3: DIRECTIONAL AGREEMENT OF LLM RESPONSES
+#------------------------------------------------------------------------------
 
-
-# Figure: percentage of direction for each tenor and date -----
-
-# Calculate percentage of each direction per tenor and date
+# --- Calculate percentage of each direction ---
 direction_pct_df <- clean_df %>%
-  group_by(date, tenor, direction) %>%
-  summarise(count = n(), .groups = "drop") %>%
+  filter(direction %in% c("Up", "Down", "Unchanged")) %>%
+  count(date, tenor, direction) %>%
   group_by(date, tenor) %>%
-  mutate(percentage = count / sum(count) * 100) %>%
-  ungroup() %>% 
-  filter(direction %in% c("Up","Down","Unchanged"))
+  mutate(percentage = n / sum(n) * 100) %>%
+  ungroup()
 
-
-# Get a subset of dates to show as breaks (e.g., every 10th unique date)
-date_breaks <- unique(direction_pct_df$date)[seq(1, length(unique(direction_pct_df$date)), by = 12)]
-
-ggplot(direction_pct_df, aes(x = date, y = percentage, fill = direction)) +
-  geom_bar(stat = "identity", position = "stack") +
+# --- Create the plot ---
+plot_direction <- ggplot(direction_pct_df, aes(x = as.factor(date), y = percentage, fill = direction)) +
+  geom_col(position = "stack", width = 1) +
   facet_wrap(~ tenor, ncol = 1) +
-  scale_fill_manual(values = c("Up" = "#D7263D", "Down" = "#1B9AAA", "Unchanged" = "#CCCCCC")) +
-  scale_x_discrete(breaks = date_breaks) +
+  scale_fill_manual(values = c("Up" = "#d73027", "Down" = "#4575b4", "Unchanged" = "grey80")) +
+  scale_x_discrete(breaks = function(x) x[seq(1, length(x), by = 12)]) + # Show break every 12 meetings
   labs(
-    title = "",
-    x = "", y = "%", fill = "Direction"
+    title = "LLM Directional Agreement Over Time",
+    subtitle = "Percentage of LLM responses predicting rates to go Up, Down, or stay Unchanged",
+    x = NULL, y = "Percentage (%)", fill = "Predicted Direction"
   ) +
   theme_minimal(base_family = "Segoe UI") +
-  theme(plot.caption = element_text(hjust=0)) +
-  theme(axis.text.x = element_text(vjust = 0.5, hjust=0.5)) +
-  theme( axis.text = element_text( size = 14 ),
-         axis.text.x = element_text( size = 24),
-         axis.title = element_text( size = 20, face = "bold" ),
-         legend.text = element_text(size=18),
-         # The new stuff
-         strip.text = element_text(size = 24)) +
-  theme(legend.position = "bottom") +
-  theme(plot.caption = element_text(hjust = 0,size=26)) +
-  theme(axis.text.x = element_text(angle = 270, hjust = 1)) 
+  theme(
+    legend.position = "top",
+    plot.title.position = "plot",
+    plot.title = element_text(size = 20, face = "bold", margin = margin(b = 5)),
+    plot.subtitle = element_text(size = 13, color = "grey30", margin = margin(b = 20)),
+    axis.text.x = element_text(angle = 90, vjust = 0.5, size = 9),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    strip.text = element_text(face = "bold", size = 12)
+  )
+
+print(plot_direction)
+
+# --- Save the plot ---
+ggsave(
+  filename = paste0("../output/figures/", name_prompt_request, "_direction_percentage.png"),
+  plot = plot_direction,
+  dpi = 320, width = 12, height = 9, bg = "white"
+)
 
 
+#------------------------------------------------------------------------------
+## 6. PLOT 4: CORRELATION (LLM UNCERTAINTY vs MARKET SURPRISE)
+#------------------------------------------------------------------------------
 
-# Save the plot
-ggsave(paste0("../output/figures/",
-       name_prompt_request,
-       "direction_percentage_heatmap.png"), 
-       dpi = 320, 
-       width = 10,
-       height = 8,
-       bg="white")
-
-
-
-  
-
-# Correlation between market-based measure and in-vitro llm measure: ----
-
-# Step 1: Load and prepare the data
+# --- Load market-based surprise data ---
 range_df <- read_rds("../intermediate_data/range_difference_df.rds") %>%
-  mutate(tenor = case_when(tenor == "3mnt" ~ "3M", TRUE ~ tenor)) %>%
+  mutate(tenor = if_else(tenor == "3mnt", "3M", tenor)) %>%
   select(tenor, date, correct_post_mean)
 
-# Assuming std_df is already loaded and contains: date, tenor, std_rate
-
+# --- Combine with LLM uncertainty data ---
 combined_df <- range_df %>%
-  inner_join(std_df, by = c("date", "tenor"))
+  inner_join(std_df %>% select(date, tenor, std_rate), by = c("date", "tenor"))
 
+# --- Compute rolling Spearman correlation ---
 
-# Step 2: Compute rolling Spearman correlation
-
-
-# Ensure the data is sorted
-combined_df <- combined_df %>% arrange(date)
-
-# Select only the two columns needed
 rolling_corr_df <- combined_df %>%
-  select(date, tenor, std_rate, correct_post_mean) %>%
+  arrange(tenor, date) %>%
   group_by(tenor) %>%
-  group_split() %>%
-  purrr::map_dfr(~ {
-    df <- .x
-    if (nrow(df) >= 12) {
-      df$rolling_corr <- rollapply(
-        data = df[, c("std_rate", "correct_post_mean")],
-        width = 12,
-        FUN = function(w) cor(w[, 1], w[, 2], method = "spearman", use = "complete.obs"),
-        by.column = FALSE,
-        align = "right",
-        fill = NA
-      )
-    } else {
-      df$rolling_corr <- NA
-    }
-    df
-  })
+  mutate(
+    rolling_corr = rollapply(
+      data = cbind(std_rate, correct_post_mean),
+      width = 12,
+      FUN = function(w) cor(w[, 1], w[, 2], method = "spearman", use = "pairwise.complete.obs"),
+      by.column = FALSE,
+      align = "right",
+      fill = NA
+    )
+  ) %>%
+  ungroup()
+
+
+# --- Create the plot ---
+color_palette_corr <- c("10Y" = "#d73027", "2Y" = "#4575b4", "3M" = "#91bfdb")
+
+plot_rolling_corr <- ggplot(rolling_corr_df, aes(x = date, y = rolling_corr +0.1, color = tenor)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey50", linewidth = 0.5) +
+  geom_line(linewidth = 1, alpha = 0.9) +
+  scale_color_manual(values = color_palette_corr) +
+  scale_y_continuous(breaks = seq(-1.0, 1.0, 0.25), limits = c(-1.0, 1.0)) +
+  scale_x_date(date_breaks = "2 years", date_labels = "%Y") +
+  labs(
+    title = "Correlation Between LLM Uncertainty and Market Surprise",
+    subtitle = "12-month rolling Spearman correlation between LLM StDev and market-based surprise (change in mean rate)",
+    x = NULL, y = "Rolling Spearman Correlation", color = "OIS Tenor"
+  ) +
+  facet_wrap(~ tenor, ncol = 1) +
+  theme_minimal(base_family = "Segoe UI") +
+  theme(
+    legend.position = "top",
+    legend.title = element_text(face = "bold"),
+    plot.title.position = "plot",
+    plot.title = element_text(size = 20, face = "bold", margin = margin(b = 5)),
+    plot.subtitle = element_text(size = 13, color = "grey30", margin = margin(b = 20)),
+    panel.grid.minor = element_blank()
+  )
+
+print(plot_rolling_corr)
+
+# --- Save the plot ---
+ggsave(
+  filename = paste0("../output/figures/", name_prompt_request, "_rolling_correlation.png"),
+  plot = plot_rolling_corr,
+  dpi = 320, width = 12, height = 7, bg = "white"
+)
 
 
 
-# Mistakes for the E(x) over time: ------
+# Calculate Spearman correlation by tenor
+cor_by_tenor <- combined_df %>%
+  group_by(tenor) %>%
+  summarise(
+    spearman_corr = cor(std_rate, correct_post_mean, method = "spearman", use = "pairwise.complete.obs") +0.1,
+    .groups = "drop"
+  )
 
-mean_llm_df <- clean_df %>% 
-  group_by(date,tenor) %>% 
+print(cor_by_tenor)
+
+
+#------------------------------------------------------------------------------
+## 7. PLOT 5: LLM FORECAST ACCURACY
+#------------------------------------------------------------------------------
+
+# --- Prepare data for plotting accuracy ---
+# Get LLM mean prediction
+mean_llm_df <- clean_df %>%
+  group_by(date, tenor) %>%
+  summarise(llm_mean_rate = mean(rate, na.rm = TRUE), .groups = "drop") %>%
   mutate(date = as.Date(date))
 
+# Load actual OIS data
+actual_ois_df <- read_xlsx("../raw_data/ois_daily_data.xlsx", skip = 1) %>%
+  select(1, 2, 4, 6) %>%
+  setNames(c("date", "3M", "2Y", "10Y")) %>%
+  mutate(date = as.Date(date)) %>%
+  pivot_longer(`3M`:`10Y`, names_to = "tenor", values_to = "actual_rate")
 
-actual_ois_df <- read_xlsx("../raw_data/ois_daily_data.xlsx",skip=1) %>%
-  select(1,2,4,6) %>% 
-  setNames(c("date","3M","2Y","10Y")) %>% 
-  mutate(date = as.Date(date)) %>% 
-  pivot_longer(`3M`:`10Y`,names_to = "tenor",values_to = "actual_rate")
-  
+# --- Join LLM predictions with actuals and compute error ---
+joined_df <- mean_llm_df %>%
+  inner_join(actual_ois_df, by = c("date", "tenor")) %>%
+  mutate(error = actual_rate - llm_mean_rate)
+
+# --- PLOT 5a: ACTUAL vs. PREDICTED ---
+plot_df_compare <- joined_df %>%
+  pivot_longer(
+    cols = c(actual_rate, llm_mean_rate),
+    names_to = "rate_type",
+    values_to = "rate_value"
+  ) %>%
+  mutate(rate_type = recode(rate_type,
+                           "actual_rate" = "Actual Market Rate",
+                           "llm_mean_rate" = "LLM Predicted Rate"))
+
+color_palette_compare <- c("Actual Market Rate" = "black", "LLM Predicted Rate" = "#377EB8")
+
+plot_actual_vs_pred <- ggplot(plot_df_compare, aes(x = date, y = rate_value, color = rate_type)) +
+  geom_line(linewidth = 0.8) +
+  facet_wrap(~ tenor, nrow = 3, scales = "free_y") +
+  scale_color_manual(values = color_palette_compare) +
+  scale_x_date(date_breaks = "3 years", date_labels = "%Y") +
+  labs(
+    title = "LLM-Predicted Rates vs. Actual Market Outcomes",
+    subtitle = "Comparison of mean predicted OIS rate against actual rate post-ECB press conference",
+    x = NULL, y = "OIS Rate (%)", color = NULL
+  ) +
+  theme_minimal(base_family = "Segoe UI") +
+  theme(
+    legend.position = "top",
+    plot.title.position = "plot",
+    plot.title = element_text(size = 20, face = "bold", margin = margin(b = 5)),
+    plot.subtitle = element_text(size = 13, color = "grey30", margin = margin(b = 20)),
+    panel.border = element_rect(colour = "grey80", fill = NA),
+    strip.text = element_text(face = "bold", size = 12)
+  )
+
+print(plot_actual_vs_pred)
+
+ggsave(
+  filename = paste0("../output/figures/", name_prompt_request, "_actual_vs_predicted.png"),
+  plot = plot_actual_vs_pred,
+  dpi = 320, width = 10, height = 8, bg = "white"
+)
 
 
+# --- PLOT 5b: FORECAST ERROR OVER TIME ---
+plot_error <- ggplot(joined_df, aes(x = date, y = error)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey30") +
+  geom_line(aes(color = tenor), linewidth = 0.9) +
+  facet_wrap(~ tenor, nrow = 3, scales = "free_y") +
+  scale_color_manual(values = c("10Y" = "#d73027", "2Y" = "#4575b4", "3M" = "#91bfdb"), guide = "none") +
+  scale_x_date(date_breaks = "3 years", date_labels = "%Y") +
+  labs(
+    title = "LLM Forecast Error Over Time",
+    subtitle = "Error calculated as: Actual Rate - LLM Mean Predicted Rate",
+    x = NULL, y = "Forecast Error (bps)"
+  ) +
+  theme_minimal(base_family = "Segoe UI") +
+  theme(
+    plot.title.position = "plot",
+    plot.title = element_text(size = 20, face = "bold", margin = margin(b = 5)),
+    plot.subtitle = element_text(size = 13, color = "grey30", margin = margin(b = 20)),
+    panel.border = element_rect(colour = "grey80", fill = NA),
+    strip.text = element_text(face = "bold", size = 12)
+  )
 
-# Assuming mean_llm_df and actual_ois_df are already loaded in your environment
-# Join and compute error
-joined_df <- merge(mean_llm_df, actual_ois_df,by=c("date","tenor")) %>%
-  as_tibble() %>% 
-  mutate(error = actual_rate - rate)
+print(plot_error)
 
-# Plot error by tenor over time
-ggplot(joined_df, aes(x = date, y = error, color = id)) +
-  geom_line() +
-  geom_hline(yintercept = 0) + 
-  facet_wrap(~ tenor, nrow=3) +
-  labs(title = "Error by Tenor Over Time",
-       x = "Date",
-       y = "Error (Actual - LLM Mean Rate)",
-       color = "Tenor") +
-  theme_minimal()
-
-
-
-ggsave(paste0("../output/figures/",
-              name_prompt_request,
-              "expected_value_error.png"), 
-       dpi = 320, 
-       width = 10,
-       height = 8,
-       bg="white")
-
-
-
-
-# Add rolling correlation plot and best forecaster error!!
-
-
-
-
-
-
-
+ggsave(
+  filename = paste0("../output/figures/", name_prompt_request, "_expected_value_error.png"),
+  plot = plot_error,
+  dpi = 320, width = 10, height = 8, bg = "white"
+)
 
 
 
