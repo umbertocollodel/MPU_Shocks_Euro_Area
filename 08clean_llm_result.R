@@ -2,11 +2,11 @@
 
 # Names columns:
 
-names_col=c("date","id","tenor","direction","rate","reason")
+names_col=c("date","id","tenor","direction","rate","confidence")
 
 # Re-create a name vector in case messed up some conferences in API request:
 
-names_correct=list.files(path = "../intermediate_data/gemini_result/",
+names_correct=list.files(path = "../intermediate_data/gemini_result/prompt_history_surprises/",
            full.names = T) %>% 
   str_subset("\\d") %>% 
   str_remove("\\.txt") %>% 
@@ -14,8 +14,8 @@ names_correct=list.files(path = "../intermediate_data/gemini_result/",
 
 # From character string to tibble:
 
-results <- list.files(path = "../intermediate_data/gemini_result/",
-                      pattern = "batch",
+results <- list.files(path = "../intermediate_data/gemini_result/prompt_history_surprises/",
+                      pattern = "\\d{4}-\\d{2}-\\d{2}",
                     full.names = T) %>% 
   map(~ readRDS(.x)) %>% 
   map(~ tryCatch(.x %>% 
@@ -35,6 +35,7 @@ clean_df=results %>%
   map(~ .x %>% setNames(names_col)) %>%
   map(~ .x %>% slice(-1)) %>% 
   map(~ .x %>% mutate(date=as.character(date))) %>%
+  map(~ .x |> mutate(confidence = as.numeric(confidence))) %>%
   map(~ .x %>% mutate_at(vars(contains("rate")),as.numeric)) %>% 
   bind_rows() %>% 
   filter(tenor %in% c("3M","2Y","10Y"))
@@ -64,10 +65,7 @@ clean_df=results %>%
 writexl::write_xlsx(clean_df,
                     paste0("../intermediate_data/llm_assessment_",
                            name_prompt_request,
-                           "_",
-                           batch_size,
-                           "batch_"
-                           ,Sys.Date(),
+                           Sys.Date(),
                            ".xlsx")
 )
 
