@@ -35,10 +35,10 @@ if (!dir.exists(output_dir)) {
 
 # --- Read LLM cleaned results ---
 # Note: Using Sys.Date() for the input filename as in your original code
-clean_df <- read_xlsx(paste0("../intermediate_data/llm_assessment_",
-                             name_prompt_request,
-                             "_2025-07-15", # Changed to 2025-07-15 as per your input file
-                             ".xlsx"))
+clean_df <- read_xlsx(paste0("../intermediate_data/aggregate_gemini_result/prompt_naive/",
+                           "2.5flash_",
+                           Sys.Date(),
+                           ".xlsx"))
 
 
 #------------------------------------------------------------------------------
