@@ -20,10 +20,7 @@ showtext_auto()
 
 # --- Read LLM cleaned results ---
 # Note: Using a fixed name for now. Update the paste0 call if batch_size and Sys.Date() are needed.
-clean_df <- read_xlsx(paste0("../intermediate_data/llm_assessment_",
- name_prompt_request, 
- Sys.Date(),
- ".xlsx"))
+clean_df <- read_xlsx(paste0("../intermediate_data/llm_assessment_prompt_history_surprises2025-07-18.xlsx"))
 
 
 #------------------------------------------------------------------------------
@@ -74,7 +71,7 @@ print(plot_std_dev)
 
 # --- Save the plot ---
 ggsave(
-  filename = paste0("../output/figures/", name_prompt_request, "_sd.png"),
+  filename = paste0("../output/figures/", name_prompt_request, "/sd.png"),
   plot = plot_std_dev,
   dpi = 320, width = 10, height = 8, bg = "white"
 )
@@ -180,7 +177,7 @@ print(plot_direction)
 
 # --- Save the plot ---
 ggsave(
-  filename = paste0("../output/figures/", name_prompt_request, "_direction_percentage.png"),
+  filename = paste0("../output/figures/", name_prompt_request, "/direction_percentage.png"),
   plot = plot_direction,
   dpi = 320, width = 12, height = 9, bg = "white"
 )
@@ -246,7 +243,7 @@ print(plot_rolling_corr)
 
 # --- Save the plot ---
 ggsave(
-  filename = paste0("../output/figures/", name_prompt_request, "_rolling_correlation.png"),
+  filename = paste0("../output/figures/", name_prompt_request, "/rolling_correlation.png"),
   plot = plot_rolling_corr,
   dpi = 320, width = 12, height = 7, bg = "white"
 )
@@ -257,7 +254,7 @@ ggsave(
 cor_by_tenor <- combined_df %>%
   group_by(tenor) %>%
   summarise(
-    spearman_corr = cor(std_rate, correct_post_mean, method = "spearman", use = "pairwise.complete.obs") +0.1,
+    spearman_corr = cor(std_rate, correct_post_mean, method = "spearman", use = "pairwise.complete.obs"),
     .groups = "drop"
   )
 
@@ -323,7 +320,7 @@ plot_actual_vs_pred <- ggplot(plot_df_compare, aes(x = date, y = rate_value, col
 print(plot_actual_vs_pred)
 
 ggsave(
-  filename = paste0("../output/figures/", name_prompt_request, "_actual_vs_predicted.png"),
+  filename = paste0("../output/figures/", name_prompt_request, "/actual_vs_predicted.png"),
   plot = plot_actual_vs_pred,
   dpi = 320, width = 10, height = 8, bg = "white"
 )
@@ -353,7 +350,7 @@ plot_error <- ggplot(joined_df, aes(x = date, y = error)) +
 print(plot_error)
 
 ggsave(
-  filename = paste0("../output/figures/", name_prompt_request, "_expected_value_error.png"),
+  filename = paste0("../output/figures/", name_prompt_request, "/expected_value_error.png"),
   plot = plot_error,
   dpi = 320, width = 10, height = 8, bg = "white"
 )
