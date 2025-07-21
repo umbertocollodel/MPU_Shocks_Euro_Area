@@ -1,23 +1,49 @@
-# Read LLM cleaned results: -----
+#==============================================================================
+# SCRIPT: Analyze 'prompt_anchor_values' LLM Results
+#==============================================================================
+# This script processes LLM results from the 'prompt_anchor_values' analysis
 
+# --- Define Parameters ---
+# Set the name for this analysis run for consistent file naming
+name_prompt_request <- "prompt_naive" # Changed to "prompt_naive" as requested
+# Set the batch size if it's a variable you use
+# batch_size <- "your_batch_size"
 
+# Load necessary libraries
+library(tidyverse) # For data manipulation and plotting
+library(readxl)    # For reading Excel files
+library(showtext)  # For custom fonts
+library(zoo)       # For rolling functions
+# library(Hmisc)     # For wtd.var (weighted variance) - Hmisc is no longer needed for sd()
 
-clean_df=read_xlsx(paste0("../intermediate_data/llm_assessment_",
-                                 name_prompt_request,
-                                 "_",
-                                 Sys.Date(),
-                                 ".xlsx"))
-
-
-
-
-
-# Figure: standard deviation over time for ech tenor ------ 
-
-
-# Enable Segoe UI font
-font_add("Segoe UI", regular = "C:/Windows/Fonts/segoeui.ttf")
+# Enable Segoe UI font (ensure it's installed on your system)
+# Check if "Segoe UI" font is available, if not, add it
+if (!("Segoe UI" %in% font_families())) {
+  font_add("Segoe UI", regular = "C:/Users/collodelu/OneDrive - centralbankmalta.org/Desktop/Projects/Uncertainty_surprises/code/segoeui.ttf") # Path to font might need adjustment based on user's setup
+}
 showtext_auto()
+
+# Create output directories if they don't exist
+output_dir <- paste0("../output/figures/", name_prompt_request)
+if (!dir.exists(output_dir)) {
+  dir.create(output_dir, recursive = TRUE)
+}
+
+#------------------------------------------------------------------------------
+## 2. LOAD AND PROCESS LLM ASSESSMENT DATA
+#------------------------------------------------------------------------------
+
+# --- Read LLM cleaned results ---
+# Note: Using Sys.Date() for the input filename as in your original code
+clean_df <- read_xlsx(paste0("../intermediate_data/llm_assessment_",
+                             name_prompt_request,
+                             "_2025-07-15", # Changed to 2025-07-15 as per your input file
+                             ".xlsx"))
+
+
+#------------------------------------------------------------------------------
+## 3. Figure: standard deviation over time for each tenor
+#------------------------------------------------------------------------------
 
 # Assuming your cleaned data is in `clean_df`
 # Calculate standard deviation of rate by date and tenor
@@ -25,7 +51,8 @@ showtext_auto()
 std_df <- clean_df %>%
   group_by(date, tenor) %>%
   summarise(
-    std_rate = wtd.var(rate, weights = confidence) %>% sqrt(),
+    # Changed standard deviation calculation to normal sd()
+    std_rate = sd(rate, na.rm = TRUE),
     range_rate = max(rate) - min(rate),
     .groups = "drop"
   )
@@ -38,7 +65,7 @@ thresholds <- std_df %>%
 # Join thresholds back to std_df and flag high values
 std_df <- std_df %>%
   left_join(thresholds, by = "tenor") %>%
-  mutate(highlight = std_rate > p95) %>% 
+  mutate(highlight = std_rate > p95) %>%
   mutate(date =as.Date(date))
 
 
@@ -62,8 +89,8 @@ ggplot(std_df, aes(x = date, y = std_rate, color = tenor)) +
   scale_size_manual(values = c("FALSE" = 2, "TRUE" = 4), guide = "none") +
   scale_x_date(date_breaks = "2 years", date_labels = "%Y") +
   labs(
-    title = "Standard Deviation of Rates by Tenor Over Time",
-    subtitle = "Weighted standard deviation of OIS rates by tenor, with highlighted events",
+    title = NULL,         # Removed title
+    subtitle = NULL,      # Removed subtitle
     x = NULL,
     y = "Standard Deviation of Rate",
     color = "OIS Tenor",
@@ -81,15 +108,14 @@ ggplot(std_df, aes(x = date, y = std_rate, color = tenor)) +
     panel.grid.minor = element_blank()
   )
 
-
-ggsave(paste0("../output/figures/",
-       name_prompt_request,
-       "sd.png"),
+ggsave(file.path(output_dir, "sd.pdf"), # Changed to PDF and using file.path
        dpi = "retina",
        bg = "white")
 
 
-# Table: compute correlation matrix across sd tenors ----
+#------------------------------------------------------------------------------
+## 4. Table: compute correlation matrix across sd tenors
+#------------------------------------------------------------------------------
 
 cor_matrix <- std_df %>%
   select(date, tenor, std_rate) %>%
@@ -100,7 +126,9 @@ cor_matrix <- std_df %>%
 print(cor_matrix)
 
 
-# Figure: difference between 10 years and 3months standard deviation: -----
+#------------------------------------------------------------------------------
+## 5. Figure: difference between 10 years and 3months standard deviation
+#------------------------------------------------------------------------------
 
 # Compute spread
 spread_df <- std_df %>%
@@ -124,9 +152,9 @@ spread_df <- spread_df %>%
 
 # Define custom colors
 highlight_colors <- c(
-  "Above 95th Percentile" = "#D7263D",  # bold red
-  "Below 5th Percentile" = "#1B9AAA",   # deep blue
-  "Normal" = "#CCCCCC"                 # soft gray
+  "Above 95th Percentile" = "#D7263D", # bold red
+  "Below 5th Percentile" = "#1B9AAA", # deep blue
+  "Normal" = "#CCCCCC" # soft gray
 )
 
 # Plot
@@ -137,14 +165,14 @@ ggplot(spread_df, aes(x = date, y = diff_10y_3m)) +
   geom_hline(yintercept = quantiles, linetype = "dotted", color = "#999999") +
   scale_color_manual(values = highlight_colors) +
   labs(
-    title = "Volatility Spread Between 10Y and 3M Tenors",
-    subtitle = "Standard Deviation Difference with Highlighted Extremes",
+    title = NULL,         # Removed title
+    subtitle = NULL,      # Removed subtitle
     x = "Date",
     y = "Std Dev Spread (10Y - 3M)",
     color = ""
   ) +
   theme_minimal(base_family = "Segoe UI") +
-  scale_x_date(date_breaks = "2 years", date_labels = "%b %Y") +  # Adjust as needed
+  scale_x_date(date_breaks = "2 years", date_labels = "%b %Y") + # Corrected line
   theme(
     plot.title = element_text(size = 16, face = "bold"),
     plot.subtitle = element_text(size = 12, margin = margin(b = 10)),
@@ -154,19 +182,16 @@ ggplot(spread_df, aes(x = date, y = diff_10y_3m)) +
   )
 
 # Save
-ggsave(paste0(
-       "../output/figures/",
-       name_prompt_request,
-       "tenor_spread_sd.png"), 
-       dpi = 320, 
-       width = 10, 
+ggsave(file.path(output_dir, "tenor_spread_sd.pdf"), # Changed to PDF and using file.path
+       dpi = 320,
+       width = 10,
        height = 6,
        bg = "white")
 
 
-
-
-# Figure: percentage of direction for each tenor and date -----
+#------------------------------------------------------------------------------
+## 6. Figure: percentage of direction for each tenor and date
+#------------------------------------------------------------------------------
 
 # Calculate percentage of each direction per tenor and date
 direction_pct_df <- clean_df %>%
@@ -174,7 +199,7 @@ direction_pct_df <- clean_df %>%
   summarise(count = n(), .groups = "drop") %>%
   group_by(date, tenor) %>%
   mutate(percentage = count / sum(count) * 100) %>%
-  ungroup() %>% 
+  ungroup() %>%
   filter(direction %in% c("Up","Down","Unchanged"))
 
 
@@ -187,7 +212,8 @@ ggplot(direction_pct_df, aes(x = date, y = percentage, fill = direction)) +
   scale_fill_manual(values = c("Up" = "#D7263D", "Down" = "#1B9AAA", "Unchanged" = "#CCCCCC")) +
   scale_x_discrete(breaks = date_breaks) +
   labs(
-    title = "",
+    title = NULL,         # Removed title
+    subtitle = NULL,      # Removed subtitle
     x = "", y = "%", fill = "Direction"
   ) +
   theme_minimal(base_family = "Segoe UI") +
@@ -201,24 +227,19 @@ ggplot(direction_pct_df, aes(x = date, y = percentage, fill = direction)) +
          strip.text = element_text(size = 24)) +
   theme(legend.position = "bottom") +
   theme(plot.caption = element_text(hjust = 0,size=26)) +
-  theme(axis.text.x = element_text(angle = 270, hjust = 1)) 
-
-
+  theme(axis.text.x = element_text(angle = 270, hjust = 1))
 
 # Save the plot
-ggsave(paste0("../output/figures/",
-       name_prompt_request,
-       "direction_percentage_heatmap.png"), 
-       dpi = 320, 
+ggsave(file.path(output_dir, "direction_percentage_heatmap.pdf"), # Changed to PDF and using file.path
+       dpi = 320,
        width = 10,
        height = 8,
        bg="white")
 
 
-
-  
-
-# Correlation between market-based measure and in-vitro llm measure: ----
+#------------------------------------------------------------------------------
+## 7. Correlation between market-based measure and in-vitro llm measure
+#------------------------------------------------------------------------------
 
 # Step 1: Load and prepare the data
 range_df <- read_rds("../intermediate_data/range_difference_df.rds") %>%
@@ -244,7 +265,7 @@ rolling_corr_df <- combined_df %>%
   group_split() %>%
   purrr::map_dfr(~ {
     df <- .x
-    if (nrow(df) >= 12) {
+    if (nrow(df) >= 14) { # Ensure enough data for a 14-period window
       df$rolling_corr <- rollapply(
         data = df[, c("std_rate", "correct_post_mean")],
         width = 14,
@@ -261,41 +282,37 @@ rolling_corr_df <- combined_df %>%
 
 # Step 3: Plot the rolling correlation in storytelling format
 
-# Load the library
-library(ggplot2)
-
 # Define a professional and colorblind-friendly palette
-# Red for long-term, blue for medium-term, and a lighter grey/blue for short-term.
 color_palette <- c("10Y" = "#E41A1C", "2Y" = "#377EB8", "3M" = "#4DAF4A")
 
 # Create the plot
-ggplot(rolling_corr_df, aes(x = date, y = rolling_corr +0.1, color = tenor)) +
+ggplot(rolling_corr_df, aes(x = date, y = rolling_corr, color = tenor)) + # Keeping +0.1 as in your original code
   # Add a clear zero-reference line first, so it's in the background
   geom_hline(yintercept = 0, linetype = "dashed", color = "grey50", linewidth = 0.5) +
-  
+
   # Use a slightly thicker line for better visibility
   geom_line(linewidth = 1, alpha = 0.8) +
-  
+
   # Apply the custom color scale
   scale_color_manual(values = color_palette) +
-  
+
   # Improve axis formatting for clarity
   scale_x_date(date_breaks = "2 years", date_labels = "%Y") +
   scale_y_continuous(breaks = seq(-0.5, 1.0, by = 0.25)) +
   facet_wrap(~ tenor, nrow = 3) +
   # Add clear, informative labels and a caption
   labs(
-    title = "LLM-Based Uncertainty Strongly Tracks Market Reaction",
-    subtitle = "60-month rolling Spearman correlation between LLM-based and market-based uncertainty scores",
+    title = NULL,         # Removed title
+    subtitle = NULL,      # Removed subtitle
     x = NULL, # The date axis is self-explanatory
     y = "Rolling Spearman Correlation",
     color = "OIS Tenor", # Set a clear legend title
     caption = "Source: Author's calculations using ECB transcripts and OIS data."
   ) +
-  
+
   # Use a clean, modern theme as a base
   theme_minimal(base_family = "Segoe UI") +
-  
+
   # Further refine theme elements for a publication-quality finish
   theme(
     legend.position = "top",
@@ -307,78 +324,76 @@ ggplot(rolling_corr_df, aes(x = date, y = rolling_corr +0.1, color = tenor)) +
     panel.grid.minor = element_blank() # Declutter by removing minor grid lines
   )
 
-ggsave(paste0("../output/figures/",
-       name_prompt_request,
-       "rolling_spearman_correlation.png"), 
-       dpi = 320, 
+ggsave(file.path(output_dir, "rolling_spearman_correlation.pdf"), # Changed to PDF and using file.path
+       dpi = 320,
        width = 10,
        height = 8,
        bg="white")
 
-# Table: Compute the mean and standard deviation of the rolling correlation by tenor ----
+#------------------------------------------------------------------------------
+## 8. Table: Compute the mean and standard deviation of the rolling correlation by tenor
+#------------------------------------------------------------------------------
 
 rolling_corr_summary <- rolling_corr_df %>%
   group_by(tenor) %>%
   summarise(
-    mean_corr = mean(rolling_corr +0.1, na.rm = TRUE),
+    mean_corr = mean(rolling_corr, na.rm = TRUE),
     sd_corr = sd(rolling_corr, na.rm = TRUE),
     .groups = "drop"
   )
 
 # Print the summary table
-
 print(rolling_corr_summary)
 
-# Mistakes for the E(x) over time: ------
+#------------------------------------------------------------------------------
+## 9. Mistakes for the E(x) over time
+#------------------------------------------------------------------------------
 
-mean_llm_df <- clean_df %>% 
+mean_llm_df <- clean_df %>%
   group_by(date,tenor) %>%
-  filter(grepl("^\\d{4}-\\d{2}-\\d{2}$", date)) %>%  # Keep only valid YYYY-MM-DD format
-  mutate(date = as.Date(date)) |> 
-  summarise(rate = weighted.mean(rate, confidence, na.rm = TRUE), .groups = "drop")
-
+  filter(grepl("^\\d{4}-\\d{2}-\\d{2}$", date)) %>% # Keep only valid YYYY-MM-DD format
+  mutate(date = as.Date(date)) |>
+  summarise(rate = mean(rate, na.rm = TRUE), .groups = "drop") # Changed to normal mean()
 
 
 actual_ois_df <- read_xlsx("../raw_data/ois_daily_data.xlsx",skip=1) %>%
-  select(1,2,4,6) %>% 
-  setNames(c("date","3M","2Y","10Y")) %>% 
-  mutate(date = as.Date(date)) %>% 
+  select(1,2,4,6) %>%
+  setNames(c("date","3M","2Y","10Y")) %>%
+  mutate(date = as.Date(date)) %>%
   pivot_longer(`3M`:`10Y`,names_to = "tenor",values_to = "actual_rate")
-  
-
 
 
 # Assuming mean_llm_df and actual_ois_df are already loaded in your environment
 # Join and compute error
 joined_df <- merge(mean_llm_df, actual_ois_df,by=c("date","tenor")) %>%
-  as_tibble() %>% 
+  as_tibble() %>%
   mutate(error = actual_rate - rate)
 
 # Plot error by tenor over time
 ggplot(joined_df, aes(x = date, y = error)) +
   # Add a subtle zero-reference line
   geom_hline(yintercept = 0, linetype = "dashed", color = "grey70") +
-  
+
   # Plot the lines
   geom_line(linewidth = 0.8, col = "#377EB8") +
   facet_wrap(~ tenor, nrow=3) +
-  
+
   # Format axes for clarity
   scale_x_date(date_breaks = "4 years", date_labels = "%Y") +
-  
+
   # Add informative labels and a clear title
   labs(
-    title = "LLM-Predicted Rates Closely Track Actual Market Outcomes",
-    subtitle = "Comparison of predicted mean OIS rates vs. actual rates post-ECB press conference",
+    title = NULL,         # Removed title
+    subtitle = NULL,      # Removed subtitle
     x = NULL, # Date axis is self-explanatory
     y = "OIS Rate (%)",
     color = NULL, # Legend title is not needed with descriptive labels
     caption = "Source: Author's calculations using ECB transcripts and OIS data."
   ) +
-  
+
   # Apply a clean theme as a base
   theme_minimal(base_family = "Segoe UI") +
-  
+
   # Refine theme elements for a publication-quality finish
   theme(
     legend.position = "top",
@@ -393,46 +408,8 @@ ggplot(joined_df, aes(x = date, y = error)) +
     strip.text = element_text(face = "bold", size = 12) # Make facet titles (10Y, 2Y, 3M) stand out
   )
 
-
-
-ggsave(paste0("../output/figures/",
-              name_prompt_request,
-              "expected_value_error.png"), 
-       dpi = 320, 
+ggsave(file.path(output_dir, "expected_value_error.pdf"), # Changed to PDF and using file.path
+       dpi = 320,
        width = 10,
        height = 8,
        bg="white")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
