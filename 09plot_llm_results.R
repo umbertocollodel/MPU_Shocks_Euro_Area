@@ -257,7 +257,7 @@ ggsave(file.path(output_dir, "direction_percentage_heatmap.pdf"), # Renamed for 
 ## 7. Correlation between market-based measure and in-vitro llm measure (Updated Aesthetics)
 #------------------------------------------------------------------------------
 
-# Step 1: Load and prepare the data
+#  Load and prepare the data
 range_df <- read_rds("../intermediate_data/range_difference_df.rds") %>%
   mutate(tenor = case_when(tenor == "3mnt" ~ "3M", TRUE ~ tenor)) %>%
   select(tenor, date, correct_post_mean)
@@ -267,6 +267,57 @@ range_df <- read_rds("../intermediate_data/range_difference_df.rds") %>%
 combined_df <- range_df %>%
   inner_join(std_df, by = c("date", "tenor"))
 
+# Define a professional and colorblind-friendly palette (matching the second script's style)
+color_palette_corr <- c("10Y" = "#d73027", "2Y" = "#4575b4", "3M" = "#91bfdb")
+
+
+
+#------------------------------------------------------------------------------
+## 7a. Overall by tenor
+#------------------------------------------------------------------------------
+
+cor_by_tenor <- combined_df %>%
+  group_by(tenor) %>%
+  summarise(
+    mean_corr = cor(std_rate, correct_post_mean, method = "spearman", use = "pairwise.complete.obs"),
+    .groups = "drop"
+  ) |> 
+  mutate(tenor = factor(tenor, levels = c("3M", "2Y", "10Y"))) # Ensure tenor order is consistent
+
+
+# New plot: Bar plot of mean correlation by tenor
+ggplot(cor_by_tenor, aes(x = tenor, y = mean_corr, fill = tenor)) +
+  geom_col(width=0.4,show.legend = FALSE) + # Bar plot, no legend needed for fill
+  geom_text(aes(label = sprintf("%.2f", mean_corr)), vjust = -0.5, size = 3) + # Add value labels
+  scale_fill_manual(values = color_palette_corr) + # Use the same color palette
+  labs(
+    title = NULL,
+    subtitle = NULL,
+    x = "OIS Tenor",
+    y = "Overall Correlation",
+    caption = "Source: Author's calculations."
+  ) +
+  theme_minimal(base_family = "Segoe UI") +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12, margin = margin(b = 10)),
+    axis.title.x = element_text(margin = margin(t = 10)),
+    axis.title.y = element_text(margin = margin(r = 10)),
+    plot.caption = element_text(hjust = 0, size = 9, color = "grey50"),
+    panel.grid.major.x = element_blank(), # Remove major vertical grid lines
+    panel.grid.minor.x = element_blank()  # Remove minor vertical grid lines
+  )
+
+ggsave(file.path(output_dir, "mean_spearman_correlation_bar.pdf"),
+       dpi = 320,
+       width = 8,
+       height = 5,
+       bg="white")
+
+
+#------------------------------------------------------------------------------
+## 7b. Rolling correlation by tenor
+#------------------------------------------------------------------------------
 
 # Step 2: Compute rolling Spearman correlation
 # Ensure the data is sorted
@@ -294,19 +345,16 @@ rolling_corr_df <- combined_df %>%
       fill = NA
     )
   ) %>%
-  ungroup()
+  ungroup() 
 
 
 # Step 3: Plot the rolling correlation in storytelling format
 
-# Define a professional and colorblind-friendly palette (matching the second script's style)
-color_palette_corr <- c("10Y" = "#d73027", "2Y" = "#4575b4", "3M" = "#91bfdb")
 
 # Create the plot
 ggplot(rolling_corr_df, aes(x = date, y = rolling_corr, color = tenor)) + # Removed +0.1 from y
   # Add a clear zero-reference line first, so it's in the background
   geom_hline(yintercept = 0, linetype = "dashed", color = "grey50", linewidth = 0.5) +
-
   # Use a slightly thicker line for better visibility
   geom_line(linewidth = 1, alpha = 0.9) + # Matched alpha
 
@@ -351,22 +399,7 @@ ggsave(file.path(output_dir, "rolling_spearman_correlation.pdf"),
        bg="white")
 
 #------------------------------------------------------------------------------
-## 8. Table: Compute the mean and standard deviation of the rolling correlation by tenor (No aesthetic changes needed)
-#------------------------------------------------------------------------------
-
-rolling_corr_summary <- rolling_corr_df %>%
-  group_by(tenor) %>%
-  summarise(
-    mean_corr = mean(rolling_corr, na.rm = TRUE),
-    sd_corr = sd(rolling_corr, na.rm = TRUE),
-    .groups = "drop"
-  )
-
-# Print the summary table
-print(rolling_corr_summary)
-
-#------------------------------------------------------------------------------
-## 9. Mistakes for the E(x) over time (Updated Aesthetics)
+## 8. Mistakes for the E(x) over time (Updated Aesthetics)
 #------------------------------------------------------------------------------
 
 mean_llm_df <- clean_df %>%
