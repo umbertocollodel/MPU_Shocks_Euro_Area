@@ -211,7 +211,8 @@ direction_pct_df <- clean_df %>%
   mutate(percentage = count / sum(count) * 100) %>%
   ungroup() %>%
   filter(direction %in% c("Up","Down","Unchanged")) %>%
-  mutate(date = as.Date(date)) # Ensure date is Date type for scale_x_discrete to work with labels
+  mutate(date = as.Date(date)) |> # Ensure date is Date type for scale_x_discrete to work with labels
+  filter(!is.na(date)) # Remove rows with NA dates
 
 # Get a subset of dates to show as breaks (e.g., every 12th unique date, format as year-month)
 date_breaks <- unique(direction_pct_df$date)[seq(1, length(unique(direction_pct_df$date)), by = 12)]
