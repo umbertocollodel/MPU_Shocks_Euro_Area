@@ -9,10 +9,24 @@ name_prompt_request <- "prompt_history_surprises"
 # Set the batch size if it's a variable you use
 # batch_size <- "your_batch_size"
 
+# Load necessary libraries
+library(tidyverse) # For data manipulation and plotting
+library(readxl)    # For reading Excel files
+library(showtext)  # For custom fonts
+library(zoo)       # For rolling functions
+
 # Enable Segoe UI font (ensure it's installed on your system)
-font_add("Segoe UI", regular = "C:/Windows/Fonts/segoeui.ttf")
+# Check if "Segoe UI" font is available, if not, add it
+if (!("Segoe UI" %in% font_families())) {
+  font_add("Segoe UI", regular = "C:/Windows/Fonts/segoeui.ttf")
+}
 showtext_auto()
 
+# Create output directories if they don't exist
+output_dir <- paste0("../output/figures/", name_prompt_request)
+if (!dir.exists(output_dir)) {
+  dir.create(output_dir, recursive = TRUE)
+}
 
 #------------------------------------------------------------------------------
 ## 2. LOAD AND PROCESS LLM ASSESSMENT DATA
@@ -20,7 +34,8 @@ showtext_auto()
 
 # --- Read LLM cleaned results ---
 # Note: Using a fixed name for now. Update the paste0 call if batch_size and Sys.Date() are needed.
-clean_df <- read_xlsx(paste0("../intermediate_data/llm_assessment_prompt_history_surprises2025-07-18.xlsx"))
+# Ensure the file path is correct based on your project structure
+clean_df <- read_xlsx(paste0("../intermediate_data/llm_assessment_", name_prompt_request, "2025-07-18.xlsx"))
 
 
 #------------------------------------------------------------------------------
@@ -52,8 +67,8 @@ plot_std_dev <- ggplot(std_df, aes(x = date, y = std_rate)) +
   scale_fill_manual(values = c("10Y" = "#d73027", "2Y" = "#4575b4", "3M" = "#91bfdb"), guide = "none") +
   scale_x_date(date_breaks = "2 years", date_labels = "%Y") +
   labs(
-    title = "LLM Response Uncertainty Over Time",
-    subtitle = "Standard deviation of LLM rate predictions. Points highlight values above the 95th percentile.",
+    title = NULL,         # Removed title
+    subtitle = NULL,      # Removed subtitle
     x = NULL,
     y = "Standard Deviation of Predicted Rate"
   ) +
@@ -64,14 +79,15 @@ plot_std_dev <- ggplot(std_df, aes(x = date, y = std_rate)) +
     plot.subtitle = element_text(size = 13, color = "grey30", margin = margin(b = 20)),
     panel.grid.minor = element_blank(),
     panel.border = element_rect(colour = "grey80", fill = NA),
-    strip.text = element_text(face = "bold", size = 12)
+    strip.text = element_text(face = "bold", size = 12),
+    axis.text = element_text(size = 10) # Ensure axis labels are readable
   )
 
 print(plot_std_dev)
 
 # --- Save the plot ---
 ggsave(
-  filename = paste0("../output/figures/", name_prompt_request, "/sd.png"),
+  filename = file.path(output_dir, "sd.pdf"), # Changed to PDF
   plot = plot_std_dev,
   dpi = 320, width = 10, height = 8, bg = "white"
 )
@@ -115,8 +131,8 @@ plot_spread <- ggplot(spread_df, aes(x = date, y = diff_10y_3m)) +
   scale_color_manual(values = highlight_colors) +
   scale_x_date(date_breaks = "2 years", date_labels = "%Y") +
   labs(
-    title = "Spread in LLM Uncertainty Between 10Y and 3M Tenors",
-    subtitle = "Difference in standard deviation (10Y - 3M). Points highlight values outside the 5th-95th percentile range.",
+    title = NULL,         # Removed title
+    subtitle = NULL,      # Removed subtitle
     x = NULL, y = "Uncertainty Spread (10Y - 3M)", color = ""
   ) +
   theme_minimal(base_family = "Segoe UI") +
@@ -125,14 +141,15 @@ plot_spread <- ggplot(spread_df, aes(x = date, y = diff_10y_3m)) +
     plot.title.position = "plot",
     plot.title = element_text(size = 20, face = "bold", margin = margin(b = 5)),
     plot.subtitle = element_text(size = 13, color = "grey30", margin = margin(b = 20)),
-    panel.grid.minor = element_blank()
+    panel.grid.minor = element_blank(),
+    axis.text = element_text(size = 10) # Ensure axis labels are readable
   )
 
 print(plot_spread)
 
 # --- Save the plot ---
 ggsave(
-  filename = paste0("../output/figures/", name_prompt_request, "_tenor_spread_sd.png"),
+  filename = file.path(output_dir, paste0(name_prompt_request, "_tenor_spread_sd.pdf")), # Changed to PDF
   plot = plot_spread,
   dpi = 320, width = 12, height = 7, bg = "white"
 )
@@ -155,10 +172,11 @@ plot_direction <- ggplot(direction_pct_df, aes(x = as.factor(date), y = percenta
   geom_col(position = "stack", width = 1) +
   facet_wrap(~ tenor, ncol = 1) +
   scale_fill_manual(values = c("Up" = "#d73027", "Down" = "#4575b4", "Unchanged" = "grey80")) +
-  scale_x_discrete(breaks = function(x) x[seq(1, length(x), by = 12)]) + # Show break every 12 meetings
+  scale_x_discrete(breaks = function(x) x[seq(1, length(x), by = 12)], # Show break every 12 meetings
+                   labels = function(x) format(as.Date(x), "%Y-%m")) + # Format date for better readability
   labs(
-    title = "LLM Directional Agreement Over Time",
-    subtitle = "Percentage of LLM responses predicting rates to go Up, Down, or stay Unchanged",
+    title = NULL,         # Removed title
+    subtitle = NULL,      # Removed subtitle
     x = NULL, y = "Percentage (%)", fill = "Predicted Direction"
   ) +
   theme_minimal(base_family = "Segoe UI") +
@@ -170,14 +188,15 @@ plot_direction <- ggplot(direction_pct_df, aes(x = as.factor(date), y = percenta
     axis.text.x = element_text(angle = 90, vjust = 0.5, size = 9),
     panel.grid.major.x = element_blank(),
     panel.grid.minor = element_blank(),
-    strip.text = element_text(face = "bold", size = 12)
+    strip.text = element_text(face = "bold", size = 12),
+    axis.text = element_text(size = 10) # Ensure axis labels are readable
   )
 
 print(plot_direction)
 
 # --- Save the plot ---
 ggsave(
-  filename = paste0("../output/figures/", name_prompt_request, "/direction_percentage.png"),
+  filename = file.path(output_dir, "direction_percentage.pdf"), # Changed to PDF
   plot = plot_direction,
   dpi = 320, width = 12, height = 9, bg = "white"
 )
@@ -197,7 +216,7 @@ combined_df <- range_df %>%
   inner_join(std_df %>% select(date, tenor, std_rate), by = c("date", "tenor"))
 
 # --- Compute rolling Spearman correlation ---
-
+# Ensure at least 2 non-NA values for correlation calculation within the window
 rolling_corr_df <- combined_df %>%
   arrange(tenor, date) %>%
   group_by(tenor) %>%
@@ -205,7 +224,13 @@ rolling_corr_df <- combined_df %>%
     rolling_corr = rollapply(
       data = cbind(std_rate, correct_post_mean),
       width = 12,
-      FUN = function(w) cor(w[, 1], w[, 2], method = "spearman", use = "pairwise.complete.obs"),
+      FUN = function(w) {
+        if (sum(!is.na(w[, 1]) & !is.na(w[, 2])) >= 2) { # Check for at least 2 complete pairs
+          cor(w[, 1], w[, 2], method = "spearman", use = "pairwise.complete.obs")
+        } else {
+          NA
+        }
+      },
       by.column = FALSE,
       align = "right",
       fill = NA
@@ -217,15 +242,15 @@ rolling_corr_df <- combined_df %>%
 # --- Create the plot ---
 color_palette_corr <- c("10Y" = "#d73027", "2Y" = "#4575b4", "3M" = "#91bfdb")
 
-plot_rolling_corr <- ggplot(rolling_corr_df, aes(x = date, y = rolling_corr +0.1, color = tenor)) +
+plot_rolling_corr <- ggplot(rolling_corr_df, aes(x = date, y = rolling_corr, color = tenor)) + # Removed +0.1 from y
   geom_hline(yintercept = 0, linetype = "dashed", color = "grey50", linewidth = 0.5) +
   geom_line(linewidth = 1, alpha = 0.9) +
   scale_color_manual(values = color_palette_corr) +
   scale_y_continuous(breaks = seq(-1.0, 1.0, 0.25), limits = c(-1.0, 1.0)) +
   scale_x_date(date_breaks = "2 years", date_labels = "%Y") +
   labs(
-    title = "Correlation Between LLM Uncertainty and Market Surprise",
-    subtitle = "12-month rolling Spearman correlation between LLM StDev and market-based surprise (change in mean rate)",
+    title = NULL,         # Removed title
+    subtitle = NULL,      # Removed subtitle
     x = NULL, y = "Rolling Spearman Correlation", color = "OIS Tenor"
   ) +
   facet_wrap(~ tenor, ncol = 1) +
@@ -236,18 +261,18 @@ plot_rolling_corr <- ggplot(rolling_corr_df, aes(x = date, y = rolling_corr +0.1
     plot.title.position = "plot",
     plot.title = element_text(size = 20, face = "bold", margin = margin(b = 5)),
     plot.subtitle = element_text(size = 13, color = "grey30", margin = margin(b = 20)),
-    panel.grid.minor = element_blank()
+    panel.grid.minor = element_blank(),
+    axis.text = element_text(size = 10) # Ensure axis labels are readable
   )
 
 print(plot_rolling_corr)
 
 # --- Save the plot ---
 ggsave(
-  filename = paste0("../output/figures/", name_prompt_request, "/rolling_correlation.png"),
+  filename = file.path(output_dir, "rolling_correlation.pdf"), # Changed to PDF
   plot = plot_rolling_corr,
   dpi = 320, width = 12, height = 7, bg = "white"
 )
-
 
 
 # Calculate Spearman correlation by tenor
@@ -292,8 +317,8 @@ plot_df_compare <- joined_df %>%
     values_to = "rate_value"
   ) %>%
   mutate(rate_type = recode(rate_type,
-                           "actual_rate" = "Actual Market Rate",
-                           "llm_mean_rate" = "LLM Predicted Rate"))
+                            "actual_rate" = "Actual Market Rate",
+                            "llm_mean_rate" = "LLM Predicted Rate"))
 
 color_palette_compare <- c("Actual Market Rate" = "black", "LLM Predicted Rate" = "#377EB8")
 
@@ -303,8 +328,8 @@ plot_actual_vs_pred <- ggplot(plot_df_compare, aes(x = date, y = rate_value, col
   scale_color_manual(values = color_palette_compare) +
   scale_x_date(date_breaks = "3 years", date_labels = "%Y") +
   labs(
-    title = "LLM-Predicted Rates vs. Actual Market Outcomes",
-    subtitle = "Comparison of mean predicted OIS rate against actual rate post-ECB press conference",
+    title = NULL,         # Removed title
+    subtitle = NULL,      # Removed subtitle
     x = NULL, y = "OIS Rate (%)", color = NULL
   ) +
   theme_minimal(base_family = "Segoe UI") +
@@ -314,13 +339,14 @@ plot_actual_vs_pred <- ggplot(plot_df_compare, aes(x = date, y = rate_value, col
     plot.title = element_text(size = 20, face = "bold", margin = margin(b = 5)),
     plot.subtitle = element_text(size = 13, color = "grey30", margin = margin(b = 20)),
     panel.border = element_rect(colour = "grey80", fill = NA),
-    strip.text = element_text(face = "bold", size = 12)
+    strip.text = element_text(face = "bold", size = 12),
+    axis.text = element_text(size = 10) # Ensure axis labels are readable
   )
 
 print(plot_actual_vs_pred)
 
 ggsave(
-  filename = paste0("../output/figures/", name_prompt_request, "/actual_vs_predicted.png"),
+  filename = file.path(output_dir, "actual_vs_predicted.pdf"), # Changed to PDF
   plot = plot_actual_vs_pred,
   dpi = 320, width = 10, height = 8, bg = "white"
 )
@@ -334,8 +360,8 @@ plot_error <- ggplot(joined_df, aes(x = date, y = error)) +
   scale_color_manual(values = c("10Y" = "#d73027", "2Y" = "#4575b4", "3M" = "#91bfdb"), guide = "none") +
   scale_x_date(date_breaks = "3 years", date_labels = "%Y") +
   labs(
-    title = "LLM Forecast Error Over Time",
-    subtitle = "Error calculated as: Actual Rate - LLM Mean Predicted Rate",
+    title = NULL,         # Removed title
+    subtitle = NULL,      # Removed subtitle
     x = NULL, y = "Forecast Error (bps)"
   ) +
   theme_minimal(base_family = "Segoe UI") +
@@ -344,22 +370,17 @@ plot_error <- ggplot(joined_df, aes(x = date, y = error)) +
     plot.title = element_text(size = 20, face = "bold", margin = margin(b = 5)),
     plot.subtitle = element_text(size = 13, color = "grey30", margin = margin(b = 20)),
     panel.border = element_rect(colour = "grey80", fill = NA),
-    strip.text = element_text(face = "bold", size = 12)
+    strip.text = element_text(face = "bold", size = 12),
+    axis.text = element_text(size = 10) # Ensure axis labels are readable
   )
 
 print(plot_error)
 
 ggsave(
-  filename = paste0("../output/figures/", name_prompt_request, "/expected_value_error.png"),
+  filename = file.path(output_dir, "expected_value_error.pdf"), # Changed to PDF
   plot = plot_error,
   dpi = 320, width = 10, height = 8, bg = "white"
 )
-
-
-
-
-
-
 
 
 
