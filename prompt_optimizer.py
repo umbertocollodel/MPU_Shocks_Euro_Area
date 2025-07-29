@@ -1,34 +1,5 @@
-# ----- Set environment libraries: ----
-
 import subprocess
 import sys
-
-def install(package):
-    subprocess.check_call([sys.executable, "-m", "pip", "install", package])
-
-# List of required packages
-required_packages = {
-    "os": None,  # built-in
-    "json": None,  # built-in
-    "numpy": "numpy",
-    "pandas": "pandas",
-    "scipy": "scipy",
-    "pyreadr":"pyreadr",
-    "datetime": None,  # built-in
-    "time": None,  # built-in
-    "typing": None,  # built-in
-    "re": None  # built-in
-}
-
-# Install only the ones that are not built-in
-for module, package in required_packages.items():
-    if package:
-        try:
-            __import__(module)
-        except ImportError:
-            install(package)
-
-# Now you can safely import everything
 import os
 import json
 import numpy as np
@@ -40,16 +11,36 @@ from typing import List, Dict, Any, Tuple, Optional
 import re
 import pyreadr
 
+# ----- Set environment libraries: ----
+def install(package):
+    """Installs a pip package if not already installed."""
+    subprocess.check_call([sys.executable, "-m", "pip", "install", package])
 
+# List of required packages
+required_packages = {
+    "numpy": "numpy",
+    "pandas": "pandas",
+    "scipy": "scipy",
+    "pyreadr":"pyreadr",
+    "litellm": "litellm" # Add litellm here for explicit installation check
+}
 
+# Install only the ones that are not built-in (os, json, datetime, time, typing, re are built-in)
+for module, package in required_packages.items():
+    if package:
+        try:
+            # Attempt to import directly, or check if it's already installed
+            __import__(module)
+        except ImportError:
+            print(f"Installing {package}...")
+            install(package)
+            print(f"{package} installed.")
 
 # --- Configuration ---
 # You'll need to choose which LLM provider to use and configure API keys.
 # Using litellm is recommended for multi-provider support and fallbacks.
-# For simplicity, this example will show placeholders for direct API calls,
-# but litellm can wrap these seamlessly.
 
-# Ensure you have your API keys set as environment variables, e'g':
+# Ensure you have your API keys set as environment variables, e.g.:
 # export OPENAI_API_KEY="sk-..."
 # export ANTHROPIC_API_KEY="sk-ant-..."
 # export GOOGLE_API_KEY="AIza..."
@@ -65,9 +56,12 @@ MAX_OPTIMIZATION_ITERATIONS = 8
 # Threshold for improvement to continue optimization (e.g., 0.001 increase in average correlation)
 MIN_CORRELATION_IMPROVEMENT = 0.02
 
+# Directory for transcripts and target tenors
+TRANSCRIPT_DIR = "../intermediate_data/texts"
+TARGET_TENORS = ['3mnt', '2Y', '10Y'] # This should match the 'tenor' values in your RDS file
+
 
 # LLM API Call Function
-
 try:
     from litellm import completion
     print("Using litellm for LLM API calls.")
@@ -110,9 +104,9 @@ Task:
 You are given a certain number of distinct ECB press conferences.
 For each of the 30 traders, simulate their individual trading action in the interest rate swap market across three tenors (3 months, 2 years, 10 years).
 For each tenor, the trader must:
-   - Provide an expected rate direction: Up / Down / Unchanged
-   - Provide a new expected swap rate (in percent, to two decimal places)
-   - Provide a confidence level (0-100%) in their decision
+    - Provide an expected rate direction: Up / Down / Unchanged
+    - Provide a new expected swap rate (in percent, to two decimal places)
+    - Provide a confidence level (0-100%) in their decision
 
 Output:
 Provide a table with the following structure for each press conference, trader, and interest rate tenor:
@@ -121,7 +115,7 @@ Provide a table with the following structure for each press conference, trader, 
 |------------|-----------|---------|--------------------|------------------------|----------------------|
 | YYYY-MM-DD | T001      | 3M      | Up                 | 3.15                   |                      |
 | YYYY-MM-DD | T001      | 2Y      | Down               | 2.85                   |                      |
-| ...        | ...       | ...     | ...                | ...                    |                      | 
+| ...        | ...       | ...     | ...                | ...                    |                      |
 
 Guidelines:
 - Use only the information available as of [date].
@@ -160,7 +154,6 @@ Example JSON output:
   "revised_prompt": "You are a highly analytical financial expert specializing in macroeconomic analysis, with a focus on central bank communication. Your task is to analyze excerpts from ECB press conferences and predict the immediate percentage change in the 10-year Overnight Index Swap (OIS) rate (in basis points). When analyzing each excerpt, **explicitly consider and internalize the potential range of market interpretations**. If the language is ambiguous, vague, or contains conflicting signals, your internal simulation of potential outcomes should broaden. Conversely, clear and unambiguous guidance should lead to a narrower range. Your final prediction should be a single numerical value (e.g., +5, -2, 0) reflecting your best estimate. The *variability* across multiple independent predictions you generate for the same transcript is expected to directly reflect the market's anticipated uncertainty. Example Format: +5",
   "reasoning": "The revised prompt adds explicit instructions to consider the 'range of market interpretations' and directly links 'ambiguous language' to a 'broadened' internal simulation. This should encourage the Analyst LLM to generate a higher standard deviation in its outputs for uncertain transcripts and a lower standard deviation for clear ones, thereby directly improving its correlation with actual market volatility. The emphasis on 'multiple independent predictions' also reinforces the mechanism by which uncertainty is quantified."
 }
-
 """
 
   # --- Core Functions ---
@@ -221,18 +214,51 @@ def parse_markdown_table(markdown_string: str) -> Optional[pd.DataFrame]:
         print(f"Error creating DataFrame from parsed markdown: {e}")
         return None
 
+def get_transcript_data(transcript_dir: str) -> List[Dict[str, str]]:
+    """
+    Reads all .txt files from the specified directory and returns a list of dictionaries,
+    each containing 'date' and 'text'.
+    Assumes filenames are in 'YYYY-MM-DD_GovernorName.txt' format.
+    """
+    transcript_data = []
+    print(f"Reading transcripts from: {transcript_dir}")
+    if not os.path.exists(transcript_dir):
+        print(f"Error: Transcript directory '{transcript_dir}' not found. Please create it and place .txt files inside.")
+        return []
+
+    for filename in os.listdir(transcript_dir):
+        if filename.endswith(".txt"):
+            try:
+                # Extract the date part (YYYY-MM-DD) from the filename
+                # It's the part before the first underscore
+                date_part = filename.split('_')[0]
+                
+                # Validate date format
+                datetime.strptime(date_part, "%Y-%m-%d")
+                
+                filepath = os.path.join(transcript_dir, filename)
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    transcript_text = f.read()
+                
+                transcript_data.append({'date': date_part, 'text': transcript_text})
+                print(f"  Loaded transcript for {date_part}")
+            except ValueError:
+                print(f"Warning: Filename '{filename}' does not match YYYY-MM-DD_Name.txt format (date part invalid). Skipping.")
+            except Exception as e:
+                print(f"Error reading transcript file {filename}: {e}")
+    if not transcript_data:
+        print("No valid transcript files found.")
+    return transcript_data
+
 
 def run_analyst_llm_for_transcript(transcript_text: str, analyst_prompt: str, conference_date: str) -> List[pd.DataFrame]:
     """
     Runs the Analyst LLM once for a single transcript,
     simulating the 30 traders and collecting the resulting DataFrame.
-    The `num_simulations` parameter is no longer used, as only one simulation is performed.
     """
     all_simulated_market_data = []
-    # Replace the [date] placeholder in the prompt
     formatted_prompt = analyst_prompt.replace("[date]", conference_date)
 
-    # Perform only one simulation
     print(f"  Running Analyst LLM simulation for transcript on {conference_date}...")
     user_message = f"Here is the ECB press conference excerpt for the date {conference_date}: \n\n{transcript_text}\n\n" \
                    f"Please simulate the trading actions for the 30 traders as per the instructions in your system prompt. " \
@@ -244,134 +270,159 @@ def run_analyst_llm_for_transcript(transcript_text: str, analyst_prompt: str, co
             user_message=user_message,
             temperature=1 # Temperature set to 1, as requested
         )
-        # Parse the markdown table from the response
         simulated_df = parse_markdown_table(response_content)
 
-        # Ensure the parsed DataFrame has expected number of rows for 30 traders * 3 tenors = 90 rows
-        # This is a heuristic check; LLMs might not always perfectly comply.
         if simulated_df is not None and not simulated_df.empty and len(simulated_df) >= 30 * len(TARGET_TENORS):
-            # Add a simulation ID (always 1 for single simulation) to track which run this came from
             simulated_df['Simulation_ID'] = 1
             all_simulated_market_data.append(simulated_df)
         else:
             print(f"Warning: Analyst LLM returned unparseable, empty, or incomplete table for transcript on {conference_date}. Expected ~{30 * len(TARGET_TENORS)} rows, got {len(simulated_df) if simulated_df is not None else 'None'}.")
-            # print(f"Raw response was:\n{response_content[:1000]}...") # Print first 1000 chars for debugging
-
+            # print(f"Raw response was:\n{response_content[:1000]}...") # Uncomment for debugging
     except Exception as e:
         print(f"Error during Analyst LLM simulation for {conference_date}: {e}")
     return all_simulated_market_data
 
 
+def run_analyst_llm_for_all_transcripts(
+    transcripts: List[Dict[str, str]],
+    analyst_prompt: str
+) -> pd.DataFrame:
+    """
+    Runs the Analyst LLM for all provided transcripts and collects all simulated data
+    into a single pandas DataFrame.
+    """
+    all_simulated_dfs = []
+    print("\n--- Running Analyst LLM for all transcripts ---")
+    for transcript_info in transcripts:
+        conference_date = transcript_info['date']
+        transcript_text = transcript_info['text']
 
-# Load your actual historical data here
-historical_data_df = pyreadr.read_r("../intermediate_data/range_difference_df.rds", timezone="date")
-
-
+        simulated_dfs_for_one_transcript = run_analyst_llm_for_transcript(
+            transcript_text, analyst_prompt, conference_date
+        )
+        
+        if simulated_dfs_for_one_transcript:
+            for df in simulated_dfs_for_one_transcript:
+                df['Conference_Date'] = conference_date # Add a common date column for grouping
+            all_simulated_dfs.extend(simulated_dfs_for_one_transcript)
+        else:
+            print(f"No valid simulation output for {conference_date}.")
+            
+    if not all_simulated_dfs:
+        print("No simulated data collected from any transcript.")
+        return pd.DataFrame()
+    
+    combined_simulated_df = pd.concat(all_simulated_dfs, ignore_index=True)
+    return combined_simulated_df
 
 
 def evaluate_analyst_performance(
-    current_analyst_prompt: str,
-    historical_data: pd.DataFrame
+    simulated_df: pd.DataFrame,
+    historical_data_df: pd.DataFrame # This is your actual OIS volatility data
 ) -> Tuple[float, pd.DataFrame]:
     """
-    Evaluates the current Analyst LLM prompt by running it on historical data,
-    calculating the standard deviation of 'New Expected Rate (%)' across simulated traders for each tenor,
-    and then correlating these with actual market volatilities.
-    Returns the average correlation across tenors.
+    Evaluates the performance by calculating the standard deviation of 'New Expected Rate (%)'
+    from the simulated data for each tenor and date, and then correlating these
+    with actual market volatilities from historical_data_df.
+    Returns the average correlation across tenors and detailed results.
     """
-    all_transcripts_sim_sds = {} # { (transcript_id, tenor): [sd_sim1, sd_sim2, ...] }
-    actual_volatilities_per_tenor = {} # { (transcript_id, tenor): actual_volatility }
+    if simulated_df.empty:
+        print("Simulated DataFrame is empty. Cannot evaluate performance.")
+        return 0.0, pd.DataFrame()
 
-    # Initialize actual_volatilities_per_tenor based on historical_data_df
-    # Assuming historical_data_df has columns like 'actual_ois_volatility_3M_bps', 'actual_ois_volatility_2Y_bps', etc.
-    # We need to map actual data to specific tenors.
-    # For simplicity of this example, let's assume actual_ois_volatility_bps is for 10Y and replicate it for others.
-    # YOU MUST ADAPT THIS PART TO YOUR ACTUAL HISTORICAL DATA STRUCTURE!
-    tenors = ['3M', '2Y', '10Y'] # Define your tenors
-    for index, row in historical_data.iterrows():
-        transcript_id = row['transcript_id']
-        conference_date = row['date'] # Assuming 'date' column exists for [date] in prompt
-
-        for tenor in tenors:
-            # Assuming actual volatility is in columns like 'actual_ois_volatility_3M', 'actual_ois_volatility_2Y', 'actual_ois_volatility_10Y'
-            # If your mock data only has 'actual_ois_volatility_bps', you need to decide how to use it
-            # For demonstration, I'll use a placeholder or assume it maps to 10Y and then generate for others.
-            col_name = f'actual_ois_volatility_{tenor}_bps'
-            actual_vol_val = row.get(col_name, row['actual_ois_volatility_bps'] if tenor == '10Y' else np.random.uniform(0.5, 10.0)) # Placeholder if not specific
-            actual_volatilities_per_tenor[(transcript_id, tenor)] = actual_vol_val
-
-    print(f"\n--- Evaluating Analyst LLM with current prompt (on {len(historical_data)} transcripts) ---")
-    for index, row in historical_data.iterrows():
-        transcript_id = row['transcript_id']
-        transcript_text = row['transcript_text']
-        conference_date = row['date'] # Use the actual date for the prompt
-
-        simulated_dfs = run_analyst_llm_for_transcript(transcript_text, current_analyst_prompt, conference_date)
-
-        if not simulated_dfs:
-            print(f"Skipping {transcript_id}: No valid simulations generated.")
-            continue
-
-        # Aggregate results from multiple simulations for this transcript
-        combined_sim_df = pd.concat(simulated_dfs, ignore_index=True)
-
-        for tenor in tenors:
-            # Filter for the current tenor
-            tenor_data = combined_sim_df[combined_sim_df['Tenor'] == tenor]
-
-            if not tenor_data.empty and len(tenor_data['New Expected Rate (%)'].dropna()) >= 2:
-                # Calculate SD of 'New Expected Rate (%)' across *all traders in all simulations* for this tenor/transcript
-                # This is the standard deviation of the "market view" for this specific tenor on this date.
-                predicted_sd = np.std(tenor_data['New Expected Rate (%)'].dropna())
-                
-                # Store it
-                if (transcript_id, tenor) not in all_transcripts_sim_sds:
-                    all_transcripts_sim_sds[(transcript_id, tenor)] = []
-                all_transcripts_sim_sds[(transcript_id, tenor)].append(predicted_sd)
-            else:
-                print(f"  Warning: Not enough valid rates for {transcript_id}, {tenor} to calculate SD.")
-
-    # Now, calculate correlations per tenor and then average them
-    tenor_correlations = []
-    detailed_results_for_all_tenors = []
-
-    for tenor in tenors:
-        analyst_sds_for_tenor = []
-        actual_volatilities_for_tenor = []
+    if historical_data_df.empty:
+        print("Historical data DataFrame is empty. Cannot evaluate performance.")
+        return 0.0, pd.DataFrame()
         
-        for transcript_id in historical_data['transcript_id'].unique():
-            key = (transcript_id, tenor)
-            if key in all_transcripts_sim_sds and len(all_transcripts_sim_sds[key]) > 0 and key in actual_volatilities_per_tenor:
-                # For each (transcript, tenor), we need ONE predicted SD.
-                # If NUM_ANALYST_LLM_SIMULATIONS_PER_TRANSCRIPT > 1, you might average these SDs or pick one.
-                # For simplicity here, let's take the mean of the SDs calculated across simulations for the same transcript.
-                avg_predicted_sd_for_transcript_tenor = np.mean(all_transcripts_sim_sds[key])
-                analyst_sds_for_tenor.append(avg_predicted_sd_for_transcript_tenor)
-                actual_volatilities_for_tenor.append(actual_volatilities_per_tenor[key])
-                
-                detailed_results_for_all_tenors.append({
-                    "transcript_id": transcript_id,
-                    "tenor": tenor,
-                    "actual_volatility": actual_volatilities_per_tenor[key],
-                    "predicted_sd": avg_predicted_sd_for_transcript_tenor
-                })
+    # Ensure 'Date' column in simulated_df matches 'date' in historical_data_df for merging
+    try:
+        simulated_df['Date_dt'] = pd.to_datetime(simulated_df['Date']).dt.date
+    except Exception as e:
+        print(f"Error converting 'Date' column in simulated_df to datetime.date: {e}")
+        return 0.0, pd.DataFrame()
 
+    # Ensure 'date' column in historical_data_df is datetime.date object
+    if pd.api.types.is_datetime64_any_dtype(historical_data_df['date']):
+        historical_data_df['date_dt'] = historical_data_df['date'].dt.date
+    elif 'date' in historical_data_df.columns:
+        try:
+            historical_data_df['date_dt'] = pd.to_datetime(historical_data_df['date']).dt.date
+        except Exception as e:
+            print(f"Error converting 'date' column in historical_data_df to datetime.date: {e}")
+            return 0.0, pd.DataFrame()
+    else:
+        print("Error: 'date' column not found in historical_data_df. Cannot evaluate.")
+        return 0.0, pd.DataFrame()
+    
+    # Calculate predicted standard deviations from the simulated data
+    # Use 'Date_dt' for grouping (parsed from the LLM's output table)
+    # Use 'Conference_Date' if you prefer the date derived from filename, assuming it's consistent.
+    # The prompt requests 'Date', so 'Date_dt' derived from that column is generally better.
+    predicted_sds = simulated_df.groupby(['Date_dt', 'Tenor'])['New Expected Rate (%)'].std().reset_index()
+    predicted_sds.rename(columns={'Date_dt': 'date_dt', 'New Expected Rate (%)': 'predicted_sd'}, inplace=True)
 
-        if len(analyst_sds_for_tenor) >= 2 and len(actual_volatilities_for_tenor) >= 2:
-            correlation, p_value = pearsonr(analyst_sds_for_tenor, actual_volatilities_for_tenor)
+    # Prepare actual volatility data for merging
+    actual_vol_melted = []
+    for tenor in TARGET_TENORS:
+        col_name = f'actual_ois_volatility_{tenor}_bps'
+        if col_name in historical_data_df.columns:
+            temp_df = historical_data_df[['date_dt', col_name]].copy()
+            temp_df.rename(columns={col_name: 'actual_volatility'}, inplace=True)
+            temp_df['Tenor'] = tenor
+            actual_vol_melted.append(temp_df)
+        else:
+            print(f"Warning: Actual volatility column '{col_name}' not found in historical data for tenor {tenor}. Skipping this tenor for correlation.")
+    
+    if not actual_vol_melted:
+        print("No actual volatility data available for any target tenor. Cannot calculate correlations.")
+        return 0.0, pd.DataFrame()
+
+    actual_volatilities = pd.concat(actual_vol_melted, ignore_index=True)
+    actual_volatilities.dropna(subset=['actual_volatility'], inplace=True)
+
+    # Merge predicted and actual data
+    merged_data = pd.merge(
+        predicted_sds,
+        actual_volatilities,
+        on=['date_dt', 'Tenor'],
+        how='inner'
+    )
+    
+    if merged_data.empty:
+        print("No common dates or tenors between simulated and historical data for correlation. Returning 0.0.")
+        return 0.0, pd.DataFrame()
+
+    # Calculate correlations for each tenor
+    tenor_correlations = []
+    detailed_results_list = []
+
+    for tenor in TARGET_TENORS:
+        tenor_data = merged_data[merged_data['Tenor'] == tenor].copy()
+        
+        if len(tenor_data['predicted_sd'].dropna()) >= 2 and len(tenor_data['actual_volatility'].dropna()) >= 2:
+            correlation, p_value = pearsonr(tenor_data['predicted_sd'], tenor_data['actual_volatility'])
             tenor_correlations.append(correlation)
             print(f"  Correlation for {tenor}: {correlation:.4f} (p-value: {p_value:.4f})")
+            
+            for _, row in tenor_data.iterrows():
+                detailed_results_list.append({
+                    "transcript_date": row['date_dt'].strftime('%Y-%m-%d'),
+                    "tenor": tenor,
+                    "actual_volatility": row['actual_volatility'],
+                    "predicted_sd": row['predicted_sd']
+                })
         else:
-            print(f"  Not enough valid data points to calculate correlation for tenor {tenor}. Skipping.")
+            print(f"  Not enough valid data points ({len(tenor_data)}) to calculate correlation for tenor {tenor}. Skipping.")
 
     if not tenor_correlations:
         print("No valid correlations calculated for any tenor. Returning 0.0 average correlation.")
-        return 0.0, pd.DataFrame(detailed_results_for_all_tenors)
+        return 0.0, pd.DataFrame(detailed_results_list)
 
     average_correlation = np.mean(tenor_correlations)
     print(f"Overall Average Pearson Correlation (across tenors): {average_correlation:.4f}")
 
-    return average_correlation, pd.DataFrame(detailed_results_for_all_tenors)
+    return average_correlation, pd.DataFrame(detailed_results_list)
+
 
 def run_judge_llm(
     current_analyst_prompt: str,
@@ -405,10 +456,10 @@ Based on this, critique the current prompt and suggest a revised prompt to impro
             system_prompt=JUDGE_SYSTEM_PROMPT,
             user_message=user_message,
             temperature=1,
-            json_mode=True # Expect JSON output
+            json_mode=True
         )
-        judge_response = json.loads(response_content) # Parse JSON response
-        critique = judge_response.get("critique", "No critique provided.") # .get() safely retrieves value or default
+        judge_response = json.loads(response_content)
+        critique = judge_response.get("critique", "No critique provided.")
         revised_prompt = judge_response.get("revised_prompt", current_analyst_prompt)
         reasoning = judge_response.get("reasoning", "No reasoning provided.")
         return critique, revised_prompt, reasoning
@@ -420,67 +471,95 @@ Based on this, critique the current prompt and suggest a revised prompt to impro
         print(f"Error running Judge LLM: {e}")
         return "LLM call error.", current_analyst_prompt, "Failed to call Judge LLM."
 
-def summarize_prompt(prompt: str, max_len: int = 100) -> str:
-    """Summarizes a long prompt for logging."""
-    return (prompt[:max_len] + "...") if len(prompt) > max_len else prompt
-
-
-# --- Main Optimization Loop ---
 
 def run_optimization():
     current_analyst_prompt = INITIAL_ANALYST_PROMPT
     optimization_history = []
-    best_correlation = 0.1 # Initialize with a low value
+    best_correlation = -1.0
     best_prompt = INITIAL_ANALYST_PROMPT
 
     print("Starting LLM-as-Judge Prompt Optimization...")
     print(f"Initial Analyst Prompt: {summarize_prompt(current_analyst_prompt)}")
 
+    # Step 0: Load all transcripts once
+    all_transcripts_data = get_transcript_data(TRANSCRIPT_DIR)
+    if not all_transcripts_data:
+        print(f"No transcript files found in {TRANSCRIPT_DIR}. Exiting.")
+        return None, None, None
+
+    # Step 0: Load historical OIS volatility data once
+    try:
+        historical_data_df_dict = pyreadr.read_r("../intermediate_data/range_difference_df.rds")
+        historical_data_df = historical_data_df_dict[None] 
+        
+        if 'date' in historical_data_df.columns:
+            if pd.api.types.is_datetime64_any_dtype(historical_data_df['date']):
+                historical_data_df['date'] = historical_data_df['date'].dt.date
+            else:
+                try:
+                    historical_data_df['date'] = pd.to_datetime(historical_data_df['date']).dt.date
+                except Exception as e:
+                    print(f"Warning: Could not convert 'date' column in historical_data_df to datetime.date: {e}")
+        else:
+            print("Warning: 'date' column not found in historical_data_df. This is crucial for merging.")
+
+    except Exception as e:
+        print(f"Error loading historical OIS volatility data from RDS: {e}. Exiting optimization.")
+        return None, None, None
+
+
     for i in range(MAX_OPTIMIZATION_ITERATIONS):
         print(f"\n===== Iteration {i+1}/{MAX_OPTIMIZATION_ITERATIONS} =====")
 
-        # Step 1: Evaluate Analyst LLM with current prompt
-        correlation, detailed_results_df = evaluate_analyst_performance(current_analyst_prompt, historical_data_df)
+        # Step 1: Run Analyst LLM for ALL transcripts to get the complete simulated_df
+        current_simulated_df = run_analyst_llm_for_all_transcripts(
+            all_transcripts_data,
+            current_analyst_prompt
+        )
+
+        if current_simulated_df.empty:
+            print(f"Iteration {i+1}: No simulated data generated. Cannot evaluate. Continuing to next iteration or breaking.")
+            continue 
+
+        # Step 2: Evaluate Analyst LLM with the complete simulated_df and historical_data_df
+        correlation, detailed_results_df = evaluate_analyst_performance(
+            current_simulated_df,
+            historical_data_df.copy() # Pass a copy to ensure original isn't modified
+        )
 
         print(f"Iteration {i+1} Result: Correlation = {correlation:.4f}")
 
-        # Update best prompt if current is better
         if correlation > best_correlation:
             print(f"New best correlation found: {correlation:.4f} (Previous best: {best_correlation:.4f})")
             best_correlation = correlation
             best_prompt = current_analyst_prompt
-            # Save the best prompt to a file for easy access
-            with open("../intermediate_data/best_analyst_prompt.txt", "w") as f: # 'w' for write mode
+            with open("../intermediate_data/best_analyst_prompt.txt", "w") as f:
                 f.write(best_prompt)
             print("Best prompt saved to best_analyst_prompt.txt")
 
-        # Record this iteration's performance
         optimization_history.append({
             "iteration": i + 1,
             "prompt_before_judge": current_analyst_prompt,
             "correlation": correlation,
-            "detailed_results": detailed_results_df.to_dict('records'), # Store detailed results
-            "critique": "", # Placeholder to be filled by judge later
-            "proposed_prompt": "", # Placeholder to be filled by judge later
-            "reasoning": "", # Placeholder to be filled by judge later
-            "proposed_prompt_summary": "" # Summarized for history passed to judge
+            "detailed_results": detailed_results_df.to_dict('records') if not detailed_results_df.empty else [],
+            "critique": "",
+            "proposed_prompt": "",
+            "reasoning": "",
+            "proposed_prompt_summary": ""
         })
 
-        # Step 2: Check stopping criteria (no significant improvement)
-        # This checks if the current correlation is not significantly better than the previous one AND not the best overall.
+        # Check stopping criteria
+        # Ensure we have at least two iterations to compare
         if i > 0 and (correlation - optimization_history[-2]['correlation']) < MIN_CORRELATION_IMPROVEMENT and correlation < best_correlation:
             print(f"Stopping early: Improvement ({correlation:.4f} - {optimization_history[-2]['correlation']:.4f}) below threshold {MIN_CORRELATION_IMPROVEMENT} and not the best prompt.")
             break
 
-        # Step 3: Run Judge LLM to get new prompt
-        # Passes a copy of history with sensitive/large parts removed for cleaner input
         critique, revised_prompt, reasoning = run_judge_llm(
             current_analyst_prompt,
             correlation,
-            [{k: v for k, v in entry.items() if k not in ["detailed_results", "prompt_before_judge"]} for entry in optimization_history] # Pass summarized history
+            [{k: v for k, v in entry.items() if k not in ["detailed_results", "prompt_before_judge"]} for entry in optimization_history]
         )
 
-        # Update history with Judge's output
         optimization_history[-1]["critique"] = critique
         optimization_history[-1]["proposed_prompt"] = revised_prompt
         optimization_history[-1]["reasoning"] = reasoning
@@ -490,25 +569,20 @@ def run_optimization():
         print(f"Judge's Reasoning: {reasoning}")
         print(f"Revised Prompt: {summarize_prompt(revised_prompt)}")
 
-        # Update the prompt for the next iteration
         current_analyst_prompt = revised_prompt
-
-        # Optional: Add a small delay to respect API rate limits
-        time.sleep(2)
+        time.sleep(2) # Small delay to respect API rate limits
 
     print("\n===== Optimization Complete =====")
     print(f"Final Best Correlation: {best_correlation:.4f}")
     print(f"Optimized Analyst Prompt:\n{best_prompt}")
 
-    # Save full optimization history
     history_filename = f"optimization_history_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
     with open(history_filename, "w") as f:
-        json.dump(optimization_history, f, indent=2) # json.dump writes a dictionary to a file as JSON
+        json.dump(optimization_history, f, indent=2)
     print(f"Full optimization history saved to {history_filename}")
 
     return best_prompt, best_correlation, optimization_history
 
 
-    # --- Run the optimization ---
 if __name__ == "__main__":
     optimized_prompt, final_correlation, full_history = run_optimization()
