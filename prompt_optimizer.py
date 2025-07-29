@@ -15,10 +15,10 @@ JUDGE_LLM_MODEL = "gemini-2.5-pro"   # Example: "gpt-4o", "claude-3-5-sonnet", "
 
 
 # Maximum iterations for prompt optimization
-MAX_OPTIMIZATION_ITERATIONS = 10
+MAX_OPTIMIZATION_ITERATIONS = 8
 
-# Threshold for improvement to continue optimization (e.g., 0.001 increase in correlation)
-MIN_CORRELATION_IMPROVEMENT = 0.04
+# Threshold for improvement to continue optimization (e.g., 0.001 increase in average correlation)
+MIN_CORRELATION_IMPROVEMENT = 0.02
 
 
 # LLM API Call Function
@@ -177,72 +177,46 @@ def parse_markdown_table(markdown_string: str) -> Optional[pd.DataFrame]:
         return None
 
 
-def run_analyst_llm_for_transcript(transcript_text: str, analyst_prompt: str, conference_date: str, num_simulations: int = NUM_ANALYST_LLM_SIMULATIONS_PER_TRANSCRIPT) -> List[pd.DataFrame]:
+def run_analyst_llm_for_transcript(transcript_text: str, analyst_prompt: str, conference_date: str) -> List[pd.DataFrame]:
     """
-    Runs the Analyst LLM multiple times for a single transcript,
-    each time simulating the 30 traders and collecting the resulting DataFrame.
+    Runs the Analyst LLM once for a single transcript,
+    simulating the 30 traders and collecting the resulting DataFrame.
+    The `num_simulations` parameter is no longer used, as only one simulation is performed.
     """
     all_simulated_market_data = []
     # Replace the [date] placeholder in the prompt
     formatted_prompt = analyst_prompt.replace("[date]", conference_date)
 
-    for i in range(num_simulations):
-        print(f"  Running Analyst LLM simulation {i+1}/{num_simulations} for transcript...")
-        user_message = f"Here is the ECB press conference excerpt: \n\n{transcript_text}\n\n" \
-                       f"Please simulate the trading actions for the 30 traders as per the instructions in your system prompt. " \
-                       f"Ensure the output is strictly a markdown table."
-        try:
-            response_content = call_llm(
-                model=ANALYST_LLM_MODEL,
-                system_prompt=formatted_prompt,
-                user_message=user_message,
-                temperature=0.7 + i * 0.05 # Slightly vary temp across simulations for more diversity
-            )
-            # Parse the markdown table from the response
-            simulated_df = parse_markdown_table(response_content)
+    # Perform only one simulation
+    print(f"  Running Analyst LLM simulation for transcript on {conference_date}...")
+    user_message = f"Here is the ECB press conference excerpt for the date {conference_date}: \n\n{transcript_text}\n\n" \
+                   f"Please simulate the trading actions for the 30 traders as per the instructions in your system prompt. " \
+                   f"Ensure the output is strictly a markdown table."
+    try:
+        response_content = call_llm(
+            model=ANALYST_LLM_MODEL,
+            system_prompt=formatted_prompt,
+            user_message=user_message,
+            temperature=1 # Temperature set to 1, as requested
+        )
+        # Parse the markdown table from the response
+        simulated_df = parse_markdown_table(response_content)
 
-            if simulated_df is not None and not simulated_df.empty:
-                # Add a simulation ID to track which run this came from
-                simulated_df['Simulation_ID'] = i + 1
-                all_simulated_market_data.append(simulated_df)
-            else:
-                print(f"Warning: Analyst LLM returned unparseable or empty table for simulation {i+1}.")
-                # print(f"Raw response was:\n{response_content[:500]}...") # Print first 500 chars for debugging
-                continue # Skip this failed simulation
+        # Ensure the parsed DataFrame has expected number of rows for 30 traders * 3 tenors = 90 rows
+        # This is a heuristic check; LLMs might not always perfectly comply.
+        if simulated_df is not None and not simulated_df.empty and len(simulated_df) >= 30 * len(TARGET_TENORS):
+            # Add a simulation ID (always 1 for single simulation) to track which run this came from
+            simulated_df['Simulation_ID'] = 1
+            all_simulated_market_data.append(simulated_df)
+        else:
+            print(f"Warning: Analyst LLM returned unparseable, empty, or incomplete table for transcript on {conference_date}. Expected ~{30 * len(TARGET_TENORS)} rows, got {len(simulated_df) if simulated_df is not None else 'None'}.")
+            # print(f"Raw response was:\n{response_content[:1000]}...") # Print first 1000 chars for debugging
 
-        except Exception as e:
-            print(f"Error during Analyst LLM simulation {i+1}: {e}")
-            continue
+    except Exception as e:
+        print(f"Error during Analyst LLM simulation for {conference_date}: {e}")
     return all_simulated_market_data
 
-    # --- Data Simulation (Replace with your actual data loading) ---
-def load_mock_data():
-    """
-    Loads mock historical data for demonstration, now including specific
-    actual volatilities for each tenor.
-    """
-    num_data_points = 50 # Number of past press conferences
-    data = []
-    tenors = ['3M', '2Y', '10Y'] # Define your tenors
-    
-    start_date = datetime(2020, 1, 1) # Example start date
 
-    for i in range(num_data_points):
-        current_date = start_date + pd.Timedelta(days=i*30) # Simulate monthly conferences
-        transcript_content = f"Transcript {i+1} on {current_date.strftime('%Y-%m-%d')}: The central bank discussed inflation at length. Some members hinted at future policy adjustments, others emphasized data dependency. Economic growth is stable."
-        
-        entry = {
-            "transcript_id": f"ECB_Conf_{i+1}",
-            "date": current_date.strftime('%Y-%m-%d'), # Include date for the prompt
-            "transcript_text": transcript_content,
-        }
-        for tenor in tenors:
-            # Simulate actual 10Y OIS volatility for this period.
-            # This is your target variable.
-            # Vary mock volatility a bit for different tenors
-            entry[f"actual_ois_volatility_{tenor}_bps"] = np.random.uniform(0.5 + i*0.01 + (0.5 if tenor == '10Y' else 0), 10.0 + i*0.02 + (1.0 if tenor == '10Y' else 0))
-        data.append(entry)
-    return pd.DataFrame(data)
 
 # Load your actual historical data here
 historical_data_df = load_mock_data()
@@ -385,7 +359,7 @@ Based on this, critique the current prompt and suggest a revised prompt to impro
             model=JUDGE_LLM_MODEL,
             system_prompt=JUDGE_SYSTEM_PROMPT,
             user_message=user_message,
-            temperature=0.8, # Higher temp for creativity in critiques/revisions
+            temperature=1,
             json_mode=True # Expect JSON output
         )
         judge_response = json.loads(response_content) # Parse JSON response
