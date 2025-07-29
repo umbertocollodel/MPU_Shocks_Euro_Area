@@ -264,7 +264,7 @@ def run_analyst_llm_for_transcript(transcript_text: str, analyst_prompt: str, co
 
 
 # Load your actual historical data here
-historical_data_df = pyreadr.read_r("../intermediate_data/range_difference_df.rds")
+historical_data_df = pyreadr.read_r("../intermediate_data/range_difference_df.rds", timezone="date")
 
 
 
