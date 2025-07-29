@@ -385,7 +385,7 @@ def summarize_prompt(prompt: str, max_len: int = 100) -> str:
 def run_optimization():
     current_analyst_prompt = INITIAL_ANALYST_PROMPT
     optimization_history = []
-    best_correlation = -1.0 # Initialize with a low value
+    best_correlation = 0.1 # Initialize with a low value
     best_prompt = INITIAL_ANALYST_PROMPT
 
     print("Starting LLM-as-Judge Prompt Optimization...")
@@ -405,7 +405,7 @@ def run_optimization():
             best_correlation = correlation
             best_prompt = current_analyst_prompt
             # Save the best prompt to a file for easy access
-            with open("best_analyst_prompt.txt", "w") as f: # 'w' for write mode
+            with open("../intermediate_data/best_analyst_prompt.txt", "w") as f: # 'w' for write mode
                 f.write(best_prompt)
             print("Best prompt saved to best_analyst_prompt.txt")
 
