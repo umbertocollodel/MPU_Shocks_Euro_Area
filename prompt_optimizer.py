@@ -1,3 +1,34 @@
+# ----- Set environment libraries: ----
+
+import subprocess
+import sys
+
+def install(package):
+    subprocess.check_call([sys.executable, "-m", "pip", "install", package])
+
+# List of required packages
+required_packages = {
+    "os": None,  # built-in
+    "json": None,  # built-in
+    "numpy": "numpy",
+    "pandas": "pandas",
+    "scipy": "scipy",
+    "pyreadr":"pyreadr",
+    "datetime": None,  # built-in
+    "time": None,  # built-in
+    "typing": None,  # built-in
+    "re": None  # built-in
+}
+
+# Install only the ones that are not built-in
+for module, package in required_packages.items():
+    if package:
+        try:
+            __import__(module)
+        except ImportError:
+            install(package)
+
+# Now you can safely import everything
 import os
 import json
 import numpy as np
@@ -6,7 +37,8 @@ from scipy.stats import pearsonr
 from datetime import datetime
 import time
 from typing import List, Dict, Any, Tuple, Optional
-import re # For regex parsing of the markdown table
+import re
+import pyreadr
 
 
 
@@ -232,10 +264,10 @@ def run_analyst_llm_for_transcript(transcript_text: str, analyst_prompt: str, co
 
 
 # Load your actual historical data here
-historical_data_df = load_mock_data()
-# Example of what your real data might look like:
-# historical_data_df = pd.read_csv('your_historical_data.csv', parse_dates=['date'])
-# Make sure your actual volatility columns are named consistently, e.g., 'actual_ois_volatility_3M_bps' etc.
+historical_data_df = pyreadr.read_r("../intermediate_data/range_difference_df.rds")
+
+
+
 
 def evaluate_analyst_performance(
     current_analyst_prompt: str,
