@@ -46,8 +46,8 @@ for module, package in required_packages.items():
 # export GOOGLE_API_KEY="AIza..."
 
 # LLM Models
-ANALYST_LLM_MODEL = "gemini-2.5-flash" # Example: "gpt-4o", "claude-3-5-sonnet", "gemini-1.5-pro"
-JUDGE_LLM_MODEL = "gemini-2.5-pro"   # Example: "gpt-4o", "claude-3-5-sonnet", "gemini-1.5-pro"
+ANALYST_LLM_MODEL = "gemini/gemini-2.5-flash" # Example: "gpt-4o", "claude-3-5-sonnet", "gemini-1.5-pro"
+JUDGE_LLM_MODEL = "gemini/gemini-2.5-pro"   # Example: "gpt-4o", "claude-3-5-sonnet", "gemini-1.5-pro"
 
 
 # Maximum iterations for prompt optimization
