@@ -111,11 +111,11 @@ For each tenor, the trader must:
 Output:
 Provide a table with the following structure for each press conference, trader, and interest rate tenor:
 
-| Date       | Trader ID | Tenor   | Expected Direction | New Expected Rate (%)  | Confidence Level (%) |
-|------------|-----------|---------|--------------------|------------------------|----------------------|
-| YYYY-MM-DD | T001      | 3M      | Up                 | 3.15                   |                      |
-| YYYY-MM-DD | T001      | 2Y      | Down               | 2.85                   |                      |
-| ...        | ...       | ...     | ...                | ...                    |                      |
+| Date       | Trader ID | Tenor   | Expected Direction | New Expected Rate (%)  |
+|------------|-----------|---------|--------------------|------------------------|
+| YYYY-MM-DD | T001      | 3M      | Up                 | 3.15                   |
+| YYYY-MM-DD | T001      | 2Y      | Down               | 2.85                   |
+| ...        | ...       | ...     | ...                | ...                    |
 
 Guidelines:
 - Use only the information available as of [date].
@@ -138,12 +138,12 @@ You will be provided with:
 - The historical performance trend, including past critiques and proposed prompt summaries.
 
 Your task is to:
-1.  **Critique the current prompt:** Identify specific weaknesses or areas of ambiguity that might directly hinder achieving a high positive correlation. Consider:
-    * **Clarity and Specificity:** Is the Analyst LLM's task unambiguous?
-    * **Emphasis on Uncertainty:** Does the prompt adequately guide the Analyst to reflect *internal uncertainty* in its prediction spread?
-    * **Guidance on Nuance:** Does it encourage consideration of subtle market signals from the text?
-2.  **Suggest a Revised Prompt:** Propose a new version of the Analyst LLM's prompt that directly addresses the identified weaknesses and aims to increase the correlation. Be precise with your suggested changes.
-3.  **Explain your reasoning:** Articulate *why* your proposed revisions are expected to improve the correlation, linking specific prompt changes to anticipated improvements in the Analyst LLM's behavior regarding uncertainty quantification.
+1.  Critique the current prompt: Identify specific weaknesses or areas of ambiguity that might directly hinder achieving a high positive correlation. Consider:
+     -Clarity and Specificity: Is the Analyst LLM's task unambiguous?
+     -Emphasis on Uncertainty: Does the prompt adequately guide the Analyst to reflect internal uncertainty in its prediction spread?
+     -Guidance on Nuance: Does it encourage consideration of subtle market signals from the text?
+2.  Suggest a Revised Prompt:Propose a new version of the Analyst LLM's prompt that directly addresses the identified weaknesses and aims to increase the correlation. Be precise with your suggested changes.
+3.  Explain your reasoning: Articulate why your proposed revisions are expected to improve the correlation, linking specific prompt changes to anticipated improvements in the Analyst LLM's behavior regarding uncertainty quantification.
 
 Your output must be in JSON format. Do not include any other text outside the JSON.
 
