@@ -323,7 +323,7 @@ def evaluate_analyst_performance(
     """
     Evaluates the performance by calculating the standard deviation of 'New Expected Rate (%)'
     from the simulated data for each tenor and date, and then correlating these
-    with actual market volatilities from historical_data_df.
+    with actual market volatilities from historical_data_df (using 'correct_post_mean').
     Returns the average correlation across tenors and detailed results.
     """
     if simulated_df.empty:
@@ -333,77 +333,97 @@ def evaluate_analyst_performance(
     if historical_data_df.empty:
         print("Historical data DataFrame is empty. Cannot evaluate performance.")
         return 0.0, pd.DataFrame()
-        
-    # Ensure 'Date' column in simulated_df matches 'date' in historical_data_df for merging
-    try:
-        simulated_df['Date_dt'] = pd.to_datetime(simulated_df['Date']).dt.date
-    except Exception as e:
-        print(f"Error converting 'Date' column in simulated_df to datetime.date: {e}")
+    
+    # --- Data Preparation for Merging ---
+    # Ensure 'Date' column in simulated_df is converted to datetime.date object
+    # This 'Date' column is typically derived from the LLM's markdown table output.
+    if 'Date' in simulated_df.columns:
+        try:
+            simulated_df['Date_dt'] = pd.to_datetime(simulated_df['Date']).dt.date
+        except Exception as e:
+            print(f"Error converting 'Date' column in simulated_df to datetime.date: {e}")
+            # Fallback to Conference_Date if 'Date' from LLM output is problematic
+            if 'Conference_Date' in simulated_df.columns:
+                print("Attempting to use 'Conference_Date' for merging as a fallback.")
+                simulated_df['Date_dt'] = pd.to_datetime(simulated_df['Conference_Date']).dt.date
+            else:
+                print("No suitable date column found in simulated_df for merging. Cannot evaluate.")
+                return 0.0, pd.DataFrame()
+    elif 'Conference_Date' in simulated_df.columns:
+        # If 'Date' from LLM output is missing, use 'Conference_Date' (derived from filename)
+        print("Warning: 'Date' column not found in simulated_df. Using 'Conference_Date' for merging.")
+        simulated_df['Date_dt'] = pd.to_datetime(simulated_df['Conference_Date']).dt.date
+    else:
+        print("Error: Neither 'Date' nor 'Conference_Date' found in simulated_df. Cannot evaluate.")
         return 0.0, pd.DataFrame()
 
-    # Ensure 'date' column in historical_data_df is datetime.date object
-    if pd.api.types.is_datetime64_any_dtype(historical_data_df['date']):
-        historical_data_df['date_dt'] = historical_data_df['date'].dt.date
-    elif 'date' in historical_data_df.columns:
-        try:
-            historical_data_df['date_dt'] = pd.to_datetime(historical_data_df['date']).dt.date
-        except Exception as e:
-            print(f"Error converting 'date' column in historical_data_df to datetime.date: {e}")
-            return 0.0, pd.DataFrame()
+    # Ensure 'date' column in historical_data_df is converted to datetime.date object
+    if 'date' in historical_data_df.columns:
+        if pd.api.types.is_datetime64_any_dtype(historical_data_df['date']):
+            historical_data_df['date_dt'] = historical_data_df['date'].dt.date
+        else:
+            try:
+                historical_data_df['date_dt'] = pd.to_datetime(historical_data_df['date']).dt.date
+            except Exception as e:
+                print(f"Error converting 'date' column in historical_data_df to datetime.date: {e}")
+                return 0.0, pd.DataFrame()
     else:
         print("Error: 'date' column not found in historical_data_df. Cannot evaluate.")
         return 0.0, pd.DataFrame()
     
+    # Ensure 'tenor' column in historical_data_df is correctly typed (e.g., string)
+    if 'tenor' in historical_data_df.columns:
+        # Standardize tenor names to match what the LLM might output (e.g., '3M' vs '3m')
+        historical_data_df['Tenor'] = historical_data_df['tenor'].astype(str).str.upper()
+    else:
+        print("Error: 'tenor' column not found in historical_data_df. Cannot evaluate.")
+        return 0.0, pd.DataFrame()
+
     # Calculate predicted standard deviations from the simulated data
-    # Use 'Date_dt' for grouping (parsed from the LLM's output table)
-    # Use 'Conference_Date' if you prefer the date derived from filename, assuming it's consistent.
-    # The prompt requests 'Date', so 'Date_dt' derived from that column is generally better.
+    # Group by BOTH Date_dt and Tenor to get per-conference, per-tenor standard deviations
     predicted_sds = simulated_df.groupby(['Date_dt', 'Tenor'])['New Expected Rate (%)'].std().reset_index()
     predicted_sds.rename(columns={'Date_dt': 'date_dt', 'New Expected Rate (%)': 'predicted_sd'}, inplace=True)
 
-    # Prepare actual volatility data for merging
-    actual_vol_melted = []
-    for tenor in TARGET_TENORS:
-        col_name = f'actual_ois_volatility_{tenor}_bps'
-        if col_name in historical_data_df.columns:
-            temp_df = historical_data_df[['date_dt', col_name]].copy()
-            temp_df.rename(columns={col_name: 'actual_volatility'}, inplace=True)
-            temp_df['Tenor'] = tenor
-            actual_vol_melted.append(temp_df)
-        else:
-            print(f"Warning: Actual volatility column '{col_name}' not found in historical data for tenor {tenor}. Skipping this tenor for correlation.")
-    
-    if not actual_vol_melted:
-        print("No actual volatility data available for any target tenor. Cannot calculate correlations.")
+    # Prepare actual volatility data for merging directly using 'correct_post_mean'
+    # Ensure 'correct_post_mean' column exists in the historical data
+    if 'correct_post_mean' not in historical_data_df.columns:
+        print("Error: 'correct_post_mean' column not found in historical_data_df. Cannot evaluate.")
         return 0.0, pd.DataFrame()
 
-    actual_volatilities = pd.concat(actual_vol_melted, ignore_index=True)
-    actual_volatilities.dropna(subset=['actual_volatility'], inplace=True)
+    # Select relevant columns from historical_data_df for actual volatility
+    actual_volatilities = historical_data_df[['date_dt', 'Tenor', 'correct_post_mean']].copy()
+    actual_volatilities.rename(columns={'correct_post_mean': 'actual_volatility'}, inplace=True)
+    actual_volatilities.dropna(subset=['actual_volatility'], inplace=True) # Drop rows with missing actual volatility
 
     # Merge predicted and actual data
+    # Merge on both date and tenor to align per-conference, per-tenor values
     merged_data = pd.merge(
         predicted_sds,
         actual_volatilities,
         on=['date_dt', 'Tenor'],
-        how='inner'
+        how='inner' # Only keep rows where both predicted and actual data exist for a date/tenor
     )
     
     if merged_data.empty:
         print("No common dates or tenors between simulated and historical data for correlation. Returning 0.0.")
         return 0.0, pd.DataFrame()
 
-    # Calculate correlations for each tenor
+    # Calculate correlations for each tenor individually
     tenor_correlations = []
     detailed_results_list = []
 
     for tenor in TARGET_TENORS:
         tenor_data = merged_data[merged_data['Tenor'] == tenor].copy()
         
-        if len(tenor_data['predicted_sd'].dropna()) >= 2 and len(tenor_data['actual_volatility'].dropna()) >= 2:
+        # Ensure enough non-NaN data points for correlation calculation (min 2 points)
+        if len(tenor_data['predicted_sd'].dropna()) >= 2 and \
+           len(tenor_data['actual_volatility'].dropna()) >= 2:
+            
             correlation, p_value = pearsonr(tenor_data['predicted_sd'], tenor_data['actual_volatility'])
             tenor_correlations.append(correlation)
             print(f"  Correlation for {tenor}: {correlation:.4f} (p-value: {p_value:.4f})")
             
+            # Add detailed results for this tenor and date
             for _, row in tenor_data.iterrows():
                 detailed_results_list.append({
                     "transcript_date": row['date_dt'].strftime('%Y-%m-%d'),
@@ -422,6 +442,9 @@ def evaluate_analyst_performance(
     print(f"Overall Average Pearson Correlation (across tenors): {average_correlation:.4f}")
 
     return average_correlation, pd.DataFrame(detailed_results_list)
+
+# in historical_data_df, tenor is lowercase! change
+
 
 
 def run_judge_llm(
