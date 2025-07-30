@@ -4,17 +4,23 @@ import os
 import json
 import numpy as np
 import pandas as pd
-from scipy.stats import pearsonr
+from scipy.stats import pearsonr, spearmanr
 from datetime import datetime
 import time
 from typing import List, Dict, Any, Tuple, Optional
 import re
 import pyreadr
+from concurrent.futures import ThreadPoolExecutor, as_completed # For parallelization
 
 # ----- Set environment libraries: ----
 def install(package):
     """Installs a pip package if not already installed."""
-    subprocess.check_call([sys.executable, "-m", "pip", "install", package])
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", package])
+    except subprocess.CalledProcessError as e:
+        print(f"Error installing {package}: {e}")
+        print(f"Please try running 'pip install {package}' manually.")
+        sys.exit(1) # Exit if essential package installation fails
 
 # List of required packages
 required_packages = {
@@ -29,7 +35,6 @@ required_packages = {
 for module, package in required_packages.items():
     if package:
         try:
-            # Attempt to import directly, or check if it's already installed
             __import__(module)
         except ImportError:
             print(f"Installing {package}...")
@@ -47,36 +52,45 @@ for module, package in required_packages.items():
 
 # LLM Models
 ANALYST_LLM_MODEL = "gemini/gemini-2.5-flash" # Example: "gpt-4o", "claude-3-5-sonnet", "gemini-1.5-pro"
-JUDGE_LLM_MODEL = "gemini/gemini-2.5-pro"   # Example: "gpt-4o", "claude-3-5-sonnet", "gemini-1.5-pro"
+JUDGE_LLM_MODEL = "gemini/gemini-2.5-pro" # Example: "gpt-4o", "claude-3-5-sonnet", "gemini-1.5-pro"
 
 
 # Maximum iterations for prompt optimization
-MAX_OPTIMIZATION_ITERATIONS = 8
+MAX_OPTIMIZATION_ITERATIONS = 6 
 
 # Threshold for improvement to continue optimization (e.g., 0.001 increase in average correlation)
-MIN_CORRELATION_IMPROVEMENT = 0.02
+# MIN_CORRELATION_IMPROVEMENT = 0.02 # <-- COMMENTED OUT AS REQUESTED
 
 # Directory for transcripts and target tenors
 TRANSCRIPT_DIR = "../intermediate_data/texts"
-TARGET_TENORS = ['3mnt', '2Y', '10Y'] # This should match the 'tenor' values in your RDS file
+TARGET_TENORS = ['3MNT', '2Y', '10Y'] # This should match the 'tenor' values in your RDS file (after uppercasing)
 
 
 # LLM API Call Function
 try:
     from litellm import completion
     print("Using litellm for LLM API calls.")
+    # Ensure litellm version is recent enough for response_format
+    # if not hasattr(completion, 'response_format'):
+    #     print("Warning: litellm version might be old. 'response_format' might not be supported.")
+    #     print("Please consider upgrading: pip install --upgrade litellm")
+
     def call_llm(model: str, system_prompt: str, user_message: str, temperature: float = 0.7, json_mode: bool = False) -> str:
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message}
         ]
-        response_format = {"type": "json_object"} if json_mode else {"type": "text"}
+        
+        # litellm expects response_format to be a dict, not a string
+        # For text mode, litellm typically handles it without explicit response_format,
+        # but including it for clarity if the API supports it
+        response_format_arg = {"type": "json_object"} if json_mode else {"type": "text"}
 
         response = completion(
             model=model,
             messages=messages,
             temperature=temperature,
-            response_format=response_format
+            response_format=response_format_arg # Pass the dictionary directly
         )
         return response.choices[0].message.content
 except ImportError:
@@ -113,7 +127,7 @@ Provide a table with the following structure for each press conference, trader, 
 
 | Date       | Trader ID | Tenor   | Expected Direction | New Expected Rate (%)  |
 |------------|-----------|---------|--------------------|------------------------|
-| YYYY-MM-DD | T001      | 3M      | Up                 | 3.15                   |
+| YYYY-MM-DD | T001      | 3MNT     | Up                 | 3.15                   |
 | YYYY-MM-DD | T001      | 2Y      | Down               | 2.85                   |
 | ...        | ...       | ...     | ...                | ...                    |
 
@@ -139,9 +153,9 @@ You will be provided with:
 
 Your task is to:
 1.  Critique the current prompt: Identify specific weaknesses or areas of ambiguity that might directly hinder achieving a high positive correlation. Consider:
-     -Clarity and Specificity: Is the Analyst LLM's task unambiguous?
-     -Emphasis on Uncertainty: Does the prompt adequately guide the Analyst to reflect internal uncertainty in its prediction spread?
-     -Guidance on Nuance: Does it encourage consideration of subtle market signals from the text?
+    -Clarity and Specificity: Is the Analyst LLM's task unambiguous?
+    -Emphasis on Uncertainty: Does the prompt adequately guide the Analyst to reflect internal uncertainty in its prediction spread?
+    -Guidance on Nuance: Does it encourage consideration of subtle market signals from the text?
 2.  Suggest a Revised Prompt:Propose a new version of the Analyst LLM's prompt that directly addresses the identified weaknesses and aims to increase the correlation. Be precise with your suggested changes.
 3.  Explain your reasoning: Articulate why your proposed revisions are expected to improve the correlation, linking specific prompt changes to anticipated improvements in the Analyst LLM's behavior regarding uncertainty quantification.
 
@@ -156,7 +170,12 @@ Example JSON output:
 }
 """
 
-  # --- Core Functions ---
+# --- Helper Function for Summarizing Prompts ---
+def summarize_prompt(prompt: str, max_length: int = 200) -> str:
+    """Summarizes a prompt for logging purposes."""
+    return (prompt[:max_length] + '...') if len(prompt) > max_length else prompt
+
+# --- Core Functions ---
 
 def parse_markdown_table(markdown_string: str) -> Optional[pd.DataFrame]:
     """
@@ -165,7 +184,7 @@ def parse_markdown_table(markdown_string: str) -> Optional[pd.DataFrame]:
     """
     lines = markdown_string.strip().split('\n')
     if len(lines) < 2: # Need at least header and separator
-        print("Warning: Markdown table too short to parse.")
+        # print("Warning: Markdown table too short to parse.")
         return None
 
     # Find the separator line (e.g., |---|---|---|)
@@ -178,7 +197,7 @@ def parse_markdown_table(markdown_string: str) -> Optional[pd.DataFrame]:
             break
 
     if separator_line_index == -1 or header_line is None:
-        print("Warning: Could not find valid markdown table separator or header.")
+        # print("Warning: Could not find valid markdown table separator or header.")
         return None
 
     # Parse headers (strip whitespace and |)
@@ -197,7 +216,7 @@ def parse_markdown_table(markdown_string: str) -> Optional[pd.DataFrame]:
             print(f"Warning: Row has inconsistent number of columns: {line}")
 
     if not data_rows:
-        print("Warning: No data rows parsed from markdown table.")
+        # print("Warning: No data rows parsed from markdown table.")
         return None
 
     try:
@@ -251,36 +270,46 @@ def get_transcript_data(transcript_dir: str) -> List[Dict[str, str]]:
     return transcript_data
 
 
-def run_analyst_llm_for_transcript(transcript_text: str, analyst_prompt: str, conference_date: str) -> List[pd.DataFrame]:
+def run_analyst_llm_for_transcript(transcript_info: Dict[str, str], analyst_prompt: str) -> Optional[pd.DataFrame]:
     """
     Runs the Analyst LLM once for a single transcript,
     simulating the 30 traders and collecting the resulting DataFrame.
+    Returns None if parsing fails or data is incomplete.
     """
-    all_simulated_market_data = []
+    conference_date = transcript_info['date']
+    transcript_text = transcript_info['text']
+    
     formatted_prompt = analyst_prompt.replace("[date]", conference_date)
 
-    print(f"  Running Analyst LLM simulation for transcript on {conference_date}...")
     user_message = f"Here is the ECB press conference excerpt for the date {conference_date}: \n\n{transcript_text}\n\n" \
                    f"Please simulate the trading actions for the 30 traders as per the instructions in your system prompt. " \
                    f"Ensure the output is strictly a markdown table."
+    
     try:
         response_content = call_llm(
             model=ANALYST_LLM_MODEL,
             system_prompt=formatted_prompt,
             user_message=user_message,
-            temperature=1 # Temperature set to 1, as requested
+            temperature=1 
         )
         simulated_df = parse_markdown_table(response_content)
 
-        if simulated_df is not None and not simulated_df.empty and len(simulated_df) >= 30 * len(TARGET_TENORS):
-            simulated_df['Simulation_ID'] = 1
-            all_simulated_market_data.append(simulated_df)
+        if simulated_df is not None and not simulated_df.empty:
+            # Add Conference_Date column, useful for debugging and if LLM's 'Date' column is problematic
+            simulated_df['Conference_Date'] = conference_date 
+            # Check for expected number of rows, 30 traders * number of tenors
+            expected_min_rows = 30 * len(TARGET_TENORS) 
+            if len(simulated_df) < expected_min_rows:
+                 print(f"Warning: Analyst LLM output for {conference_date} has fewer rows than expected. "
+                       f"Expected ~{expected_min_rows}, got {len(simulated_df)}.")
+            return simulated_df
         else:
-            print(f"Warning: Analyst LLM returned unparseable, empty, or incomplete table for transcript on {conference_date}. Expected ~{30 * len(TARGET_TENORS)} rows, got {len(simulated_df) if simulated_df is not None else 'None'}.")
-            # print(f"Raw response was:\n{response_content[:1000]}...") # Uncomment for debugging
+            print(f"Warning: Analyst LLM returned unparseable, empty, or incomplete table for transcript on {conference_date}.")
+            # print(f"Raw response for {conference_date} was:\n{response_content[:1000]}...") # Uncomment for debugging
+            return None
     except Exception as e:
         print(f"Error during Analyst LLM simulation for {conference_date}: {e}")
-    return all_simulated_market_data
+        return None
 
 
 def run_analyst_llm_for_all_transcripts(
@@ -288,26 +317,35 @@ def run_analyst_llm_for_all_transcripts(
     analyst_prompt: str
 ) -> pd.DataFrame:
     """
-    Runs the Analyst LLM for all provided transcripts and collects all simulated data
+    Runs the Analyst LLM for all provided transcripts in parallel and collects all simulated data
     into a single pandas DataFrame.
     """
     all_simulated_dfs = []
-    print("\n--- Running Analyst LLM for all transcripts ---")
-    for transcript_info in transcripts:
-        conference_date = transcript_info['date']
-        transcript_text = transcript_info['text']
+    print("\n--- Running Analyst LLM for all transcripts (in parallel) ---")
 
-        simulated_dfs_for_one_transcript = run_analyst_llm_for_transcript(
-            transcript_text, analyst_prompt, conference_date
-        )
-        
-        if simulated_dfs_for_one_transcript:
-            for df in simulated_dfs_for_one_transcript:
-                df['Conference_Date'] = conference_date # Add a common date column for grouping
-            all_simulated_dfs.extend(simulated_dfs_for_one_transcript)
-        else:
-            print(f"No valid simulation output for {conference_date}.")
-            
+    # Parallelize LLM calls using ThreadPoolExecutor
+    # Max workers can be adjusted based on your API rate limits and CPU cores
+    max_workers = 5 # Example: Run 5 calls concurrently
+    
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Submit tasks for each transcript
+        future_to_transcript = {
+            executor.submit(run_analyst_llm_for_transcript, t_info, analyst_prompt): t_info['date']
+            for t_info in transcripts
+        }
+
+        for future in as_completed(future_to_transcript):
+            conference_date = future_to_transcript[future]
+            try:
+                simulated_df = future.result()
+                if simulated_df is not None and not simulated_df.empty:
+                    all_simulated_dfs.append(simulated_df)
+                    print(f"  Successfully processed transcript for {conference_date}")
+                else:
+                    print(f"  No valid simulation output collected for {conference_date}.")
+            except Exception as exc:
+                print(f"  Transcript for {conference_date} generated an exception: {exc}")
+
     if not all_simulated_dfs:
         print("No simulated data collected from any transcript.")
         return pd.DataFrame()
@@ -324,6 +362,7 @@ def evaluate_analyst_performance(
     Evaluates the performance by calculating the standard deviation of 'New Expected Rate (%)'
     from the simulated data for each tenor and date, and then correlating these
     with actual market volatilities from historical_data_df (using 'correct_post_mean').
+    Uses Spearman correlation.
     Returns the average correlation across tenors and detailed results.
     """
     if simulated_df.empty:
@@ -371,9 +410,8 @@ def evaluate_analyst_performance(
         print("Error: 'date' column not found in historical_data_df. Cannot evaluate.")
         return 0.0, pd.DataFrame()
     
-    # Ensure 'tenor' column in historical_data_df is correctly typed (e.g., string)
+    # Ensure 'tenor' column in historical_data_df is correctly typed and UPPERCASED
     if 'tenor' in historical_data_df.columns:
-        # Standardize tenor names to match what the LLM might output (e.g., '3M' vs '3m')
         historical_data_df['Tenor'] = historical_data_df['tenor'].astype(str).str.upper()
     else:
         print("Error: 'tenor' column not found in historical_data_df. Cannot evaluate.")
@@ -419,9 +457,11 @@ def evaluate_analyst_performance(
         if len(tenor_data['predicted_sd'].dropna()) >= 2 and \
            len(tenor_data['actual_volatility'].dropna()) >= 2:
             
-            correlation, p_value = pearsonr(tenor_data['predicted_sd'], tenor_data['actual_volatility'])
+            # --- Using Spearman correlation as requested ---
+            correlation, p_value = spearmanr(tenor_data['predicted_sd'], tenor_data['actual_volatility'])
+            
             tenor_correlations.append(correlation)
-            print(f"  Correlation for {tenor}: {correlation:.4f} (p-value: {p_value:.4f})")
+            print(f"  Spearman Correlation for {tenor}: {correlation:.4f} (p-value: {p_value:.4f})")
             
             # Add detailed results for this tenor and date
             for _, row in tenor_data.iterrows():
@@ -439,12 +479,9 @@ def evaluate_analyst_performance(
         return 0.0, pd.DataFrame(detailed_results_list)
 
     average_correlation = np.mean(tenor_correlations)
-    print(f"Overall Average Pearson Correlation (across tenors): {average_correlation:.4f}")
+    print(f"Overall Average Spearman Correlation (across tenors): {average_correlation:.4f}")
 
     return average_correlation, pd.DataFrame(detailed_results_list)
-
-# in historical_data_df, tenor is lowercase! change
-
 
 
 def run_judge_llm(
@@ -465,7 +502,7 @@ Current Analyst LLM Prompt:
 
 {current_analyst_prompt}
 
-Current Performance (Pearson Correlation): {current_correlation:.4f}
+Current Performance (Spearman Correlation): {current_correlation:.4f}
 
 Optimization History:
 {history_summary if history_summary else "No previous optimization history."}
@@ -498,11 +535,11 @@ Based on this, critique the current prompt and suggest a revised prompt to impro
 def run_optimization():
     current_analyst_prompt = INITIAL_ANALYST_PROMPT
     optimization_history = []
-    best_correlation = -1.0
+    best_correlation = -1.0 # Initialize with a value lower than any possible correlation
     best_prompt = INITIAL_ANALYST_PROMPT
 
     print("Starting LLM-as-Judge Prompt Optimization...")
-    print(f"Initial Analyst Prompt: {summarize_prompt(current_analyst_prompt)}")
+    print(f"Initial Analyst Prompt (Summary): {summarize_prompt(current_analyst_prompt)}")
 
     # Step 0: Load all transcripts once
     all_transcripts_data = get_transcript_data(TRANSCRIPT_DIR)
@@ -512,9 +549,11 @@ def run_optimization():
 
     # Step 0: Load historical OIS volatility data once
     try:
+        print(f"Loading historical data from ../intermediate_data/range_difference_df.rds...")
         historical_data_df_dict = pyreadr.read_r("../intermediate_data/range_difference_df.rds")
         historical_data_df = historical_data_df_dict[None] 
         
+        # Ensure 'date' column is datetime.date objects for consistent merging
         if 'date' in historical_data_df.columns:
             if pd.api.types.is_datetime64_any_dtype(historical_data_df['date']):
                 historical_data_df['date'] = historical_data_df['date'].dt.date
@@ -542,13 +581,15 @@ def run_optimization():
 
         if current_simulated_df.empty:
             print(f"Iteration {i+1}: No simulated data generated. Cannot evaluate. Continuing to next iteration or breaking.")
-            continue 
-
-        # Step 2: Evaluate Analyst LLM with the complete simulated_df and historical_data_df
-        correlation, detailed_results_df = evaluate_analyst_performance(
-            current_simulated_df,
-            historical_data_df.copy() # Pass a copy to ensure original isn't modified
-        )
+            # If no data is generated at all, we might want to break or assign a very low correlation
+            correlation = 0.0 # Assign a zero correlation for no data
+            detailed_results_df = pd.DataFrame()
+        else:
+            # Step 2: Evaluate Analyst LLM with the complete simulated_df and historical_data_df
+            correlation, detailed_results_df = evaluate_analyst_performance(
+                current_simulated_df,
+                historical_data_df.copy() # Pass a copy to ensure original isn't modified
+            )
 
         print(f"Iteration {i+1} Result: Correlation = {correlation:.4f}")
 
@@ -556,9 +597,13 @@ def run_optimization():
             print(f"New best correlation found: {correlation:.4f} (Previous best: {best_correlation:.4f})")
             best_correlation = correlation
             best_prompt = current_analyst_prompt
+            # Save the best prompt
             with open("../intermediate_data/best_analyst_prompt.txt", "w") as f:
                 f.write(best_prompt)
             print("Best prompt saved to best_analyst_prompt.txt")
+        else:
+            print(f"No improvement. Best correlation remains {best_correlation:.4f}")
+
 
         optimization_history.append({
             "iteration": i + 1,
@@ -571,10 +616,14 @@ def run_optimization():
             "proposed_prompt_summary": ""
         })
 
-        # Check stopping criteria
-        # Ensure we have at least two iterations to compare
-        if i > 0 and (correlation - optimization_history[-2]['correlation']) < MIN_CORRELATION_IMPROVEMENT and correlation < best_correlation:
-            print(f"Stopping early: Improvement ({correlation:.4f} - {optimization_history[-2]['correlation']:.4f}) below threshold {MIN_CORRELATION_IMPROVEMENT} and not the best prompt.")
+        # --- Removed stopping criteria based on MIN_CORRELATION_IMPROVEMENT as requested ---
+        # if i > 0 and (correlation - optimization_history[-2]['correlation']) < MIN_CORRELATION_IMPROVEMENT and correlation < best_correlation:
+        #     print(f"Stopping early: Improvement ({correlation:.4f} - {optimization_history[-2]['correlation']:.4f}) below threshold {MIN_CORRELATION_IMPROVEMENT} and not the best prompt.")
+        #     break
+
+        # If this is the last iteration, no need to run the Judge LLM
+        if i == MAX_OPTIMIZATION_ITERATIONS - 1:
+            print("Reached maximum optimization iterations. Finalizing.")
             break
 
         critique, revised_prompt, reasoning = run_judge_llm(
@@ -590,7 +639,7 @@ def run_optimization():
 
         print(f"Judge's Critique: {critique}")
         print(f"Judge's Reasoning: {reasoning}")
-        print(f"Revised Prompt: {summarize_prompt(revised_prompt)}")
+        print(f"Revised Prompt (Summary): {summarize_prompt(revised_prompt)}")
 
         current_analyst_prompt = revised_prompt
         time.sleep(2) # Small delay to respect API rate limits
@@ -608,4 +657,8 @@ def run_optimization():
 
 
 if __name__ == "__main__":
+    # Define TARGET_TENORS here as well if you run this script directly and not as part of a larger module
+    # or ensure it's imported correctly if it's in a config file.
+    # For now, it's defined at the top of this script.
+
     optimized_prompt, final_correlation, full_history = run_optimization()
