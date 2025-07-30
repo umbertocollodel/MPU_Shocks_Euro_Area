@@ -65,6 +65,9 @@ MAX_OPTIMIZATION_ITERATIONS = 6
 TRANSCRIPT_DIR = "../intermediate_data/texts"
 TARGET_TENORS = ['3MNT', '2Y', '10Y'] # This should match the 'tenor' values in your RDS file (after uppercasing)
 
+# Directory to save the final simulated DataFrame
+SAVE_FINAL_DF_DIR = "../intermediate_data/aggregate_gemini_result/judge_llm"
+
 
 # LLM API Call Function
 try:
@@ -127,7 +130,7 @@ Provide a table with the following structure for each press conference, trader, 
 
 | Date       | Trader ID | Tenor   | Expected Direction | New Expected Rate (%)  |
 |------------|-----------|---------|--------------------|------------------------|
-| YYYY-MM-DD | T001      | 3MNT     | Up                 | 3.15                   |
+| YYYY-MM-DD | T001      | 3MNT    | Up                 | 3.15                   |
 | YYYY-MM-DD | T001      | 2Y      | Down               | 2.85                   |
 | ...        | ...       | ...     | ...                | ...                    |
 
@@ -362,7 +365,6 @@ def evaluate_analyst_performance(
     Evaluates the performance by calculating the standard deviation of 'New Expected Rate (%)'
     from the simulated data for each tenor and date, and then correlating these
     with actual market volatilities from historical_data_df (using 'correct_post_mean').
-    Uses Spearman correlation.
     Returns the average correlation across tenors and detailed results.
     """
     if simulated_df.empty:
@@ -569,6 +571,8 @@ def run_optimization():
         print(f"Error loading historical OIS volatility data from RDS: {e}. Exiting optimization.")
         return None, None, None
 
+    # Initialize current_simulated_df outside the loop to store the last one
+    current_simulated_df = pd.DataFrame() 
 
     for i in range(MAX_OPTIMIZATION_ITERATIONS):
         print(f"\n===== Iteration {i+1}/{MAX_OPTIMIZATION_ITERATIONS} =====")
@@ -647,6 +651,21 @@ def run_optimization():
     print("\n===== Optimization Complete =====")
     print(f"Final Best Correlation: {best_correlation:.4f}")
     print(f"Optimized Analyst Prompt:\n{best_prompt}")
+
+    # --- NEW: Save the final simulated_df ---
+    if not current_simulated_df.empty:
+        # Ensure the directory exists
+        os.makedirs(SAVE_FINAL_DF_DIR, exist_ok=True)
+        # Create a timestamped filename to avoid overwriting
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        final_simulated_df_filename = f"final_analyst_simulated_df_{timestamp}.csv"
+        final_simulated_df_path = os.path.join(SAVE_FINAL_DF_DIR, final_simulated_df_filename)
+        
+        current_simulated_df.to_csv(final_simulated_df_path, index=False)
+        print(f"Final analyst simulated DataFrame saved to {final_simulated_df_path}")
+    else:
+        print("No final simulated DataFrame to save as it was empty.")
+
 
     history_filename = f"optimization_history_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
     with open(history_filename, "w") as f:
