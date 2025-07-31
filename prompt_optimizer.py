@@ -297,7 +297,7 @@ def run_analyst_llm_for_all_transcripts(
     all_simulated_dfs = []
     print("\n--- Running Analyst LLM for all transcripts (in parallel) ---")
 
-    max_workers = 5
+    max_workers = 4
     
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_transcript = {
@@ -513,12 +513,27 @@ def run_optimization():
     print(f"Total transcripts found: {num_transcripts}")
     print(f"Using {len(training_transcripts)} transcripts for optimization (in-sample training).")
 
+   
+    # --- ADD DIAGNOSTIC PRINTS HERE FOR TRANSCRIPT DATES ---
+    print("\n--- Diagnosing Date Mismatch ---")
+    if training_transcripts:
+        print(f"First training transcript date: {training_transcripts[0]['date']} (Type: {type(training_transcripts[0]['date'])})")
+        print(f"Last training transcript date: {training_transcripts[-1]['date']} (Type: {type(training_transcripts[-1]['date'])})")
+        # Convert training_dates to datetime.date objects for comparison
+        training_dates_dt_objects = {datetime.strptime(t['date'], "%Y-%m-%d").date() for t in training_transcripts}
+        print(f"Number of unique training dates (as datetime.date): {len(training_dates_dt_objects)}")
+    else:
+        print("No training transcripts found.")
+    print("----------------------------------")
+
+
     # Step 0: Load historical OIS volatility data once
     try:
         print(f"Loading historical data from ../intermediate_data/range_difference_df.rds...")
         historical_data_df_dict = pyreadr.read_r("../intermediate_data/range_difference_df.rds")
-        historical_data_df = historical_data_df_dict[None] 
-        
+        historical_data_df = historical_data_df_dict[None]
+
+        # Ensure historical_data_df['date'] is consistently datetime.date objects
         if 'date' in historical_data_df.columns:
             if pd.api.types.is_datetime64_any_dtype(historical_data_df['date']):
                 historical_data_df['date'] = historical_data_df['date'].dt.date
@@ -527,21 +542,43 @@ def run_optimization():
                     historical_data_df['date'] = pd.to_datetime(historical_data_df['date']).dt.date
                 except Exception as e:
                     print(f"Warning: Could not convert 'date' column in historical_data_df to datetime.date: {e}")
+                    # If conversion fails, the dates won't match, so we should exit or handle.
+                    return None, None, None # Exit early if critical conversion fails
         else:
             print("Warning: 'date' column not found in historical_data_df. This is crucial for merging.")
+            return None, None, None # Exit early if critical column is missing
+
+        # --- ADD DIAGNOSTIC PRINTS HERE FOR HISTORICAL DATA DATES ---
+        print("\n--- Diagnosing Historical Data Dates ---")
+        if not historical_data_df.empty:
+            print(f"Historical data 'date' column Dtype: {historical_data_df['date'].dtype}")
+            print(f"First historical data date: {historical_data_df['date'].iloc[0]} (Type: {type(historical_data_df['date'].iloc[0])})")
+            print(f"Last historical data date: {historical_data_df['date'].iloc[-1]} (Type: {type(historical_data_df['date'].iloc[-1])})")
+            print(f"Number of unique historical dates: {historical_data_df['date'].nunique()}")
+        else:
+            print("Historical data DataFrame is empty after loading.")
+        print("----------------------------------------")
+
 
     except Exception as e:
         print(f"Error loading historical OIS volatility data from RDS: {e}. Exiting optimization.")
         return None, None, None
 
     # Filter historical data to match only the training transcripts' dates
-    training_dates = {t['date'] for t in training_transcripts}
-    historical_data_df_training = historical_data_df[historical_data_df['date'].isin(training_dates)].copy()
+    # Ensure this is a set of datetime.date objects for matching
+    training_dates_for_filter = {datetime.strptime(t['date'], "%Y-%m-%d").date() for t in training_transcripts}
+
+    historical_data_df_training = historical_data_df[historical_data_df['date'].isin(training_dates_for_filter)].copy()
+
+    # --- ADD FINAL DIAGNOSTIC PRINT ---
+    print(f"\n--- Post-Filter Check ---")
+    print(f"Size of historical_data_df_training after filter: {historical_data_df_training.shape[0]} rows")
     if historical_data_df_training.empty:
         print("No historical data available for the selected training transcripts. Exiting.")
         return None, None, None
+    print("-------------------------")
 
-    current_simulated_df_training = pd.DataFrame() 
+    current_simulated_df_training = pd.DataFrame()
 
     for i in range(MAX_OPTIMIZATION_ITERATIONS):
         print(f"\n===== Iteration {i+1}/{MAX_OPTIMIZATION_ITERATIONS} (In-sample Optimization) =====")
@@ -640,3 +677,4 @@ def run_optimization():
 
 if __name__ == "__main__":
     optimized_prompt, final_correlation, full_history = run_optimization()
+    
