@@ -718,3 +718,15 @@ def run_optimization():
         print("Final simulated DataFrame is empty, no file saved.")
 
     return best_prompt, best_correlation, optimization_history
+
+
+if __name__ == "__main__":
+    best_prompt, best_correlation, history = run_optimization()
+    
+    if best_prompt:
+        print("\n--- Final Out-of-Sample Test ---")
+        # To run the out-of-sample test, you would load the remaining transcripts
+        # and re-run the simulation using the `best_prompt` found in optimization.
+        # This part of the code is left as an exercise for the user, as it requires
+        # careful management of the remaining data.
+        print("Final out-of-sample test would be implemented here using the remaining transcripts.")
