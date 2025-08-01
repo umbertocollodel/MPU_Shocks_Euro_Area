@@ -180,7 +180,6 @@ def parse_markdown_table(markdown_string: str) -> Optional[pd.DataFrame]:
     header_line = None
     separator_line_index = -1
     for i, line in enumerate(lines):
-        # A more robust regex for the separator line
         if re.match(r'^\|\s*[-:]+\s*\|', line):
             separator_line_index = i
             header_line = lines[i-1]
@@ -206,6 +205,7 @@ def parse_markdown_table(markdown_string: str) -> Optional[pd.DataFrame]:
 
     try:
         df = pd.DataFrame(data_rows, columns=headers)
+        df.columns = [col.strip() for col in df.columns]  # Strip whitespace from column names
         df['New Expected Rate (%)'] = pd.to_numeric(
             df['New Expected Rate (%)'], errors='coerce'
         )
@@ -214,6 +214,7 @@ def parse_markdown_table(markdown_string: str) -> Optional[pd.DataFrame]:
     except Exception as e:
         print(f"Error creating DataFrame from parsed markdown: {e}")
         return None
+
 
 def parse_comma_separated_list(list_string: str) -> Optional[List[float]]:
     """
@@ -274,6 +275,7 @@ def get_transcript_data(transcript_dir: str) -> List[Dict[str, str]]:
 
 # --- Analyst LLM Execution Functions ---
 
+
 def run_analyst_llm_for_transcript_markdown(transcript_info: Dict[str, str], analyst_prompt: str) -> Optional[pd.DataFrame]:
     """
     Runs the Analyst LLM once for a single transcript, expecting a markdown table output
@@ -298,13 +300,19 @@ def run_analyst_llm_for_transcript_markdown(transcript_info: Dict[str, str], ana
         simulated_df = parse_markdown_table(response_content)
 
         if simulated_df is not None and not simulated_df.empty:
-            simulated_df['Conference_Date'] = conference_date 
-            expected_min_rows = 30 * len(TARGET_TENORS) 
+            # Handle column renaming carefully to avoid duplicates
+            if 'Date' in simulated_df.columns:
+                simulated_df.rename(columns={'Date': 'Conference_Date'}, inplace=True)
+            else:
+                simulated_df['Conference_Date'] = conference_date
+            
+            # Standardize other column names
+            simulated_df.rename(columns={'New Expected Rate (%)': 'New Expected Rate'}, inplace=True)
+            
+            expected_min_rows = 30 * len(TARGET_TENORS)
             if len(simulated_df) < expected_min_rows:
                  print(f"Warning: Analyst LLM output for {conference_date} has fewer rows than expected. "
                        f"Expected ~{expected_min_rows}, got {len(simulated_df)}. This may affect evaluation.")
-            # Standardize column names
-            simulated_df.rename(columns={'Date': 'Conference_Date', 'New Expected Rate (%)': 'New Expected Rate'}, inplace=True)
             return simulated_df
         else:
             print(f"Warning: Analyst LLM returned unparseable, empty, or incomplete table for transcript on {conference_date}.")
