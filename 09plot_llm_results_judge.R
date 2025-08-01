@@ -7,6 +7,8 @@ library(tidyr)
 library(lubridate)
 library(RColorBrewer)
 library(data.table)
+library(knitr)
+library(kableExtra)
 
 # --- Load and Prepare Data ------
 # Load the JSON file and clean the data structure
@@ -161,3 +163,80 @@ ggsave(filename = "../output/figures/prompt_llm_as_judge/training/llm_predicted_
   dpi = 300,
   create.dir = TRUE
 )
+
+# Plot: correlation evolution across iterations  ------
+
+plot_cor_evolution <- judge_df |> 
+  select(iteration, correlation_training) |>
+  distinct() |>
+  ggplot(aes(x = iteration,y=correlation_training,group=1)) +
+  geom_line(linewidth = 1.2, color = "#4575b4") +
+  geom_point(size = 3, color = "#4575b4",alpha=0.5) +
+  labs(
+    title = "",
+    subtitle = "",
+    y = "Avg. Correlation",
+    x = NULL,
+    color = "Series"
+  ) +
+  theme_minimal(base_family = "Segoe UI") +
+  theme(
+    legend.position = "top",
+    legend.box = "horizontal",
+    legend.title = element_text(face = "bold", size = 12),
+    legend.text = element_text(size = 11),
+    plot.title.position = "plot",
+    plot.title = element_text(size = 18, face = "bold", margin = margin(b = 5)),
+    plot.subtitle = element_text(size = 13, color = "grey30", margin = margin(b = 20)),
+    plot.margin = margin(t = 10, r = 20, b = 10, l = 20, unit = "pt"),
+    strip.text.x = element_text(face = "bold", size = 12, margin = margin(t = 5, b = 5)),
+    strip.text.y = element_text(face = "bold", size = 12, angle = 0, margin = margin(l = 5, r = 5)),
+    axis.title.y = element_text(face = "bold", size = 11, margin = margin(r = 10)),
+    axis.text = element_text(size = 9),
+    panel.grid.minor = element_blank(),
+    panel.border = element_rect(colour = "grey80", fill = NA)
+  )
+  
+# --- Save Plot correlation evolution ---
+ggsave(filename = "../output/figures/prompt_llm_as_judge/training/correlation_evolution.pdf",
+  plot = plot_cor_evolution,
+  width = 10,
+  height = 6,
+  dpi = 300,
+  create.dir = TRUE
+)
+
+
+
+# Table: Prompt summary by iteration
+
+
+dir.create("../output/tables/prompt_llm_as_judge")
+# --- Create and Format the LaTeX Table ---
+# 1. Take the filtered data frame.
+# 2. Use `kable()` to format it as a LaTeX table.
+# 3. Use `kable_styling()` to add LaTeX-specific options and styling.
+# 4. Save the resulting string to a file using cat().
+
+table_latex <- judge_df |>
+  select(iteration, proposed_prompt, critique) |>
+  distinct() |>
+  knitr::kable(
+    "latex",
+    caption = "Summary of LLM Prompt and Critique by Iteration",
+    booktabs = TRUE,
+    escape = FALSE
+  ) |>
+  kable_styling(
+    latex_options = c("striped", "repeat_header"),
+    position = "center",
+    full_width = FALSE,
+    font_size = 9
+  ) |>
+  column_spec(1, width = "1cm") |>
+  column_spec(2, width = "7cm") |>
+  column_spec(3, width = "7cm")
+
+# --- Save the Table to a .tex File ---
+cat(table_latex, file = "../output/tables/prompt_llm_as_judge/prompt_summary_table.tex")
+   
