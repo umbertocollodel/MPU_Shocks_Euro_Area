@@ -9,6 +9,7 @@ from datetime import datetime
 import time
 from typing import List, Dict, Any, Tuple, Optional
 import re
+from tqdm import tqdm
 import pyreadr
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -28,7 +29,8 @@ required_packages = {
     "pandas": "pandas",
     "scipy": "scipy",
     "pyreadr":"pyreadr",
-    "litellm": "litellm"
+    "litellm": "litellm",
+    "tdqm": "tqdm"
 }
 
 # Install only the ones that are not built-in (os, json, datetime, time, typing, re are built-in)
