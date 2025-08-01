@@ -431,15 +431,20 @@ def evaluate_analyst_performance(
     if historical_data_df.empty:
         print("Historical data DataFrame is empty. Cannot evaluate performance.")
         return 0.0, pd.DataFrame()
-    
-    # Standardize column names for merging
-    simulated_df.rename(columns={'Date': 'Conference_Date', 'New Expected Rate (%)': 'New Expected Rate'}, inplace=True)
 
     # --- Data Preparation for Merging ---
     if 'Conference_Date' not in simulated_df.columns:
         print("Error: 'Conference_Date' column not found in simulated_df. Cannot evaluate.")
         return 0.0, pd.DataFrame()
-    simulated_df['Date_dt'] = pd.to_datetime(simulated_df['Conference_Date']).dt.date
+
+    try:
+        # **ROBUSTNESS FIX:** Use errors='coerce' to handle malformed date strings
+        simulated_df['Date_dt'] = pd.to_datetime(simulated_df['Conference_Date'], errors='coerce')
+        simulated_df.dropna(subset=['Date_dt'], inplace=True)
+        simulated_df['Date_dt'] = simulated_df['Date_dt'].dt.date
+    except Exception as e:
+        print(f"Error converting 'Conference_Date' column in simulated_df: {e}. Cannot evaluate.")
+        return 0.0, pd.DataFrame()
 
     if 'date' not in historical_data_df.columns:
         print("Error: 'date' column not found in historical_data_df. Cannot evaluate.")
@@ -476,7 +481,8 @@ def evaluate_analyst_performance(
         on=['date_dt', 'Tenor'],
         how='inner'
     )
-    
+
+    # ... (rest of the function remains the same) ...
     if merged_data.empty:
         print("No common dates or tenors between simulated and historical data for correlation. Returning 0.0.")
         return 0.0, pd.DataFrame()
@@ -486,14 +492,14 @@ def evaluate_analyst_performance(
 
     for tenor in TARGET_TENORS:
         tenor_data = merged_data[merged_data['Tenor'] == tenor].copy()
-        
+
         if len(tenor_data['predicted_sd'].dropna()) >= 2 and \
            len(tenor_data['actual_volatility'].dropna()) >= 2:
-            
+
             correlation, p_value = spearmanr(tenor_data['predicted_sd'], tenor_data['actual_volatility'])
             tenor_correlations.append(correlation)
             print(f"  Spearman Correlation for {tenor}: {correlation:.4f} (p-value: {p_value:.4f})")
-            
+
             for _, row in tenor_data.iterrows():
                 detailed_results_list.append({
                     "transcript_date": row['date_dt'].strftime('%Y-%m-%d'),
@@ -623,68 +629,79 @@ def run_optimization():
     for i in range(MAX_OPTIMIZATION_ITERATIONS):
         print(f"\n===== Iteration {i+1}/{MAX_OPTIMIZATION_ITERATIONS} (In-sample Optimization) =====")
         
-        # Dispatch to the appropriate Analyst LLM execution function
-        current_simulated_df_training = run_analyst_llm_for_all_transcripts_dispatcher(
-            training_transcripts,
-            current_analyst_prompt
-        )
-
-        if current_simulated_df_training.empty:
-            print(f"Iteration {i+1}: No simulated data generated. Cannot evaluate. Assigning 0.0 correlation.")
-            correlation = 0.0
-            detailed_results_df = pd.DataFrame()
-        else:
-            correlation, detailed_results_df = evaluate_analyst_performance(
-                current_simulated_df_training,
-                historical_data_df_training.copy()
+        # New comprehensive try-except block
+        try:
+            # Dispatch to the appropriate Analyst LLM execution function
+            current_simulated_df_training = run_analyst_llm_for_all_transcripts_dispatcher(
+                training_transcripts,
+                current_analyst_prompt
             )
 
-        print(f"Iteration {i+1} Result (In-sample Training): Correlation = {correlation:.4f}")
+            if current_simulated_df_training.empty:
+                print(f"Iteration {i+1}: No simulated data generated. Cannot evaluate. Assigning 0.0 correlation.")
+                correlation = 0.0
+                detailed_results_df = pd.DataFrame()
+            else:
+                correlation, detailed_results_df = evaluate_analyst_performance(
+                    current_simulated_df_training,
+                    historical_data_df_training.copy()
+                )
 
-        if correlation > best_correlation:
-            print(f"New best correlation found: {correlation:.4f} (Previous best: {best_correlation:.4f})")
-            best_correlation = correlation
-            best_prompt = current_analyst_prompt
-            os.makedirs(os.path.dirname("../intermediate_data/"), exist_ok=True)
-            with open("../intermediate_data/best_analyst_prompt.txt", "w") as f:
-                f.write(best_prompt)
-            print("Best prompt saved to best_analyst_prompt.txt")
-        else:
-            print(f"No improvement in training correlation. Best correlation remains {best_correlation:.4f}")
+            print(f"Iteration {i+1} Result (In-sample Training): Correlation = {correlation:.4f}")
 
-        optimization_history.append({
-            "iteration": i + 1,
-            "prompt_before_judge": current_analyst_prompt,
-            "correlation_training": correlation,
-            "detailed_results_training": detailed_results_df.to_dict('records') if not detailed_results_df.empty else [],
-            "critique": "",
-            "proposed_prompt": "",
-            "reasoning": "",
-            "proposed_prompt_summary": ""
-        })
+            if correlation > best_correlation:
+                print(f"New best correlation found: {correlation:.4f} (Previous best: {best_correlation:.4f})")
+                best_correlation = correlation
+                best_prompt = current_analyst_prompt
+                os.makedirs(os.path.dirname("../intermediate_data/"), exist_ok=True)
+                with open("../intermediate_data/best_analyst_prompt.txt", "w") as f:
+                    f.write(best_prompt)
+                print("Best prompt saved to best_analyst_prompt.txt")
+            else:
+                print(f"No improvement in training correlation. Best correlation remains {best_correlation:.4f}")
 
-        if i == MAX_OPTIMIZATION_ITERATIONS - 1:
-            print("Reached maximum optimization iterations. Finalizing in-sample optimization.")
-            break
+            optimization_history.append({
+                "iteration": i + 1,
+                "prompt_before_judge": current_analyst_prompt,
+                "correlation_training": correlation,
+                "detailed_results_training": detailed_results_df.to_dict('records') if not detailed_results_df.empty else [],
+                "critique": "",
+                "proposed_prompt": "",
+                "reasoning": "",
+                "proposed_prompt_summary": ""
+            })
 
-        critique, revised_prompt, reasoning = run_judge_llm(
-            current_analyst_prompt,
-            correlation,
-            [{k: v for k, v in entry.items() if k not in ["detailed_results_training", "prompt_before_judge"]} for entry in optimization_history]
-        )
+            if i == MAX_OPTIMIZATION_ITERATIONS - 1:
+                print("Reached maximum optimization iterations. Finalizing in-sample optimization.")
+                break
 
-        optimization_history[-1]["critique"] = critique
-        optimization_history[-1]["proposed_prompt"] = revised_prompt
-        optimization_history[-1]["reasoning"] = reasoning
-        optimization_history[-1]["proposed_prompt_summary"] = summarize_prompt(revised_prompt)
+            critique, revised_prompt, reasoning = run_judge_llm(
+                current_analyst_prompt=current_analyst_prompt,
+                current_correlation=correlation,
+                optimization_history=[{k: v for k, v in entry.items() if k not in ["detailed_results_training", "prompt_before_judge"]} for entry in optimization_history]
+            )
 
-        print(f"Judge's Critique: {critique}")
-        print(f"Judge's Reasoning: {reasoning}")
-        print(f"Revised Prompt (Summary): {summarize_prompt(revised_prompt)}")
+            optimization_history[-1]["critique"] = critique
+            optimization_history[-1]["proposed_prompt"] = revised_prompt
+            optimization_history[-1]["reasoning"] = reasoning
+            optimization_history[-1]["proposed_prompt_summary"] = summarize_prompt(revised_prompt)
 
-        current_analyst_prompt = revised_prompt
-        time.sleep(2)
+            print(f"Judge's Critique: {critique}")
+            print(f"Judge's Reasoning: {reasoning}")
+            print(f"Revised Prompt (Summary): {summarize_prompt(revised_prompt)}")
 
+            current_analyst_prompt = revised_prompt
+            time.sleep(2)
+        
+        except Exception as e:
+            print(f"FATAL ERROR during iteration {i+1}: {e}")
+            print("Skipping to the next iteration. Previous progress is saved in optimization_history.")
+            # We can decide what to do here, e.g., break, continue, or save partial results.
+            # For now, let's continue to the next iteration with a fallback.
+            # This makes the process more resilient to a single bad run.
+            continue
+    
+    # ... (rest of the function) ...
     print("\n===== In-sample Optimization Complete =====")
     print(f"Final Best In-sample Training Correlation: {best_correlation:.4f}")
     print(f"Optimized Analyst Prompt:\n{best_prompt}")
@@ -699,11 +716,3 @@ def run_optimization():
         print("Final simulated DataFrame is empty, no file saved.")
 
     return best_prompt, best_correlation, optimization_history
-
-if __name__ == "__main__":
-    best_prompt, best_correlation, history = run_optimization()
-
-    if best_prompt:
-        print("\n--- Final Out-of-Sample Test ---")
-        # Implement the out-of-sample test here using the remaining transcripts
-        print("Final out-of-sample test would be implemented here using the remaining transcripts.")
