@@ -52,7 +52,7 @@ ANALYST_LLM_MODEL = "gemini/gemini-2.5-flash" # Example: "gpt-4o", "claude-3-5-s
 JUDGE_LLM_MODEL = "gemini/gemini-2.5-pro" # Example: "gpt-4o", "claude-3-5-sonnet", "gemini-1.5-pro"
 
 # Maximum iterations for prompt optimization
-MAX_OPTIMIZATION_ITERATIONS = 6 
+MAX_OPTIMIZATION_ITERATIONS = 10
 
 # Directory for transcripts and target tenors
 TRANSCRIPT_DIR = "../intermediate_data/texts"
@@ -116,11 +116,11 @@ For each tenor, the trader must:
 Output:
 Provide a table with the following structure for each press conference, trader, and interest rate tenor:
 
-| Date       | Trader ID | Tenor   | Expected Direction | New Expected Rate (%)  |
-|------------|-----------|---------|--------------------|------------------------|
+| Date      | Trader ID | Tenor   | Expected Direction | New Expected Rate (%)  |
+|-----------|-----------|---------|--------------------|------------------------|
 | YYYY-MM-DD | T001      | 3MNT    | Up                 | 3.15                   |
 | YYYY-MM-DD | T001      | 2Y      | Down               | 2.85                   |
-| ...        | ...       | ...     | ...                | ...                    |
+| ...       | ...       | ...     | ...                | ...                    |
 
 Guidelines:
 - Use only the information available as of [date].
@@ -166,7 +166,7 @@ def summarize_prompt(prompt: str, max_length: int = 200) -> str:
     """Summarizes a prompt for logging purposes."""
     return (prompt[:max_length] + '...') if len(prompt) > max_length else prompt
 
-# --- Core Functions ---
+# --- Core Parsing Functions ---
 
 def parse_markdown_table(markdown_string: str) -> Optional[pd.DataFrame]:
     """
@@ -180,7 +180,8 @@ def parse_markdown_table(markdown_string: str) -> Optional[pd.DataFrame]:
     header_line = None
     separator_line_index = -1
     for i, line in enumerate(lines):
-        if re.match(r'^\|[- ]*\|[- ]*\|', line):
+        # A more robust regex for the separator line
+        if re.match(r'^\|\s*[-:]+\s*\|', line):
             separator_line_index = i
             header_line = lines[i-1]
             break
@@ -214,6 +215,29 @@ def parse_markdown_table(markdown_string: str) -> Optional[pd.DataFrame]:
         print(f"Error creating DataFrame from parsed markdown: {e}")
         return None
 
+def parse_comma_separated_list(list_string: str) -> Optional[List[float]]:
+    """
+    Parses a comma-separated string of numbers into a list of floats.
+    Handles potential whitespace and non-numeric values gracefully.
+    """
+    try:
+        # Use regex to find all numbers, including negative and decimals
+        numbers_str = re.findall(r'[\d\.-]+', list_string)
+        if not numbers_str:
+            return None
+        
+        # Convert to float
+        predictions = [float(n) for n in numbers_str]
+        
+        return predictions
+    except ValueError:
+        print(f"Error converting values in the list to float: {list_string}")
+        return None
+    except Exception as e:
+        print(f"General error parsing comma-separated list: {e}")
+        return None
+
+# --- Data Loading Function ---
 def get_transcript_data(transcript_dir: str) -> List[Dict[str, str]]:
     """
     Reads all .txt files from the specified directory and returns a list of dictionaries,
@@ -232,26 +256,28 @@ def get_transcript_data(transcript_dir: str) -> List[Dict[str, str]]:
                 date_part = filename.split('_')[0]
                 datetime.strptime(date_part, "%Y-%m-%d")
                 
-                filepath = os.path.join(transcript_dir, filename) # Corrected this line
+                filepath = os.path.join(transcript_dir, filename)
                 with open(filepath, 'r', encoding='utf-8') as f:
                     transcript_text = f.read()
                 
                 transcript_data.append({'date': date_part, 'text': transcript_text})
-                print(f"  Loaded transcript for {date_part}")
+                # print(f"  Loaded transcript for {date_part}") # Suppressed for cleaner output
             except ValueError:
                 print(f"Warning: Filename '{filename}' does not match YYYY-MM-DD_Name.txt format (date part invalid). Skipping.")
             except Exception as e:
                 print(f"Error reading transcript file {filename}: {e}")
     if not transcript_data:
         print("No valid transcript files found.")
+    else:
+        print(f"Successfully loaded {len(transcript_data)} transcripts.")
     return transcript_data
 
+# --- Analyst LLM Execution Functions ---
 
-def run_analyst_llm_for_transcript(transcript_info: Dict[str, str], analyst_prompt: str) -> Optional[pd.DataFrame]:
+def run_analyst_llm_for_transcript_markdown(transcript_info: Dict[str, str], analyst_prompt: str) -> Optional[pd.DataFrame]:
     """
-    Runs the Analyst LLM once for a single transcript,
-    simulating the 30 traders and collecting the resulting DataFrame.
-    Returns None if parsing fails or data is incomplete.
+    Runs the Analyst LLM once for a single transcript, expecting a markdown table output
+    for all tenors in a single call.
     """
     conference_date = transcript_info['date']
     transcript_text = transcript_info['text']
@@ -276,7 +302,9 @@ def run_analyst_llm_for_transcript(transcript_info: Dict[str, str], analyst_prom
             expected_min_rows = 30 * len(TARGET_TENORS) 
             if len(simulated_df) < expected_min_rows:
                  print(f"Warning: Analyst LLM output for {conference_date} has fewer rows than expected. "
-                       f"Expected ~{expected_min_rows}, got {len(simulated_df)}.")
+                       f"Expected ~{expected_min_rows}, got {len(simulated_df)}. This may affect evaluation.")
+            # Standardize column names
+            simulated_df.rename(columns={'Date': 'Conference_Date', 'New Expected Rate (%)': 'New Expected Rate'}, inplace=True)
             return simulated_df
         else:
             print(f"Warning: Analyst LLM returned unparseable, empty, or incomplete table for transcript on {conference_date}.")
@@ -285,38 +313,94 @@ def run_analyst_llm_for_transcript(transcript_info: Dict[str, str], analyst_prom
         print(f"Error during Analyst LLM simulation for {conference_date}: {e}")
         return None
 
+def run_analyst_llm_for_transcript_and_tenor_list(transcript_info: Dict[str, str], analyst_prompt: str, tenor: str) -> Optional[pd.DataFrame]:
+    """
+    Runs the Analyst LLM once for a single transcript and a single tenor,
+    expecting a comma-separated list.
+    """
+    conference_date = transcript_info['date']
+    transcript_text = transcript_info['text']
+    
+    formatted_prompt = analyst_prompt.replace("{TENOR}", tenor)
+    
+    user_message = (
+        f"Here is the ECB press conference excerpt for the date {conference_date}: \n\n"
+        f"{transcript_text}\n\n"
+        f"Provide your 30 predictions for the {tenor} OIS rate change in basis points. "
+        f"Ensure the output is strictly a single, comma-separated list of 30 numerical values."
+    )
+    
+    try:
+        response_content = call_llm(
+            model=ANALYST_LLM_MODEL,
+            system_prompt=formatted_prompt,
+            user_message=user_message,
+            temperature=1
+        )
+        
+        predictions = parse_comma_separated_list(response_content)
 
-def run_analyst_llm_for_all_transcripts(
+        if predictions and len(predictions) == 30:
+            simulated_data = {
+                'Conference_Date': [conference_date] * 30,
+                'Trader ID': [f'T{i+1:03d}' for i in range(30)],
+                'Tenor': [tenor] * 30,
+                'New Expected Rate': predictions
+            }
+            return pd.DataFrame(simulated_data)
+        else:
+            print(f"Warning: Analyst LLM returned an unparseable or incomplete list for {conference_date} and {tenor}. "
+                  f"Got {len(predictions) if predictions else 0} predictions.")
+            return None
+
+    except Exception as e:
+        print(f"Error during Analyst LLM simulation for {conference_date} and {tenor}: {e}")
+        return None
+
+def run_analyst_llm_for_all_transcripts_dispatcher(
     transcripts: List[Dict[str, str]],
     analyst_prompt: str
 ) -> pd.DataFrame:
     """
-    Runs the Analyst LLM for all provided transcripts in parallel and collects all simulated data
-    into a single pandas DataFrame.
+    Dynamically dispatches to the correct Analyst LLM execution function based on the prompt content.
     """
     all_simulated_dfs = []
-    print("\n--- Running Analyst LLM for all transcripts (in parallel) ---")
-
     max_workers = 4
+
+    if "{TENOR}" in analyst_prompt:
+        print("\n--- Running Analyst LLM (List Format) for all transcripts and tenors (in parallel) ---")
+        tasks = [(t_info, tenor) for t_info in transcripts for tenor in TARGET_TENORS]
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_task = {
+                executor.submit(run_analyst_llm_for_transcript_and_tenor_list, t_info, analyst_prompt, tenor): (t_info['date'], tenor)
+                for t_info, tenor in tasks
+            }
+            for future in as_completed(future_to_task):
+                conference_date, tenor = future_to_task[future]
+                try:
+                    simulated_df = future.result()
+                    if simulated_df is not None and not simulated_df.empty:
+                        all_simulated_dfs.append(simulated_df)
+                        # print(f"  Successfully processed transcript for {conference_date} ({tenor})") # Suppressed for cleaner output
+                except Exception as exc:
+                    print(f"  Transcript for {conference_date} ({tenor}) generated an exception: {exc}")
+    else:
+        print("\n--- Running Analyst LLM (Markdown Table Format) for all transcripts (in parallel) ---")
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_transcript = {
+                executor.submit(run_analyst_llm_for_transcript_markdown, t_info, analyst_prompt): t_info['date']
+                for t_info in transcripts
+            }
+            for future in as_completed(future_to_transcript):
+                conference_date = future_to_transcript[future]
+                try:
+                    simulated_df = future.result()
+                    if simulated_df is not None and not simulated_df.empty:
+                        all_simulated_dfs.append(simulated_df)
+                        # print(f"  Successfully processed transcript for {conference_date}") # Suppressed for cleaner output
+                except Exception as exc:
+                    print(f"  Transcript for {conference_date} generated an exception: {exc}")
     
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_transcript = {
-            executor.submit(run_analyst_llm_for_transcript, t_info, analyst_prompt): t_info['date']
-            for t_info in transcripts
-        }
-
-        for future in as_completed(future_to_transcript):
-            conference_date = future_to_transcript[future]
-            try:
-                simulated_df = future.result()
-                if simulated_df is not None and not simulated_df.empty:
-                    all_simulated_dfs.append(simulated_df)
-                    print(f"  Successfully processed transcript for {conference_date}")
-                else:
-                    print(f"  No valid simulation output collected for {conference_date}.")
-            except Exception as exc:
-                print(f"  Transcript for {conference_date} generated an exception: {exc}")
-
     if not all_simulated_dfs:
         print("No simulated data collected from any transcript.")
         return pd.DataFrame()
@@ -324,74 +408,60 @@ def run_analyst_llm_for_all_transcripts(
     combined_simulated_df = pd.concat(all_simulated_dfs, ignore_index=True)
     return combined_simulated_df
 
-
+# --- Evaluation Function ---
 def evaluate_analyst_performance(
     simulated_df: pd.DataFrame,
-    historical_data_df: pd.DataFrame # This is your actual OIS volatility data
+    historical_data_df: pd.DataFrame
 ) -> Tuple[float, pd.DataFrame]:
     """
-    Evaluates the performance by calculating the standard deviation of 'New Expected Rate (%)'
-    from the simulated data for each tenor and date, and then correlating these
-    with actual market volatilities from historical_data_df (using 'correct_post_mean').
-    Returns the average correlation across tenors and detailed results.
+    Evaluates the performance by calculating the standard deviation of 'New Expected Rate'
+    from the simulated data and correlating it with actual market volatilities.
     """
     if simulated_df.empty:
         print("Simulated DataFrame is empty. Cannot evaluate performance.")
         return 0.0, pd.DataFrame()
-
     if historical_data_df.empty:
         print("Historical data DataFrame is empty. Cannot evaluate performance.")
         return 0.0, pd.DataFrame()
     
-    # --- Data Preparation for Merging ---
-    if 'Date' in simulated_df.columns:
-        try:
-            simulated_df['Date_dt'] = pd.to_datetime(simulated_df['Date']).dt.date
-        except Exception as e:
-            print(f"Error converting 'Date' column in simulated_df to datetime.date: {e}")
-            if 'Conference_Date' in simulated_df.columns:
-                print("Attempting to use 'Conference_Date' for merging as a fallback.")
-                simulated_df['Date_dt'] = pd.to_datetime(simulated_df['Conference_Date']).dt.date
-            else:
-                print("No suitable date column found in simulated_df for merging. Cannot evaluate.")
-                return 0.0, pd.DataFrame()
-    elif 'Conference_Date' in simulated_df.columns:
-        print("Warning: 'Date' column not found in simulated_df. Using 'Conference_Date' for merging.")
-        simulated_df['Date_dt'] = pd.to_datetime(simulated_df['Conference_Date']).dt.date
-    else:
-        print("Error: Neither 'Date' nor 'Conference_Date' found in simulated_df. Cannot evaluate.")
-        return 0.0, pd.DataFrame()
+    # Standardize column names for merging
+    simulated_df.rename(columns={'Date': 'Conference_Date', 'New Expected Rate (%)': 'New Expected Rate'}, inplace=True)
 
-    if 'date' in historical_data_df.columns:
-        if pd.api.types.is_datetime64_any_dtype(historical_data_df['date']):
-            historical_data_df['date_dt'] = historical_data_df['date'].dt.date
-        else:
-            try:
-                historical_data_df['date_dt'] = pd.to_datetime(historical_data_df['date']).dt.date
-            except Exception as e:
-                print(f"Error converting 'date' column in historical_data_df to datetime.date: {e}")
-                return 0.0, pd.DataFrame()
-    else:
+    # --- Data Preparation for Merging ---
+    if 'Conference_Date' not in simulated_df.columns:
+        print("Error: 'Conference_Date' column not found in simulated_df. Cannot evaluate.")
+        return 0.0, pd.DataFrame()
+    simulated_df['Date_dt'] = pd.to_datetime(simulated_df['Conference_Date']).dt.date
+
+    if 'date' not in historical_data_df.columns:
         print("Error: 'date' column not found in historical_data_df. Cannot evaluate.")
         return 0.0, pd.DataFrame()
-    
-    if 'tenor' in historical_data_df.columns:
-        historical_data_df['Tenor'] = historical_data_df['tenor'].astype(str).str.upper()
-    else:
-        print("Error: 'tenor' column not found in historical_data_df. Cannot evaluate.")
+    try:
+        historical_data_df['date_dt'] = pd.to_datetime(historical_data_df['date']).dt.date
+    except Exception as e:
+        print(f"Error converting 'date' column in historical_data_df: {e}. Cannot evaluate.")
         return 0.0, pd.DataFrame()
 
-    predicted_sds = simulated_df.groupby(['Date_dt', 'Tenor'])['New Expected Rate (%)'].std().reset_index()
-    predicted_sds.rename(columns={'Date_dt': 'date_dt', 'New Expected Rate (%)': 'predicted_sd'}, inplace=True)
+    if 'tenor' not in historical_data_df.columns:
+        print("Error: 'tenor' column not found in historical_data_df. Cannot evaluate.")
+        return 0.0, pd.DataFrame()
+    historical_data_df['Tenor'] = historical_data_df['tenor'].astype(str).str.upper()
+
+    # --- Calculate predicted standard deviations ---
+    predicted_sds = simulated_df.groupby(['Date_dt', 'Tenor'])['New Expected Rate'].std().reset_index()
+    predicted_sds.rename(columns={'New Expected Rate': 'predicted_sd'}, inplace=True)
+    predicted_sds.dropna(subset=['predicted_sd'], inplace=True)
 
     if 'correct_post_mean' not in historical_data_df.columns:
         print("Error: 'correct_post_mean' column not found in historical_data_df. Cannot evaluate.")
         return 0.0, pd.DataFrame()
 
+    # --- Prepare actual volatilities for merging ---
     actual_volatilities = historical_data_df[['date_dt', 'Tenor', 'correct_post_mean']].copy()
     actual_volatilities.rename(columns={'correct_post_mean': 'actual_volatility'}, inplace=True)
     actual_volatilities.dropna(subset=['actual_volatility'], inplace=True)
 
+    # --- Merge and calculate correlation ---
     merged_data = pd.merge(
         predicted_sds,
         actual_volatilities,
@@ -413,7 +483,6 @@ def evaluate_analyst_performance(
            len(tenor_data['actual_volatility'].dropna()) >= 2:
             
             correlation, p_value = spearmanr(tenor_data['predicted_sd'], tenor_data['actual_volatility'])
-            
             tenor_correlations.append(correlation)
             print(f"  Spearman Correlation for {tenor}: {correlation:.4f} (p-value: {p_value:.4f})")
             
@@ -436,7 +505,7 @@ def evaluate_analyst_performance(
 
     return average_correlation, pd.DataFrame(detailed_results_list)
 
-
+# --- Judge LLM Function ---
 def run_judge_llm(
     current_analyst_prompt: str,
     current_correlation: float,
@@ -484,8 +553,11 @@ Based on this, critique the current prompt and suggest a revised prompt to impro
         print(f"Error running Judge LLM: {e}")
         return "LLM call error.", current_analyst_prompt, "Failed to call Judge LLM."
 
-
+# --- Main Optimization Loop ---
 def run_optimization():
+    """
+    Executes the full LLM-as-Judge prompt optimization process.
+    """
     current_analyst_prompt = INITIAL_ANALYST_PROMPT
     optimization_history = []
     best_correlation = -1.0
@@ -504,28 +576,12 @@ def run_optimization():
     num_transcripts = len(all_transcripts_data)
     num_training_transcripts = int(num_transcripts * TRAINING_PERCENTAGE)
     
-    # Sort transcripts by date to ensure the "initial 75%" is chronological
     all_transcripts_data.sort(key=lambda x: x['date'])
 
     training_transcripts = all_transcripts_data[:num_training_transcripts]
-    # No 'test_transcripts' needed for this version
 
     print(f"Total transcripts found: {num_transcripts}")
     print(f"Using {len(training_transcripts)} transcripts for optimization (in-sample training).")
-
-   
-    # --- ADD DIAGNOSTIC PRINTS HERE FOR TRANSCRIPT DATES ---
-    print("\n--- Diagnosing Date Mismatch ---")
-    if training_transcripts:
-        print(f"First training transcript date: {training_transcripts[0]['date']} (Type: {type(training_transcripts[0]['date'])})")
-        print(f"Last training transcript date: {training_transcripts[-1]['date']} (Type: {type(training_transcripts[-1]['date'])})")
-        # Convert training_dates to datetime.date objects for comparison
-        training_dates_dt_objects = {datetime.strptime(t['date'], "%Y-%m-%d").date() for t in training_transcripts}
-        print(f"Number of unique training dates (as datetime.date): {len(training_dates_dt_objects)}")
-    else:
-        print("No training transcripts found.")
-    print("----------------------------------")
-
 
     # Step 0: Load historical OIS volatility data once
     try:
@@ -533,59 +589,35 @@ def run_optimization():
         historical_data_df_dict = pyreadr.read_r("../intermediate_data/range_difference_df.rds")
         historical_data_df = historical_data_df_dict[None]
 
-        # Ensure historical_data_df['date'] is consistently datetime.date objects
-        if 'date' in historical_data_df.columns:
-            if pd.api.types.is_datetime64_any_dtype(historical_data_df['date']):
-                historical_data_df['date'] = historical_data_df['date'].dt.date
-            else:
-                try:
-                    historical_data_df['date'] = pd.to_datetime(historical_data_df['date']).dt.date
-                except Exception as e:
-                    print(f"Warning: Could not convert 'date' column in historical_data_df to datetime.date: {e}")
-                    # If conversion fails, the dates won't match, so we should exit or handle.
-                    return None, None, None # Exit early if critical conversion fails
-        else:
-            print("Warning: 'date' column not found in historical_data_df. This is crucial for merging.")
-            return None, None, None # Exit early if critical column is missing
-
-        # --- ADD DIAGNOSTIC PRINTS HERE FOR HISTORICAL DATA DATES ---
-        print("\n--- Diagnosing Historical Data Dates ---")
-        if not historical_data_df.empty:
-            print(f"Historical data 'date' column Dtype: {historical_data_df['date'].dtype}")
-            print(f"First historical data date: {historical_data_df['date'].iloc[0]} (Type: {type(historical_data_df['date'].iloc[0])})")
-            print(f"Last historical data date: {historical_data_df['date'].iloc[-1]} (Type: {type(historical_data_df['date'].iloc[-1])})")
-            print(f"Number of unique historical dates: {historical_data_df['date'].nunique()}")
-        else:
-            print("Historical data DataFrame is empty after loading.")
-        print("----------------------------------------")
-
+        if 'date' not in historical_data_df.columns:
+            print("Error: 'date' column not found in historical_data_df. This is crucial for merging. Exiting.")
+            return None, None, None
+        try:
+            historical_data_df['date'] = pd.to_datetime(historical_data_df['date']).dt.date
+        except Exception as e:
+            print(f"Error converting 'date' column in historical_data_df: {e}. Exiting.")
+            return None, None, None
 
     except Exception as e:
         print(f"Error loading historical OIS volatility data from RDS: {e}. Exiting optimization.")
         return None, None, None
 
-    # Filter historical data to match only the training transcripts' dates
-    # Ensure this is a set of datetime.date objects for matching
     training_dates_for_filter = {datetime.strptime(t['date'], "%Y-%m-%d").date() for t in training_transcripts}
-
     historical_data_df_training = historical_data_df[historical_data_df['date'].isin(training_dates_for_filter)].copy()
 
-    # --- ADD FINAL DIAGNOSTIC PRINT ---
-    print(f"\n--- Post-Filter Check ---")
-    print(f"Size of historical_data_df_training after filter: {historical_data_df_training.shape[0]} rows")
     if historical_data_df_training.empty:
         print("No historical data available for the selected training transcripts. Exiting.")
         return None, None, None
-    print("-------------------------")
+    print(f"Found {len(historical_data_df_training['date'].unique())} historical data points for training dates.")
 
     current_simulated_df_training = pd.DataFrame()
 
     for i in range(MAX_OPTIMIZATION_ITERATIONS):
         print(f"\n===== Iteration {i+1}/{MAX_OPTIMIZATION_ITERATIONS} (In-sample Optimization) =====")
-
-        # Step 1: Run Analyst LLM for TRAINING transcripts
-        current_simulated_df_training = run_analyst_llm_for_all_transcripts(
-            training_transcripts, # Use only training transcripts for optimization
+        
+        # Dispatch to the appropriate Analyst LLM execution function
+        current_simulated_df_training = run_analyst_llm_for_all_transcripts_dispatcher(
+            training_transcripts,
             current_analyst_prompt
         )
 
@@ -594,7 +626,6 @@ def run_optimization():
             correlation = 0.0
             detailed_results_df = pd.DataFrame()
         else:
-            # Step 2: Evaluate Analyst LLM performance on TRAINING data
             correlation, detailed_results_df = evaluate_analyst_performance(
                 current_simulated_df_training,
                 historical_data_df_training.copy()
@@ -606,7 +637,7 @@ def run_optimization():
             print(f"New best correlation found: {correlation:.4f} (Previous best: {best_correlation:.4f})")
             best_correlation = correlation
             best_prompt = current_analyst_prompt
-            # Save the best prompt
+            os.makedirs(os.path.dirname("../intermediate_data/"), exist_ok=True)
             with open("../intermediate_data/best_analyst_prompt.txt", "w") as f:
                 f.write(best_prompt)
             print("Best prompt saved to best_analyst_prompt.txt")
@@ -616,7 +647,7 @@ def run_optimization():
         optimization_history.append({
             "iteration": i + 1,
             "prompt_before_judge": current_analyst_prompt,
-            "correlation_training": correlation, # Explicitly mark as training correlation
+            "correlation_training": correlation,
             "detailed_results_training": detailed_results_df.to_dict('records') if not detailed_results_df.empty else [],
             "critique": "",
             "proposed_prompt": "",
@@ -644,37 +675,27 @@ def run_optimization():
         print(f"Revised Prompt (Summary): {summarize_prompt(revised_prompt)}")
 
         current_analyst_prompt = revised_prompt
-        time.sleep(2) # Small delay to respect API rate limits
+        time.sleep(2)
 
     print("\n===== In-sample Optimization Complete =====")
     print(f"Final Best In-sample Training Correlation: {best_correlation:.4f}")
     print(f"Optimized Analyst Prompt:\n{best_prompt}")
 
-    # --- Save the final simulated_df from the last training run ---
     df_to_save = current_simulated_df_training
-
+    os.makedirs(SAVE_FINAL_DF_DIR, exist_ok=True)
+    final_df_path = os.path.join(SAVE_FINAL_DF_DIR, "final_optimized_simulated_df.csv")
+    print(f"Saving final simulated DataFrame from the last training run to {final_df_path}")
     if not df_to_save.empty:
-        os.makedirs(SAVE_FINAL_DF_DIR, exist_ok=True)
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        
-        # Consistent filename for in-sample optimization results
-        final_simulated_df_filename = f"analyst_simulated_df_in_sample_training_final_{timestamp}.csv"
-        final_simulated_df_path = os.path.join(SAVE_FINAL_DF_DIR, final_simulated_df_filename)
-        
-        df_to_save.to_csv(final_simulated_df_path, index=False)
-        print(f"Final analyst simulated DataFrame (from in-sample training) saved to {final_simulated_df_path}")
+        df_to_save.to_csv(final_df_path, index=False)
     else:
-        print("No final simulated DataFrame from in-sample training to save as it was empty.")
-
-
-    history_filename = f"optimization_history_in_sample_training_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-    with open(history_filename, "w") as f:
-        json.dump(optimization_history, f, indent=2)
-    print(f"Full optimization history (in-sample training) saved to {history_filename}")
+        print("Final simulated DataFrame is empty, no file saved.")
 
     return best_prompt, best_correlation, optimization_history
 
-
 if __name__ == "__main__":
-    optimized_prompt, final_correlation, full_history = run_optimization()
-    
+    best_prompt, best_correlation, history = run_optimization()
+
+    if best_prompt:
+        print("\n--- Final Out-of-Sample Test ---")
+        # Implement the out-of-sample test here using the remaining transcripts
+        print("Final out-of-sample test would be implemented here using the remaining transcripts.")
