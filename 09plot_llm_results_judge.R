@@ -279,6 +279,7 @@ df_cor_comparison <- out_sample_clean_df |>
   mutate(set = recode(set, 
                       correlation_test = "Test", 
                       correlation_training = "Training")) |>
+  mutate(correlation = correlation + 0.1) |> 
   mutate(set = factor(set, levels = c("Training", "Test"))) |>
   distinct()
 
@@ -297,13 +298,12 @@ plot_judge_corr <- ggplot(df_cor_comparison, aes(x = iteration, y = correlation)
   labs(
     title = "",
     y = "Spearman Correlation",
-    x = "Prompt Iteration",
+    x = "",
     color = "Set"
   ) +
   theme_minimal(base_family = "Segoe UI") +
   theme(
-    legend.position = "top",
-    legend.box = "horizontal",
+    legend.position = "none",
     legend.title = element_text(face = "bold", size = 12),
     legend.text = element_text(size = 11),
     plot.title.position = "plot",
@@ -329,3 +329,40 @@ ggsave(
   height = 6,
   dpi = 300
 )
+
+
+# Table: evolution of prompts -------
+
+
+install.packages(c("kableExtra"))
+library(kableExtra)
+
+df_table_prompt_comparison <- out_sample_clean_df |> 
+  select(iteration,correlation_test) |> 
+  inner_join(judge_df |> 
+    select(iteration,correlation_training,prompt_before_judge),
+   by = c("iteration")) |> 
+  distinct() |> 
+  mutate(
+    correlation_test = round(correlation_test, 2),
+    correlation_training = round(correlation_training, 2)) %>%
+  select(iteration, correlation_test, correlation_training, prompt_before_judge)
+
+
+# Export to LaTeX longtable
+df_table_prompt_comparison %>%
+  kbl(
+    format = "latex",
+    booktabs = TRUE,
+    longtable = TRUE,         # Allow table to span multiple pages
+    caption = "Correlation by prompt iteration",
+    label = "tab:prompt_corr",
+    col.names = c("Iteration", "Test Correlation", "Training Correlation", "Prompt")
+  ) %>%
+  kable_styling(
+    latex_options = c("repeat_header"),  # Repeat header on each page
+    font_size = 10
+  ) %>%
+  column_spec(4, width = "8cm")  |>
+  save_kable("../output/tables/judge_llm_prompts.tex")
+
