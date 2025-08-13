@@ -323,7 +323,7 @@ print(plot_judge_corr)
 
 # Save the plot
 ggsave(
-  filename = "judge_iteration_correlation.pdf",
+  filename = "../output/figures/prompt_llm_as_judge/train_test_correlaton.pdf",
   plot = plot_judge_corr,
   width = 10,
   height = 6,
