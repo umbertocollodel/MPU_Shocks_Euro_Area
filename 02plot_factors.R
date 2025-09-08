@@ -414,39 +414,43 @@ ggsave("output/figures/mpu.png",
        dpi="retina")
 
 # Figure: Mpu over time (all tenors): ----
+library(dplyr)
+library(ggplot2)
 
-differences_df %>% 
-  mutate(tenor = factor(tenor,levels = c("3mnt","6mnt","1Y","2Y","5Y","10Y"))) %>% 
-  ggplot(aes(date,diff)) +
+# Remove outliers using IQR method per tenor
+filtered_df <- differences_df %>%
+  filter(tenor %in% c("3mnt", "2Y", "10Y")) %>%
+  group_by(tenor) %>%
+  filter(correct_post_mean < quantile(correct_post_mean, 0.9)) %>%
+  ungroup() %>%
+  mutate(tenor = factor(tenor, levels = c("3mnt", "2Y", "10Y")))
+
+
+# Plot
+ggplot(filtered_df, aes(date, correct_post_mean, col = tenor)) +
   geom_col() +
-  labs(title="",
-       col="",
-       y="Basis Points",
-       x="",
-       fill="",
+  labs(title = "",
+       col = "",
+       y = "Basis Points",
+       x = "",
+       fill = "",
        caption = "") +
-  facet_wrap(~ tenor) +
-  theme_bw() +
-  theme(text=element_text(family="Segoe UI Light")) +
-  theme(plot.caption = element_text(hjust=0)) +
-  theme(axis.text.x = element_text(vjust = 0.5, hjust=0.5)) +
-  theme( axis.text = element_text( size = 14 ),
-         axis.text.x = element_text( size = 20 ),
-         axis.title = element_text( size = 16, face = "bold" ),
-         legend.text = element_text(size=14),
-         # The new stuff
-         strip.text = element_text(size = 20)) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-  theme(legend.position = "bottom") +
+  facet_wrap(~ tenor, scales = "free_y", nrow = 1) +
+  scale_color_manual(values = c("10Y" = "#d73027", "2Y" = "#4575b4", "3M" = "#91bfdb"), guide = "none") +
+  theme_minimal(base_family = "Segoe UI") +
   theme(
-    plot.title = element_text(
-      size = 20,            # Set font size
-      face = "bold", # Make the title bold and italic
-      color = "black",
-      family = "Segoe UI Light")) +
-  scale_x_date(date_breaks = "2 years", date_labels = "%Y") +
-  theme(plot.caption = element_text(hjust = 0,size=12))
-
+    plot.title.position = "plot",
+    plot.title = element_text(size = 16, face = "bold", margin = margin(b = 10)),
+    plot.subtitle = element_text(size = 13, color = "grey30", margin = margin(b = 20)),
+    panel.grid.minor = element_blank(),
+    panel.border = element_rect(colour = "grey80", fill = NA),
+    strip.text = element_text(face = "bold", size = 12),
+    axis.text.x = element_text(size = 9, angle = 45, hjust = 1),
+    axis.text.y = element_text(size = 10),
+    legend.position = "none",
+    plot.caption = element_text(hjust = 0, size = 12)
+  ) +
+  scale_x_date(date_breaks = "2 years", date_labels = "%Y")
 
 ggsave("output/figures/mpu_all.png",
        width = 5,

@@ -38,7 +38,7 @@ if (!dir.exists(output_dir)) {
 # Ensure the file path is correct based on your project structure and naming convention
 clean_df <- read_xlsx(paste0("../intermediate_data/aggregate_gemini_result/prompt_naive/",
                              "2.5flash_",
-                             Sys.Date(), # This will look for a file with today's date
+                             "2025-07-21", # This will look for a file with today's date
                              ".xlsx"))
 
 
