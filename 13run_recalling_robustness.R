@@ -393,7 +393,7 @@ conference_list <- map2(final_conference_dates,
 
 # Run all conferences in parallel at once
 all_results <- map(
-  sample_conference_list,
+  conference_list,
   ~run_both_conditions(.x$date, .x$transcript)
 )
 
