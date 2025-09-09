@@ -25,8 +25,6 @@ pacman::p_load(
   furrr       # For parallel map functions
 )
 
-# Set global seed for reproducibility
-set.seed(42)
 
 # ============================================================================
 # SETUP PARALLEL PROCESSING
@@ -205,7 +203,7 @@ final_conference_dates <- as.Date(names(valid_transcripts))
 
 # Use EXACTLY the same function as your July run
 new_gemini <- function(prompt, model = "2.5-flash", temperature = 1, maxOutputTokens = 1000000,
-                       topK = 40, topP = 0.95, seed = 1234) {
+                       topK = 40, topP = 0.95, seed= 45) {
   
   model_query <- paste0("gemini-", model, ":generateContent")
   url <- paste0("https://generativelanguage.googleapis.com/v1beta/models/", model_query)
@@ -346,8 +344,7 @@ run_both_conditions <- function(conference_date, transcript_text) {
   for (attempt in 1:3) {
     results$with_text <- new_gemini(full_prompt_with, 
                                     model = "2.5-flash",
-                                    temperature = 1,
-                                    seed = 55 + attempt)
+                                    temperature = 1)
     if (!is.null(results$with_text)) break
     Sys.sleep(2 * attempt)
   }
@@ -359,8 +356,7 @@ run_both_conditions <- function(conference_date, transcript_text) {
   for (attempt in 1:3) {
     results$without_text <- new_gemini(full_prompt_without,
                                        model = "2.5-flash",
-                                       temperature = 1,
-                                       seed = 55 + attempt)
+                                       temperature = 1)
     if (!is.null(results$without_text)) break
     Sys.sleep(2 * attempt)
   }
@@ -399,8 +395,8 @@ conference_list <- map2(final_conference_dates,
 all_results <- future_map(
   sample_conference_list,
   ~run_both_conditions(.x$date, .x$transcript),
-  .options = furrr_options(seed = TRUE),
-  .progress = TRUE
+  seed = 140,
+  .options = furrr_options(seed = TRUE) # Ensure reproducibility of random seeds
 )
 
 end_time <- Sys.time()
