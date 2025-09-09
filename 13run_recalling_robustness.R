@@ -392,11 +392,9 @@ conference_list <- map2(final_conference_dates,
                         ~list(date = .x, transcript = .y))
 
 # Run all conferences in parallel at once
-all_results <- future_map(
+all_results <- map(
   sample_conference_list,
-  ~run_both_conditions(.x$date, .x$transcript),
-  seed = 140,
-  .options = furrr_options(seed = TRUE) # Ensure reproducibility of random seeds
+  ~run_both_conditions(.x$date, .x$transcript)
 )
 
 end_time <- Sys.time()
