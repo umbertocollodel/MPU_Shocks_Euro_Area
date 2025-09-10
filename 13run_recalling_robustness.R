@@ -743,6 +743,422 @@ cat("This will test both sentence and word scrambling on 30 strategically sample
 
 experiment_results <- run_complete_scrambling_experiment(
   n_sample = 30,
-  scrambling_methods = c("sentences", "words"),
+  scrambling_methods = c("words"),
   prompt_template = prompt_naive
 )
+
+# ==============================================================================
+# BOOTSTRAP CONFIDENCE INTERVALS FOR DATA LEAKAGE DETECTION
+# Extension to your existing scrambling experiment code
+# ==============================================================================
+
+library(boot)
+library(ggplot2)
+library(RColorBrewer)
+
+# Function to bootstrap correlation confidence intervals using your experiment_results
+bootstrap_scrambling_analysis <- function(experiment_results, n_bootstrap = 1000, conf_level = 0.95) {
+  
+  cat("=== BOOTSTRAP ANALYSIS FOR DATA LEAKAGE DETECTION ===\n")
+  cat("Bootstrap samples:", n_bootstrap, "\n")
+  cat("Confidence level:", conf_level, "\n\n")
+  
+  # Extract results from your experiment structure
+  original_results <- experiment_results$original_results
+  scrambled_results <- experiment_results$scrambled_results$words  # Focus on words as you requested
+  
+  if (is.null(original_results) || is.null(scrambled_results)) {
+    cat("Error: Missing original or scrambled results\n")
+    return(NULL)
+  }
+  
+  # Load market volatility data (same as in your existing code)
+  range_df <- tryCatch({
+    read_rds("../intermediate_data/range_difference_df.rds") %>%
+      mutate(
+        tenor = case_when(tenor == "3mnt" ~ "3M", TRUE ~ tenor),
+        date = as.Date(date)
+      ) %>%
+      select(tenor, date, correct_post_mean) %>%
+      filter(tenor %in% c("3M", "2Y", "10Y"))
+  }, error = function(e) {
+    cat("Error loading market volatility data:", e$message, "\n")
+    return(NULL)
+  })
+  
+  if (is.null(range_df)) {
+    cat("Cannot proceed without market volatility data\n")
+    return(NULL)
+  }
+  
+  # Function to compute correlation for a single dataset
+  compute_single_correlation <- function(llm_data) {
+    # Compute standard deviations by date and tenor
+    llm_std <- llm_data %>%
+      group_by(date, tenor) %>%
+      summarise(llm_std = sd(rate, na.rm = TRUE), .groups = "drop") %>%
+      mutate(date = as.Date(date))
+    
+    # Join with market data
+    combined_data <- llm_std %>%
+      inner_join(range_df, by = c("date", "tenor")) %>%
+      filter(!is.na(llm_std), !is.na(correct_post_mean))
+    
+    if (nrow(combined_data) == 0) return(NA)
+    
+    # Compute average correlation across all tenors
+    avg_correlation <- combined_data %>%
+      group_by(tenor) %>%
+      summarise(corr = cor(llm_std, correct_post_mean, method = "spearman", use = "complete.obs"), .groups = "drop") %>%
+      summarise(avg_corr = mean(corr, na.rm = TRUE)) %>%
+      pull(avg_corr)
+    
+    return(avg_correlation)
+  }
+  
+  # Compute original correlations
+  original_corr <- compute_single_correlation(original_results)
+  scrambled_corr <- compute_single_correlation(scrambled_results)
+  
+  cat("Point estimates:\n")
+  cat("Original correlation:", round(original_corr, 3), "\n")
+  cat("Scrambled correlation:", round(scrambled_corr, 3), "\n\n")
+  
+  # Bootstrap function for original data
+  bootstrap_original <- function(data, indices) {
+    sample_data <- data[indices, ]
+    compute_single_correlation(sample_data)
+  }
+  
+  # Bootstrap function for scrambled data
+  bootstrap_scrambled <- function(data, indices) {
+    sample_data <- data[indices, ]
+    compute_single_correlation(sample_data)
+  }
+  
+  # Perform bootstrap resampling
+  cat("Performing bootstrap resampling...\n")
+  
+  set.seed(1234)  # For reproducibility
+  
+  # Bootstrap original correlations
+  original_boot <- boot(
+    data = original_results,
+    statistic = bootstrap_original,
+    R = n_bootstrap
+  )
+  
+  # Bootstrap scrambled correlations
+  scrambled_boot <- boot(
+    data = scrambled_results,
+    statistic = bootstrap_scrambled,
+    R = n_bootstrap
+  )
+  
+  # Compute confidence intervals
+  alpha <- 1 - conf_level
+  
+  original_ci <- boot.ci(original_boot, type = "perc", conf = conf_level)
+  scrambled_ci <- boot.ci(scrambled_boot, type = "perc", conf = conf_level)
+  
+  # Extract CI bounds
+  original_lower <- original_ci$percent[4]
+  original_upper <- original_ci$percent[5]
+  scrambled_lower <- scrambled_ci$percent[4]
+  scrambled_upper <- scrambled_ci$percent[5]
+  
+  # Bootstrap the difference
+  bootstrap_difference <- function(data1, data2, indices1, indices2) {
+    corr1 <- compute_single_correlation(data1[indices1, ])
+    corr2 <- compute_single_correlation(data2[indices2, ])
+    return(corr1 - corr2)
+  }
+  
+  # Create paired bootstrap samples for difference
+  n_orig <- nrow(original_results)
+  n_scram <- nrow(scrambled_results)
+  
+  diff_bootstrap <- replicate(n_bootstrap, {
+    indices1 <- sample(1:n_orig, n_orig, replace = TRUE)
+    indices2 <- sample(1:n_scram, n_scram, replace = TRUE)
+    bootstrap_difference(original_results, scrambled_results, indices1, indices2)
+  })
+  
+  # Remove NAs
+  diff_bootstrap <- diff_bootstrap[!is.na(diff_bootstrap)]
+  
+  # Compute difference statistics
+  mean_diff <- mean(diff_bootstrap)
+  diff_ci_lower <- quantile(diff_bootstrap, alpha/2)
+  diff_ci_upper <- quantile(diff_bootstrap, 1 - alpha/2)
+  
+  # Create results summary
+  results_summary <- data.frame(
+    experiment = c("Original", "Scrambled", "Difference"),
+    correlation = c(original_corr, scrambled_corr, mean_diff),
+    ci_lower = c(original_lower, scrambled_lower, diff_ci_lower),
+    ci_upper = c(original_upper, scrambled_upper, diff_ci_upper),
+    bootstrap_se = c(sd(original_boot$t, na.rm = TRUE), 
+                     sd(scrambled_boot$t, na.rm = TRUE), 
+                     sd(diff_bootstrap, na.rm = TRUE)),
+    n_bootstrap = c(sum(!is.na(original_boot$t)), 
+                    sum(!is.na(scrambled_boot$t)), 
+                    length(diff_bootstrap))
+  )
+  
+  # Data leakage assessment
+  scrambled_significant <- scrambled_lower > 0
+  difference_significant <- diff_ci_lower > 0
+  
+  if (scrambled_corr > 0.3) {
+    verdict <- "Strong Evidence of Data Leakage"
+    verdict_emoji <- "🚨"
+  } else if (scrambled_corr > 0.15) {
+    verdict <- "Moderate Evidence of Data Leakage" 
+    verdict_emoji <- "⚠️"
+  } else if (scrambled_corr > 0.05) {
+    verdict <- "Weak Evidence of Data Leakage"
+    verdict_emoji <- "⚠️"
+  } else {
+    verdict <- "No Evidence of Data Leakage"
+    verdict_emoji <- "✅"
+  }
+  
+  cat("=== BOOTSTRAP RESULTS SUMMARY ===\n")
+  print(results_summary)
+  
+  cat("\n=== DATA LEAKAGE ASSESSMENT ===\n")
+  cat("Scrambled correlation significantly > 0:", scrambled_significant, "\n")
+  cat("Difference significantly > 0:", difference_significant, "\n")
+  cat(verdict_emoji, "VERDICT:", verdict, "\n")
+  
+  # Return comprehensive results
+  return(list(
+    results_summary = results_summary,
+    original_bootstrap = original_boot$t,
+    scrambled_bootstrap = scrambled_boot$t,
+    difference_bootstrap = diff_bootstrap,
+    verdict = verdict,
+    original_corr = original_corr,
+    scrambled_corr = scrambled_corr,
+    mean_difference = mean_diff,
+    conf_level = conf_level
+  ))
+}
+
+# Function to create comprehensive visualizations
+create_bootstrap_plots <- function(bootstrap_results, output_dir = "../output/figures/") {
+  
+  # Ensure output directory exists
+  dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+  
+  results_df <- bootstrap_results$results_summary
+  
+  # Define professional color scheme
+  colors <- c("Original" = "#2E8B57", "Scrambled" = "#DC143C", "Difference" = "#4682B4")
+  
+  # Plot 1: Main results with confidence intervals
+  p1 <- results_df %>%
+    filter(experiment != "Difference") %>%
+    ggplot(aes(x = experiment, y = correlation, fill = experiment)) +
+    geom_col(width = 0.6, alpha = 0.8) +
+    geom_errorbar(aes(ymin = ci_lower, ymax = ci_upper), 
+                  width = 0.2, color = "black", linewidth = 1) +
+    geom_text(aes(label = sprintf("%.3f", correlation)), 
+              vjust = -0.5, size = 4, fontface = "bold") +
+    scale_fill_manual(values = colors) +
+    scale_y_continuous(limits = c(0, max(results_df$ci_upper[1:2], na.rm = TRUE) * 1.15)) +
+    labs(
+      title = "Data Leakage Test: Bootstrap Analysis",
+      subtitle = paste("Verdict:", bootstrap_results$verdict, "• 95% Bootstrap CIs (1000 samples)"),
+      x = "Experiment Type",
+      y = "Average Spearman Correlation",
+      caption = "Error bars show 95% bootstrap confidence intervals\nScrambled text maintains semantic structure but randomizes word order"
+    ) +
+    theme_minimal(base_family = "Segoe UI") +
+    theme(
+      plot.title = element_text(size = 16, face = "bold"),
+      plot.subtitle = element_text(size = 12, color = "grey30"),
+      panel.grid.minor = element_blank(),
+      panel.grid.major.x = element_blank(),
+      legend.position = "none",
+      axis.text = element_text(size = 11),
+      plot.caption = element_text(size = 10, color = "grey50", hjust = 0, margin = margin(t = 10))
+    )
+  
+  # Plot 2: Bootstrap distributions
+  bootstrap_data <- data.frame(
+    correlation = c(bootstrap_results$original_bootstrap, bootstrap_results$scrambled_bootstrap),
+    experiment = rep(c("Original", "Scrambled"), 
+                    c(length(bootstrap_results$original_bootstrap), 
+                      length(bootstrap_results$scrambled_bootstrap)))
+  ) %>%
+    filter(!is.na(correlation))
+  
+  p2 <- ggplot(bootstrap_data, aes(x = correlation, fill = experiment)) +
+    geom_histogram(alpha = 0.7, bins = 50, position = "identity") +
+    geom_vline(data = results_df %>% filter(experiment != "Difference"), 
+               aes(xintercept = correlation, color = experiment), 
+               linetype = "dashed", linewidth = 1) +
+    scale_fill_manual(values = colors) +
+    scale_color_manual(values = colors) +
+    facet_wrap(~ experiment, scales = "free_y", ncol = 1) +
+    labs(
+      title = "Bootstrap Distribution of Correlations",
+      x = "Bootstrap Correlation Estimate",
+      y = "Frequency",
+      caption = "Dashed lines show point estimates"
+    ) +
+    theme_minimal(base_family = "Segoe UI") +
+    theme(
+      plot.title = element_text(size = 14, face = "bold"),
+      panel.grid.minor = element_blank(),
+      legend.position = "none",
+      strip.text = element_text(size = 12, face = "bold"),
+      plot.caption = element_text(size = 9, color = "grey50", hjust = 0)
+    )
+  
+  # Plot 3: Difference analysis
+  diff_data <- data.frame(difference = bootstrap_results$difference_bootstrap) %>%
+    filter(!is.na(difference))
+  
+  diff_result <- results_df %>% filter(experiment == "Difference")
+  
+  p3 <- ggplot(diff_data, aes(x = difference)) +
+    geom_histogram(fill = colors["Difference"], alpha = 0.7, bins = 40) +
+    geom_vline(xintercept = diff_result$correlation, color = "red", linetype = "dashed", linewidth = 1) +
+    geom_vline(xintercept = diff_result$ci_lower, color = "red", linetype = "dotted", linewidth = 1) +
+    geom_vline(xintercept = diff_result$ci_upper, color = "red", linetype = "dotted", linewidth = 1) +
+    geom_vline(xintercept = 0, color = "black", linetype = "solid", linewidth = 0.5) +
+    labs(
+      title = "Bootstrap Distribution of Correlation Difference",
+      subtitle = paste("Mean difference:", sprintf("%.3f", diff_result$correlation), 
+                      "• 95% CI: [", sprintf("%.3f", diff_result$ci_lower), ",", 
+                      sprintf("%.3f", diff_result$ci_upper), "]"),
+      x = "Correlation Difference (Original - Scrambled)",
+      y = "Frequency",
+      caption = "Solid line = zero, dashed = point estimate, dotted = CI bounds\nPositive values indicate less data leakage"
+    ) +
+    theme_minimal(base_family = "Segoe UI") +
+    theme(
+      plot.title = element_text(size = 14, face = "bold"),
+      plot.subtitle = element_text(size = 11, color = "grey30"),
+      panel.grid.minor = element_blank(),
+      plot.caption = element_text(size = 9, color = "grey50", hjust = 0)
+    )
+  
+  # Plot 4: Summary table as visualization
+  summary_table_data <- results_df %>%
+    mutate(
+      ci_text = paste0("[", sprintf("%.3f", ci_lower), ", ", sprintf("%.3f", ci_upper), "]"),
+      correlation_text = sprintf("%.3f", correlation)
+    ) %>%
+    select(experiment, correlation_text, ci_text, bootstrap_se) %>%
+    rename(
+      "Experiment" = experiment,
+      "Correlation" = correlation_text,
+      "95% CI" = ci_text,
+      "Bootstrap SE" = bootstrap_se
+    )
+  
+  # Create a summary statistics plot
+  p4 <- summary_table_data %>%
+    mutate(Bootstrap_SE = sprintf("%.3f", `Bootstrap SE`)) %>%
+    select(-`Bootstrap SE`) %>%
+    gather(key = "Metric", value = "Value", -Experiment) %>%
+    ggplot(aes(x = Metric, y = Experiment, fill = Experiment)) +
+    geom_tile(color = "white", alpha = 0.3) +
+    geom_text(aes(label = Value), size = 4, fontface = "bold") +
+    scale_fill_manual(values = colors) +
+    labs(
+      title = "Summary Statistics",
+      x = NULL,
+      y = NULL
+    ) +
+    theme_minimal(base_family = "Segoe UI") +
+    theme(
+      plot.title = element_text(size = 14, face = "bold"),
+      panel.grid = element_blank(),
+      legend.position = "none",
+      axis.text = element_text(size = 11)
+    )
+  
+  # Save plots
+  ggsave(file.path(output_dir, "data_leakage_bootstrap_main.png"), 
+         plot = p1, width = 10, height = 6, dpi = 300, bg = "white")
+  
+  ggsave(file.path(output_dir, "data_leakage_bootstrap_distributions.png"), 
+         plot = p2, width = 10, height = 8, dpi = 300, bg = "white")
+  
+  ggsave(file.path(output_dir, "data_leakage_difference_analysis.png"), 
+         plot = p3, width = 10, height = 6, dpi = 300, bg = "white")
+  
+  ggsave(file.path(output_dir, "data_leakage_summary_table.png"), 
+         plot = p4, width = 8, height = 4, dpi = 300, bg = "white")
+  
+  cat("Plots saved to:", output_dir, "\n")
+  cat("Files created:\n")
+  cat("- data_leakage_bootstrap_main.png\n")
+  cat("- data_leakage_bootstrap_distributions.png\n")
+  cat("- data_leakage_difference_analysis.png\n")
+  cat("- data_leakage_summary_table.png\n")
+  
+  return(list(p1 = p1, p2 = p2, p3 = p3, p4 = p4))
+}
+
+# Function to save detailed results
+save_bootstrap_results <- function(bootstrap_results, filename = NULL) {
+  
+  if (is.null(filename)) {
+    filename <- paste0("../output/bootstrap_data_leakage_analysis_", Sys.Date(), ".xlsx")
+  }
+  
+  # Create comprehensive results list for export
+  export_data <- list(
+    "Summary" = bootstrap_results$results_summary,
+    "Original_Bootstrap" = data.frame(
+      sample = 1:length(bootstrap_results$original_bootstrap),
+      correlation = bootstrap_results$original_bootstrap
+    ),
+    "Scrambled_Bootstrap" = data.frame(
+      sample = 1:length(bootstrap_results$scrambled_bootstrap),
+      correlation = bootstrap_results$scrambled_bootstrap
+    ),
+    "Difference_Bootstrap" = data.frame(
+      sample = 1:length(bootstrap_results$difference_bootstrap),
+      difference = bootstrap_results$difference_bootstrap
+    ),
+    "Assessment" = data.frame(
+      metric = c("Verdict", "Original_Correlation", "Scrambled_Correlation", "Mean_Difference"),
+      value = c(bootstrap_results$verdict, 
+                bootstrap_results$original_corr,
+                bootstrap_results$scrambled_corr,
+                bootstrap_results$mean_difference)
+    )
+  )
+  
+  writexl::write_xlsx(export_data, filename)
+  cat("Detailed results saved to:", filename, "\n")
+}
+
+# ==============================================================================
+# USAGE EXAMPLE WITH YOUR EXPERIMENT_RESULTS
+# ==============================================================================
+
+# After running your experiment, use these functions:
+
+# 1. Perform bootstrap analysis
+cat("\n=== RUNNING BOOTSTRAP ANALYSIS ON YOUR EXPERIMENT RESULTS ===\n")
+bootstrap_analysis <- bootstrap_scrambling_analysis(experiment_results, n_bootstrap = 5000)
+
+# 2. Create visualizations
+if (!is.null(bootstrap_analysis)) {
+  plots <- create_bootstrap_plots(bootstrap_analysis)
+  
+  # 3. Save detailed results
+  save_bootstrap_results(bootstrap_analysis)
+  
+  cat("\n=== ANALYSIS COMPLETE ===\n")
+  cat("Check the ../output/figures/ directory for visualizations\n")
+  cat("Check for Excel file with detailed bootstrap results\n")
+}
