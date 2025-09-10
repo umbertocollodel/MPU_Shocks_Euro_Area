@@ -435,7 +435,7 @@ parse_llm_output <- function(output_text, date_str, regime) {
   
   tryCatch({
     # Read as markdown table
-    df <- read_delim(textConnection(output_text), 
+    df <- read_delim(I(output_text), 
                     delim = "|", 
                     trim_ws = TRUE, 
                     skip = 1,
