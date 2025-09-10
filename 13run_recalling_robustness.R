@@ -1,621 +1,239 @@
-# Controlled Experiment: Information Content Test with PARALLEL PROCESSING
-# Testing 50 conferences across different ECB policy regimes
+# Text Scrambling for Data Leakage Detection
+# Author: Based on your macroeconomics research style
+# Purpose: Test whether LLM is actually reading text or using memorized patterns
 
-# Load necessary libraries and set parameters
+library(tidyverse)
+library(stringr)
+library(readtext)
+
+# Load your conference data (adjust path as needed)
 setwd("~/../Desktop/Projects/Uncertainty_surprises/code/")
 
-if (!require("pacman")) install.packages("pacman")
-
-pacman::p_load(
-  gemini.R,
-  cli,
-  httr2,
-  readtext,
-  crayon,
-  stringr,
-  purrr,
-  readr,
-  writexl,
-  scales,
-  showtext,
-  readxl,
-  tidyverse,
-  lubridate,
-  future,     # For parallel processing
-  furrr       # For parallel map functions
-)
-
-
-# ============================================================================
-# SETUP PARALLEL PROCESSING
-# ============================================================================
-
-# Set up parallel processing plan
-# Adjust workers based on your API rate limits - Gemini typically allows 60 requests/minute
-plan(multisession, workers = 2)  # Use 5 parallel workers
-
-print(paste("Parallel processing enabled with", future::nbrOfWorkers(), "workers"))
-
-# ============================================================================
-# STEP 1: DEFINE POLICY REGIMES AND SELECT CONFERENCES
-# ============================================================================
-
-# Load your existing data to get available dates
-name_prompt_request <- "prompt_naive"
-
-# Load the original July results
-llm_july_results <- read_xlsx(paste0("../intermediate_data/aggregate_gemini_result/", 
-                                     name_prompt_request, "/",
-                                     "2.5flash_",
-                                     "2025-07-21",
-                                     ".xlsx"))
-
-# Get unique conference dates
-available_dates <- unique(as.Date(llm_july_results$date))
-
-print(paste("Total available conferences:", length(available_dates)))
-
-# Define ECB policy regimes
-policy_regimes <- list(
-  "Duisenberg_early" = list(
-    start = as.Date("1998-06-01"),
-    end = as.Date("2003-10-31"),
-    description = "Early ECB, establishing credibility",
-    n_select = 5
-  ),
-  "Trichet_normal" = list(
-    start = as.Date("2003-11-01"),
-    end = as.Date("2007-07-31"),
-    description = "Great Moderation period",
-    n_select = 5
-  ),
-  "Financial_crisis" = list(
-    start = as.Date("2007-08-01"),
-    end = as.Date("2009-12-31"),
-    description = "Global Financial Crisis",
-    n_select = 8
-  ),
-  "Sovereign_debt_crisis" = list(
-    start = as.Date("2010-01-01"),
-    end = as.Date("2012-07-31"),
-    description = "European Sovereign Debt Crisis",
-    n_select = 7
-  ),
-  "Draghi_whatever_it_takes" = list(
-    start = as.Date("2012-08-01"),
-    end = as.Date("2014-05-31"),
-    description = "Post 'Whatever it takes'",
-    n_select = 5
-  ),
-  "QE_era" = list(
-    start = as.Date("2014-06-01"),
-    end = as.Date("2018-12-31"),
-    description = "Quantitative Easing period",
-    n_select = 6
-  ),
-  "Normalization_attempt" = list(
-    start = as.Date("2019-01-01"),
-    end = as.Date("2020-02-29"),
-    description = "Attempted policy normalization",
-    n_select = 3
-  ),
-  "Pandemic" = list(
-    start = as.Date("2020-03-01"),
-    end = as.Date("2021-06-30"),
-    description = "COVID-19 pandemic",
-    n_select = 5
-  ),
-  "Inflation_surge" = list(
-    start = as.Date("2021-07-01"),
-    end = as.Date("2022-06-30"),
-    description = "Initial inflation surge",
-    n_select = 4
-  ),
-  "Aggressive_tightening" = list(
-    start = as.Date("2022-07-01"),
-    end = as.Date("2024-12-31"),
-    description = "Aggressive rate hiking cycle",
-    n_select = 7
-  )
-)
-
-# Select conferences from each regime
-selected_conferences <- list()
-
-for (regime_name in names(policy_regimes)) {
-  regime <- policy_regimes[[regime_name]]
+# Function to scramble sentences within a text
+scramble_sentences <- function(text) {
+  # Handle edge cases
+  if (is.na(text) || nchar(text) == 0) return(text)
   
-  # Get dates in this regime
-  regime_dates <- available_dates[available_dates >= regime$start & 
-                                  available_dates <= regime$end]
+  # Split by sentence endings, keeping the punctuation
+  sentences <- str_split(text, "(?<=[\\.\\!\\?])\\s+", simplify = FALSE)[[1]]
+  sentences <- sentences[nchar(sentences) > 0]  # Remove empty strings
   
-  # Sample the required number (or all if fewer available)
-  n_to_select <- min(regime$n_select, length(regime_dates))
+  if (length(sentences) <= 1) return(text)  # Can't scramble single sentence
   
-  if (n_to_select > 0) {
-    # Select evenly spaced dates
-    if (n_to_select == length(regime_dates)) {
-      selected <- regime_dates
-    } else {
-      indices <- round(seq(1, length(regime_dates), length.out = n_to_select))
-      selected <- regime_dates[indices]
-    }
-    
-    selected_conferences[[regime_name]] <- selected
-    
-    # remove NAs from each list element
-    selected_conferences<- selected_conferences |> 
-      map(~ .x[!is.na(.x)])
-    
-    cat(sprintf("\n%s: Selected %d conferences\n", regime_name, length(selected)))
-  }
+  # Randomly reorder sentences
+  scrambled_sentences <- sample(sentences)
+  
+  # Rejoin with spaces
+  paste(scrambled_sentences, collapse = " ")
 }
 
-# Combine all selected conferences
-final_conference_dates <- sort(unique(unlist(selected_conferences))) |> as.Date()
-
-print(paste("\nTOTAL CONFERENCES SELECTED:", length(final_conference_dates)))
-
-# Save the selection for documentation
-regime_df <- map2_df(selected_conferences, names(selected_conferences), 
-                     ~data.frame(date = .x, regime = .y))
-write_xlsx(regime_df, paste0("../intermediate_data/controlled_experiment_dates_", Sys.Date(), ".xlsx"))
-
-# ============================================================================
-# STEP 2: LOAD ECB TRANSCRIPTS IN PARALLEL
-# ============================================================================
-
-print("\nLoading ECB transcripts...")
-
-# Function to get transcript for a specific date
-get_ecb_transcript <- function(conference_date) {
-  date_str <- as.character(conference_date)
+# Function to scramble words within each sentence
+scramble_words_in_sentences <- function(text) {
+  # Handle edge cases
+  if (is.na(text) || nchar(text) == 0) return(text)
   
-  # Find the matching transcript file
-  transcript_files <- list.files("../intermediate_data/texts/", 
-                                pattern = paste0("^", date_str), 
+  # Split by sentences first
+  sentences <- str_split(text, "(?<=[\\.\\!\\?])\\s+", simplify = FALSE)[[1]]
+  sentences <- sentences[nchar(sentences) > 0]
+  
+  # Scramble words within each sentence
+  scrambled_sentences <- map_chr(sentences, function(sentence) {
+    # Remove punctuation temporarily, scramble words, then add back punctuation
+    # Extract ending punctuation
+    ending_punct <- str_extract(sentence, "[\\.\\!\\?]+$")
+    if (is.na(ending_punct)) ending_punct <- ""
+    
+    # Remove ending punctuation for word scrambling
+    clean_sentence <- str_remove(sentence, "[\\.\\!\\?]+$")
+    
+    # Split into words and scramble
+    words <- str_split(clean_sentence, "\\s+", simplify = FALSE)[[1]]
+    words <- words[nchar(words) > 0]  # Remove empty strings
+    
+    if (length(words) <= 1) return(sentence)  # Can't scramble single word
+    
+    scrambled_words <- sample(words)
+    
+    # Reconstruct with punctuation
+    paste0(paste(scrambled_words, collapse = " "), ending_punct)
+  })
+  
+  # Rejoin sentences
+  paste(scrambled_sentences, collapse = " ")
+}
+
+# Strategic sampling function to balance cost vs. coverage
+create_strategic_sample <- function(conference_dates, n_sample = 30, method = "strategic") {
+  
+  conference_df <- data.frame(
+    date = as.Date(conference_dates),
+    stringsAsFactors = FALSE
+  ) %>%
+    arrange(date) %>%
+    mutate(
+      year = year(date),
+      # Create volatility periods based on known ECB history
+      period = case_when(
+        year >= 2022 ~ "Recent_Tightening",
+        year >= 2015 & year <= 2021 ~ "ZLB_Era", 
+        year >= 2010 & year <= 2014 ~ "Sovereign_Crisis",
+        year >= 2008 & year <= 2009 ~ "Financial_Crisis",
+        TRUE ~ "Pre_Crisis"
+      )
+    )
+  
+  if (method == "strategic") {
+    # Stratified sampling across periods to ensure coverage of different regimes
+    sampled_conferences <- conference_df %>%
+      group_by(period) %>%
+      # Sample proportionally but ensure minimum representation
+      slice_sample(n = max(2, round(n_sample * n() / nrow(conference_df)))) %>%
+      ungroup() %>%
+      slice_sample(n = min(n_sample, nrow(.)))  # Final cap at n_sample
+    
+  } else if (method == "recent") {
+    # Focus on recent conferences (less likely to be in training data)
+    sampled_conferences <- conference_df %>%
+      filter(year >= 2020) %>%
+      slice_sample(n = min(n_sample, nrow(.)))
+    
+  } else if (method == "high_volatility") {
+    # Focus on periods of known high volatility (crisis periods)
+    sampled_conferences <- conference_df %>%
+      filter(period %in% c("Financial_Crisis", "Sovereign_Crisis", "Recent_Tightening")) %>%
+      slice_sample(n = min(n_sample, nrow(.)))
+    
+  } else {
+    # Random sampling
+    sampled_conferences <- conference_df %>%
+      slice_sample(n = min(n_sample, nrow(.)))
+  }
+  
+  cat("Sampling Summary:\n")
+  cat("Total conferences available:", nrow(conference_df), "\n")
+  cat("Sample size:", nrow(sampled_conferences), "\n")
+  cat("Coverage by period:\n")
+  print(table(sampled_conferences$period))
+  
+  return(sampled_conferences$date)
+}
+
+# Main function to create scrambled versions of sampled conferences
+create_scrambled_conferences <- function(sample_dates, scrambling_method = "both") {
+  
+  # Load original conference texts
+  conference_files <- list.files("../intermediate_data/texts/", 
+                                pattern = "\\d{4}-\\d{2}-\\d{2}", 
                                 full.names = TRUE)
   
-  if (length(transcript_files) == 0) {
-    return(NULL)
-  }
+  # Filter to sample dates
+  sample_date_strings <- as.character(sample_dates)
+  sampled_files <- conference_files[str_detect(conference_files, 
+                                              paste(sample_date_strings, collapse = "|"))]
   
-  # Read the transcript
-  text <- readtext(transcript_files[1])$text
-  return(text)
-}
-
-# Load all transcripts in parallel
-transcripts <- future_map(final_conference_dates, get_ecb_transcript, 
-                         .options = furrr_options(seed = TRUE))
-names(transcripts) <- as.character(final_conference_dates)
-
-# Check how many we successfully loaded
-valid_transcripts <- transcripts[!sapply(transcripts, is.null)]
-print(paste("Successfully loaded", length(valid_transcripts), "transcripts"))
-
-# Update final conference dates to only include those with transcripts
-final_conference_dates <- as.Date(names(valid_transcripts))
-
-# ============================================================================
-# STEP 3: DEFINE GEMINI FUNCTION (CONSISTENT VERSION)
-# ============================================================================
-
-# Use EXACTLY the same function as your July run
-new_gemini <- function(prompt, model = "2.5-flash", temperature = 1, maxOutputTokens = 1000000,
-                       topK = 40, topP = 0.95, seed= 45) {
+  cat("Found", length(sampled_files), "conference files matching sample dates\n")
   
-  model_query <- paste0("gemini-", model, ":generateContent")
-  url <- paste0("https://generativelanguage.googleapis.com/v1beta/models/", model_query)
-  api_key <- Sys.getenv("GEMINI_API_KEY")
+  # Process each conference
+  results_list <- list()
   
-  generation_config <- list(
-    temperature = temperature,
-    maxOutputTokens = maxOutputTokens,
-    topP = topP,
-    topK = topK,
-    seed = seed
-  )
-  
-  request_body <- list(
-    contents = list(
-      parts = list(
-        list(text = prompt)
-      )
-    ),
-    generationConfig = generation_config
-  )
-  
-  req <- request(url) |>
-    req_url_query(key = api_key) |>
-    req_headers("Content-Type" = "application/json") |>
-    req_body_json(request_body) |>
-    req_timeout(120)
-  
-  resp <- tryCatch(
-    req_perform(req),
-    error = function(e) {
-      return(NULL)
-    }
-  )
-  
-  if (is.null(resp) || resp$status_code != 200) {
-    return(NULL)
-  }
-  
-  candidates <- resp_body_json(resp)$candidates
-  outputs <- unlist(lapply(candidates, function(candidate) candidate$content$parts))
-  return(outputs)
-}
-
-# ============================================================================
-# STEP 4: DEFINE PROMPTS
-# ============================================================================
-
-# Load your original prompt
-source("create_prompts.R")
-
-# Prompt WITH text (your original naive prompt)
-prompt_with_text_template <- prompt_naive
-
-# Prompt WITHOUT text (text-free version)
-prompt_without_text_template <- "
-Context:
-You are simulating the Euro area interest rate swap market, composed of 30 individual traders.
-These traders are making predictions after an ECB Governing Council meeting on [date].
-Each trader makes a trading decision based on their characteristics and general knowledge.
-
-Trader Characteristics:
-Each trader has the following attributes:
-- Risk Aversion: High / Medium / Low — determines sensitivity to uncertainty and preference for stability.
-- Behavioral Biases (1–2 per trader): e.g., Confirmation Bias, Overconfidence, Anchoring, Herding, Loss Aversion, Recency Bias.
-- Interpretation Style (1 per trader): e.g., Fundamentalist, Sentiment Reader, Quantitative, Skeptic, Narrative-Driven.
-
-Task:
-For the ECB meeting on [date], simulate trading decisions for 30 traders across three tenors.
-You do NOT have access to the actual press conference transcript.
-Use only your general economic knowledge right before this date.
-
-For each tenor, the trader must:
-- Provide an expected rate direction: Up / Down / Unchanged
-- Provide a new expected swap rate (in percent, to two decimal places)
-- Provide a confidence score (0-100%)
-
-Output:
-Provide a table with the following structure:
-
-| Date       | Trader ID | Tenor   | Expected Direction | New Expected Rate (%) | Confidence (%) |
-|------------|-----------|---------|--------------------|-----------------------|----------------|
-| YYYY-MM-DD | T001      | 3M      | Up                 | 3.15                  | 65             |
-| YYYY-MM-DD | T001      | 2Y      | Down               | 2.85                  | 80             |
-| ...        | ...       | ...     | ...                | ...                   | ...            |
-
-Guidelines:
-- Use only information available as of [date].
-- Output only a markdown table with the specified columns, no additional text.
-"
-
-# ============================================================================
-# STEP 5: DEFINE PARALLEL PROCESSING FUNCTION
-# ============================================================================
-
-# Create directory for results
-dir.create("../intermediate_data/controlled_experiment/", showWarnings = FALSE, recursive = TRUE)
-
-# Function to run BOTH conditions for a single conference
-run_both_conditions <- function(conference_date, transcript_text) {
-  
-  date_str <- as.character(conference_date)
-  
-  # Find regime
-  regime_name <- NA
-  for (rname in names(selected_conferences)) {
-    if (conference_date %in% selected_conferences[[rname]]) {
-      regime_name <- rname
-      break
-    }
-  }
-  
-  # Generate unique session ID
-  session_id <- paste0(date_str, "_", format(Sys.time(), "%H%M%S"), "_", sample(1000:9999, 1))
-  
-  # Initialize results
-  results <- list(
-    date = date_str,
-    regime = regime_name,
-    with_text = NULL,
-    without_text = NULL
-  )
-  
-  # Prepare prompts
-  prompt_with <- gsub("\\[date\\]", date_str, prompt_with_text_template)
-  full_prompt_with <- paste0(
-    prompt_with,
-    "\nPress Conference on ", date_str, "\n",
-    "Text:", transcript_text, "\n\n"
-  )
-  
-  prompt_without <- gsub("\\[date\\]", date_str, prompt_without_text_template)
-  full_prompt_without <- paste0(
-    prompt_without
-  )
-
-  # Run WITH text (with retries)
-  for (attempt in 1:3) {
-    results$with_text <- new_gemini(full_prompt_with, 
-                                    model = "2.5-flash",
-                                    temperature = 1)
-    if (!is.null(results$with_text)) break
-    Sys.sleep(2 * attempt)
-  }
-  
-  # Small delay between requests
-  Sys.sleep(2)
-  
-  # Run WITHOUT text (with retries)
-  for (attempt in 1:3) {
-    results$without_text <- new_gemini(full_prompt_without,
-                                       model = "2.5-flash",
-                                       temperature = 1)
-    if (!is.null(results$without_text)) break
-    Sys.sleep(2 * attempt)
-  }
-  
-  # Save individual result
-  saveRDS(results, paste0("../intermediate_data/controlled_experiment/", date_str, ".rds"))
-  
-  # Return status
-  status <- paste0(
-    date_str, " - ",
-    ifelse(!is.null(results$with_text), "✅", "❌"), " WITH | ",
-    ifelse(!is.null(results$without_text), "✅", "❌"), " WITHOUT"
-  )
-  
-  cat(status, "\n")
-  
-  return(results)
-}
-
-# ============================================================================
-# STEP 6: RUN CONTROLLED EXPERIMENT IN PARALLEL (NO BATCHING)
-# ============================================================================
-
-print("\n========== STARTING PARALLEL CONTROLLED EXPERIMENT ==========")
-print(paste("Testing", length(final_conference_dates), "conferences"))
-print(paste("Using", future::nbrOfWorkers(), "parallel workers"))
-
-start_time <- Sys.time()
-
-# Create a list of dates and their transcripts
-conference_list <- map2(final_conference_dates, 
-                        valid_transcripts[as.character(final_conference_dates)],
-                        ~list(date = .x, transcript = .y))
-
-# Run all conferences in parallel at once
-all_results <- map(
-  conference_list,
-  ~run_both_conditions(.x$date, .x$transcript)
-)
-
-end_time <- Sys.time()
-total_time <- difftime(end_time, start_time, units = "mins")
-
-print("\n========== PARALLEL EXPERIMENT COMPLETED ==========")
-print(paste("Total time:", round(total_time, 2), "minutes"))
-
-# Count successes
-successful_both <- sum(sapply(all_results, function(x) !is.null(x$with_text) && !is.null(x$without_text)))
-successful_with_only <- sum(sapply(all_results, function(x) !is.null(x$with_text) && is.null(x$without_text)))
-successful_without_only <- sum(sapply(all_results, function(x) is.null(x$with_text) && !is.null(x$without_text)))
-failed_both <- sum(sapply(all_results, function(x) is.null(x$with_text) && is.null(x$without_text)))
-
-cat("\nResults summary:\n")
-cat(paste("  Both conditions successful:", successful_both, "\n"))
-cat(paste("  Only WITH text successful:", successful_with_only, "\n"))
-cat(paste("  Only WITHOUT text successful:", successful_without_only, "\n"))
-cat(paste("  Both failed:", failed_both, "\n"))
-
-# Save final results
-controlled_results <- all_results
-names(controlled_results) <- sapply(all_results, function(x) x$date)
-
-saveRDS(controlled_results, 
-        paste0("../intermediate_data/controlled_results_final_", Sys.Date(), ".rds"))
-
-
-# ============================================================================
-# STEP 7: PARSE RESULTS IN PARALLEL
-# ============================================================================
-
-print("\n========== PARSING RESULTS ==========")
-
-# Function to parse markdown table from LLM output
-parse_llm_output <- function(output_text, date_str, regime) {
-  if (is.null(output_text) || length(output_text) == 0) return(NULL)
-  
-  tryCatch({
-    # Read as markdown table
-    df <- read_delim(I(output_text), 
-                    delim = "|", 
-                    trim_ws = TRUE, 
-                    skip = 1,
-                    show_col_types = FALSE) %>%
-      select(-1, -ncol(.)) %>%
-      slice(-1) %>%
-      setNames(c("date", "id", "tenor", "direction", "rate", "confidence")) %>%
-      mutate(
-        date = date_str,
-        regime = regime,
-        rate = as.numeric(rate),
-        confidence = as.numeric(confidence)
-      ) %>%
-      filter(tenor %in% c("3M", "2Y", "10Y"))
+  for (i in seq_along(sampled_files)) {
+    file_path <- sampled_files[i]
     
-    return(df)
-  }, error = function(e) {
-    return(NULL)
-  })
+    # Extract date from filename
+    conf_date <- str_extract(basename(file_path), "\\d{4}-\\d{2}-\\d{2}")
+    
+    cat("Processing conference:", conf_date, "(", i, "of", length(sampled_files), ")\n")
+    
+    # Read original text
+    original_text <- readtext(file_path)$text
+    
+    # Apply scrambling methods
+    if (scrambling_method %in% c("both", "sentences")) {
+      sentence_scrambled <- scramble_sentences(original_text)
+      
+      # Save scrambled version
+      scrambled_filename <- paste0("../intermediate_data/texts_scrambled_sentences/", 
+                                  conf_date, "_sentence_scrambled.txt")
+      
+      # Create directory if it doesn't exist
+      dir.create("../intermediate_data/texts_scrambled_sentences/", 
+                showWarnings = FALSE, recursive = TRUE)
+      
+      writeLines(sentence_scrambled, scrambled_filename)
+    }
+    
+    if (scrambling_method %in% c("both", "words")) {
+      word_scrambled <- scramble_words_in_sentences(original_text)
+      
+      # Save scrambled version  
+      scrambled_filename <- paste0("../intermediate_data/texts_scrambled_words/", 
+                                  conf_date, "_word_scrambled.txt")
+      
+      # Create directory if it doesn't exist
+      dir.create("../intermediate_data/texts_scrambled_words/", 
+                showWarnings = FALSE, recursive = TRUE)
+      
+      writeLines(word_scrambled, scrambled_filename)
+    }
+    
+    # Store results for comparison
+    results_list[[i]] <- data.frame(
+      date = conf_date,
+      original_length = nchar(original_text),
+      original_sentences = length(str_split(original_text, "[\\.\\!\\?]")[[1]]),
+      scrambled_available = TRUE,
+      stringsAsFactors = FALSE
+    )
+  }
+  
+  # Combine results
+  results_df <- bind_rows(results_list)
+  
+  cat("\nScrambling complete!\n")
+  cat("Processed", nrow(results_df), "conferences\n")
+  cat("Average text length:", mean(results_df$original_length), "characters\n")
+  cat("Average sentences per conference:", mean(results_df$original_sentences), "\n")
+  
+  return(results_df)
 }
 
-# Parse all results in parallel
-parse_results <- future_map(controlled_results, function(result) {
-  list(
-    with_text = parse_llm_output(result$with_text, result$date, result$regime),
-    without_text = parse_llm_output(result$without_text, result$date, result$regime)
-  )
-}, .options = furrr_options(seed = TRUE))
+# Example usage:
 
-# Combine parsed results
-df_with_text <- bind_rows(lapply(parse_results, function(x) x$with_text))
-df_without_text <- bind_rows(lapply(parse_results, function(x) x$without_text))
+# 1. Get your conference dates (adjust based on your data structure)
+dates_ecb_presconf <- list.files("../intermediate_data/texts/") %>%
+  str_subset("\\d") %>%
+  str_remove("\\.txt") %>%
+  str_extract("\\d{4}-\\d{2}-\\d{2}") %>%
+  as.Date() %>%
+  sort()
 
-print(paste("Parsed WITH text:", nrow(df_with_text), "predictions"))
-print(paste("Parsed WITHOUT text:", nrow(df_without_text), "predictions"))
+# 2. Create strategic sample (recommended: 30 conferences for cost efficiency)
+sample_dates <- create_strategic_sample(dates_ecb_presconf, 
+                                       n_sample = 30, 
+                                       method = "strategic")
 
-# ============================================================================
-# STEP 8: COMPUTE DISAGREEMENT AND ANALYZE
-# ============================================================================
+# 3. Create scrambled versions
+scrambling_results <- create_scrambled_conferences(sample_dates, 
+                                                  scrambling_method = "both")
 
-print("\n========== COMPUTING DISAGREEMENT ==========")
-
-# Compute disagreement for WITH text
-disagreement_with <- df_with_text %>%
-  group_by(date, tenor, regime) %>%
-  summarise(
-    std_with_text = sd(rate, na.rm = TRUE),
-    mean_with_text = mean(rate, na.rm = TRUE),
-    n_agents = n(),
-    .groups = "drop"
-  ) %>%
-  mutate(date = as.Date(date))
-
-# Compute disagreement for WITHOUT text  
-disagreement_without <- df_without_text %>%
-  group_by(date, tenor, regime) %>%
-  summarise(
-    std_without_text = sd(rate, na.rm = TRUE),
-    mean_without_text = mean(rate, na.rm = TRUE),
-    n_agents = n(),
-    .groups = "drop"
-  ) %>%
-  mutate(date = as.Date(date))
-
-# Load market volatility
-market_vol <- read_rds("../intermediate_data/range_difference_df.rds") %>%
-  mutate(
-    tenor = case_when(tenor == "3mnt" ~ "3M", TRUE ~ tenor),
-    date = as.Date(date)
-  ) %>%
-  select(date, tenor, market_volatility = correct_post_mean)
-
-# Combine all measures
-final_comparison <- disagreement_with %>%
-  inner_join(disagreement_without, by = c("date", "tenor", "regime")) %>%
-  left_join(market_vol, by = c("date", "tenor")) %>%
-  filter(!is.na(market_volatility))
-
-print(paste("Final dataset:", nrow(final_comparison), "observations"))
-
-# ============================================================================
-# STEP 9: ANALYZE RESULTS
-# ============================================================================
-
-print("\n========== ANALYSIS ==========")
-
-# Overall correlations
-overall_results <- final_comparison %>%
-  group_by(tenor) %>%
-  summarise(
-    n = n(),
-    corr_with_text = cor(std_with_text, market_volatility, 
-                         method = "spearman", use = "complete.obs"),
-    corr_without_text = cor(std_without_text, market_volatility,
-                           method = "spearman", use = "complete.obs"),
-    information_value = corr_with_text - corr_without_text,
-    percent_change = (corr_with_text - corr_without_text) / abs(corr_without_text) * 100,
-    .groups = "drop"
-  )
-
-print("\nOVERALL RESULTS:")
-print(overall_results)
-
-# Results by regime
-regime_results <- final_comparison %>%
-  group_by(regime, tenor) %>%
-  filter(n() >= 3) %>%  # Only calculate correlation if at least 3 observations
-  summarise(
-    n = n(),
-    corr_with_text = cor(std_with_text, market_volatility,
-                        method = "spearman", use = "complete.obs"),
-    corr_without_text = cor(std_without_text, market_volatility,
-                           method = "spearman", use = "complete.obs"),
-    information_value = corr_with_text - corr_without_text,
-    .groups = "drop"
-  )
-
-print("\nRESULTS BY REGIME:")
-print(regime_results)
-
-# Crisis vs normal periods
-crisis_periods <- c("Financial_crisis", "Sovereign_debt_crisis", "Pandemic", "Inflation_surge", "Aggressive_tightening")
-
-crisis_results <- final_comparison %>%
-  mutate(is_crisis = regime %in% crisis_periods) %>%
-  group_by(is_crisis, tenor) %>%
-  summarise(
-    n = n(),
-    corr_with_text = cor(std_with_text, market_volatility,
-                        method = "spearman", use = "complete.obs"),
-    corr_without_text = cor(std_without_text, market_volatility,
-                           method = "spearman", use = "complete.obs"),
-    information_value = corr_with_text - corr_without_text,
-    .groups = "drop"
-  )
-
-print("\nCRISIS VS NORMAL:")
-print(crisis_results)
-
-# ============================================================================
-# STEP 10: SAVE RESULTS AND CLOSE PARALLEL PROCESSING
-# ============================================================================
-
-# Save all results
-write_xlsx(
-  list(
-    "overall" = overall_results,
-    "by_regime" = regime_results,
-    "crisis_analysis" = crisis_results,
-    "raw_comparison" = final_comparison,
-    "with_text_raw" = df_with_text,
-    "without_text_raw" = df_without_text
-  ),
-  paste0("../output/controlled_experiment_results_", Sys.Date(), ".xlsx")
-)
-
-# Close parallel processing
-plan(sequential)
-
-print("\n========== CONTROLLED EXPERIMENT COMPLETE ==========")
-print(paste("Results saved to: ../output/controlled_experiment_results_", Sys.Date(), ".xlsx"))
-print(paste("Total execution time:", round(total_time, 2), "minutes"))
-
-# Final interpretation
-cat("\n=== INTERPRETATION ===\n")
-for (i in 1:nrow(overall_results)) {
-  tenor <- overall_results$tenor[i]
-  info_val <- overall_results$information_value[i]
-  
-  cat(sprintf("\n%s Tenor:\n", tenor))
-  cat(sprintf("  With text: %.3f\n", overall_results$corr_with_text[i]))
-  cat(sprintf("  Without text: %.3f\n", overall_results$corr_without_text[i]))
-  cat(sprintf("  Information value: %.3f (%.1f%% change)\n", 
-              info_val, overall_results$percent_change[i]))
-  
-  if (info_val > 0.1) {
-    cat("  ✅ Text provides substantial information\n")
-  } else if (info_val > 0) {
-    cat("  ⚠️ Text provides modest information\n")
-  } else {
-    cat("  ❌ Text does not improve predictions\n")
+# 4. Verify scrambling worked by checking a sample
+cat("\n=== VERIFICATION SAMPLE ===\n")
+if (file.exists("../intermediate_data/texts_scrambled_sentences/")) {
+  sample_files <- list.files("../intermediate_data/texts_scrambled_sentences/", full.names = TRUE)
+  if (length(sample_files) > 0) {
+    sample_text <- readLines(sample_files[1], n = 3)
+    cat("First 3 lines of scrambled text:\n")
+    cat(paste(sample_text, collapse = "\n"))
   }
 }
+
+cat("\n\n=== NEXT STEPS ===\n")
+cat("1. Run your LLM analysis on both original and scrambled texts\n")
+cat("2. Compare correlations: High correlation with scrambled = data leakage\n") 
+cat("3. Sample directories created:\n")
+cat("   - ../intermediate_data/texts_scrambled_sentences/\n")
+cat("   - ../intermediate_data/texts_scrambled_words/\n")
+
+# Export sample info for tracking
+write_csv(scrambling_results, "../intermediate_data/scrambling_sample_info.csv")
+cat("4. Sample info saved to: ../intermediate_data/scrambling_sample_info.csv\n")
