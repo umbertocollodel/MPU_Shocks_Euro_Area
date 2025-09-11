@@ -946,164 +946,268 @@ bootstrap_scrambling_analysis <- function(experiment_results, n_bootstrap = 1000
   ))
 }
 
-# Function to create comprehensive visualizations
+# Function to create comprehensive bootstrap visualizations with consistent aesthetics
+# Follows the visual style established in the codebase (09plot_llm_results.R, 11compare_prompts.R)
+
 create_bootstrap_plots <- function(bootstrap_results, output_dir = "../output/figures/") {
+  
+  # Load required libraries
+  library(tidyverse)
+  library(RColorBrewer)
+  library(showtext)
+  
+  # Enable Segoe UI font (consistent with codebase)
+  if (!("Segoe UI" %in% font_families())) {
+    # Try different potential font paths
+    font_paths <- c(
+      "C:/Windows/Fonts/segoeui.ttf",
+      "C:/Users/collodelu/OneDrive - centralbankmalta.org/Desktop/Projects/Uncertainty_surprises/code/segoeui.ttf"
+    )
+    
+    for (path in font_paths) {
+      if (file.exists(path)) {
+        font_add("Segoe UI", regular = path)
+        break
+      }
+    }
+  }
+  showtext_auto()
   
   # Ensure output directory exists
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
   
   results_df <- bootstrap_results$results_summary
   
-  # Define professional color scheme
-  colors <- c("Original" = "#2E8B57", "Scrambled" = "#DC143C", "Difference" = "#4682B4")
+  # Define professional color scheme (consistent with codebase style)
+  colors <- c("Original" = "#4575b4", "Scrambled" = "#d73027", "Difference" = "#91bfdb")
   
-  # Plot 1: Main results with confidence intervals
+  #------------------------------------------------------------------------------
+  ## Plot 1: Main results with confidence intervals
+  #------------------------------------------------------------------------------
+  
   p1 <- results_df %>%
     filter(experiment != "Difference") %>%
+    mutate(experiment = factor(experiment, levels = c("Original", "Scrambled"))) %>%
     ggplot(aes(x = experiment, y = correlation, fill = experiment)) +
-    geom_col(width = 0.6, alpha = 0.8) +
+    geom_col(width = 0.5, col = "white", alpha = 0.8) +
     geom_errorbar(aes(ymin = ci_lower, ymax = ci_upper), 
                   width = 0.2, color = "black", linewidth = 1) +
     geom_text(aes(label = sprintf("%.3f", correlation)), 
               vjust = -0.5, size = 4, fontface = "bold") +
     scale_fill_manual(values = colors) +
-    scale_y_continuous(limits = c(0, max(results_df$ci_upper[1:2], na.rm = TRUE) * 1.15)) +
+    scale_y_continuous(limits = c(0, max(results_df$ci_upper[1:2], na.rm = TRUE) * 1.15),
+                       breaks = pretty) +
     labs(
-      title = "Data Leakage Test: Bootstrap Analysis",
-      subtitle = paste("Verdict:", bootstrap_results$verdict, "• 95% Bootstrap CIs (1000 samples)"),
-      x = "Experiment Type",
+      title = NULL,  # Remove title for consistency
+      subtitle = NULL,  # Remove subtitle for consistency
+      x = "",
       y = "Average Spearman Correlation",
-      caption = "Error bars show 95% bootstrap confidence intervals\nScrambled text maintains semantic structure but randomizes word order"
+      caption = ""
     ) +
     theme_minimal(base_family = "Segoe UI") +
     theme(
-      plot.title = element_text(size = 16, face = "bold"),
-      plot.subtitle = element_text(size = 12, color = "grey30"),
+      plot.caption = element_text(hjust = 0, size = 9, color = "grey50"),
+      axis.text.x = element_text(vjust = 0.5, hjust = 0.5, size = 24),
+      axis.text.y = element_text(size = 14),
+      axis.title = element_text(size = 20, face = "bold"),
+      legend.text = element_text(size = 18),
+      strip.text = element_text(size = 24),
+      legend.position = "none",  # No legend needed as colors map to x-axis
       panel.grid.minor = element_blank(),
       panel.grid.major.x = element_blank(),
-      legend.position = "none",
-      axis.text = element_text(size = 11),
-      plot.caption = element_text(size = 10, color = "grey50", hjust = 0, margin = margin(t = 10))
     )
   
-  # Plot 2: Bootstrap distributions
+  # Save Plot 1
+  ggsave(
+    filename = file.path(output_dir, "bootstrap_main_results.png"),
+    plot = p1,
+    dpi = 320,
+    width = 8,
+    height = 6,
+    bg = "white"
+  )
+  
+  #------------------------------------------------------------------------------
+  ## Plot 2: Bootstrap distributions
+  #------------------------------------------------------------------------------
+  
   bootstrap_data <- data.frame(
     correlation = c(bootstrap_results$original_bootstrap, bootstrap_results$scrambled_bootstrap),
     experiment = rep(c("Original", "Scrambled"), 
                     c(length(bootstrap_results$original_bootstrap), 
                       length(bootstrap_results$scrambled_bootstrap)))
   ) %>%
-    filter(!is.na(correlation))
+    filter(!is.na(correlation)) %>%
+    mutate(experiment = factor(experiment, levels = c("Original", "Scrambled")))
   
   p2 <- ggplot(bootstrap_data, aes(x = correlation, fill = experiment)) +
-    geom_histogram(alpha = 0.7, bins = 50, position = "identity") +
+    geom_histogram(alpha = 0.7, bins = 30, position = "identity") +
     geom_vline(data = results_df %>% filter(experiment != "Difference"), 
                aes(xintercept = correlation, color = experiment), 
-               linetype = "dashed", linewidth = 1) +
+               linetype = "dashed", linewidth = 1.2) +
     scale_fill_manual(values = colors) +
     scale_color_manual(values = colors) +
-    facet_wrap(~ experiment, scales = "free_y", ncol = 1) +
+    facet_wrap(~ experiment, nrow = 2, scales = "free_y") +
     labs(
-      title = "Bootstrap Distribution of Correlations",
+      title = NULL,
+      subtitle = NULL,
       x = "Bootstrap Correlation Estimate",
       y = "Frequency",
-      caption = "Dashed lines show point estimates"
+      caption = ""
     ) +
     theme_minimal(base_family = "Segoe UI") +
     theme(
-      plot.title = element_text(size = 14, face = "bold"),
-      panel.grid.minor = element_blank(),
+      plot.caption = element_text(hjust = 0, size = 9, color = "grey50"),
+      axis.text = element_text(size = 14),
+      axis.title = element_text(size = 20, face = "bold"),
+      legend.text = element_text(size = 18),
+      strip.text = element_text(size = 24, face = "bold"),
       legend.position = "none",
-      strip.text = element_text(size = 12, face = "bold"),
-      plot.caption = element_text(size = 9, color = "grey50", hjust = 0)
+      panel.grid.minor = element_blank(),
+      panel.border = element_rect(colour = "grey80", fill = NA),
     )
   
-  # Plot 3: Difference analysis
+  # Save Plot 2
+  ggsave(
+    filename = file.path(output_dir, "bootstrap_distributions.png"),
+    plot = p2,
+    dpi = 320,
+    width = 10,
+    height = 8,
+    bg = "white"
+  )
+  
+  #------------------------------------------------------------------------------
+  ## Plot 3: Difference analysis
+  #------------------------------------------------------------------------------
+  
   diff_data <- data.frame(difference = bootstrap_results$difference_bootstrap) %>%
     filter(!is.na(difference))
   
   diff_result <- results_df %>% filter(experiment == "Difference")
   
   p3 <- ggplot(diff_data, aes(x = difference)) +
-    geom_histogram(fill = colors["Difference"], alpha = 0.7, bins = 40) +
-    geom_vline(xintercept = diff_result$correlation, color = "red", linetype = "dashed", linewidth = 1) +
-    geom_vline(xintercept = diff_result$ci_lower, color = "red", linetype = "dotted", linewidth = 1) +
-    geom_vline(xintercept = diff_result$ci_upper, color = "red", linetype = "dotted", linewidth = 1) +
-    geom_vline(xintercept = 0, color = "black", linetype = "solid", linewidth = 0.5) +
+    geom_histogram(fill = colors["Difference"], alpha = 0.8, bins = 40, color = "white") +
+    geom_vline(xintercept = diff_result$correlation, 
+               color = "#d73027", linetype = "dashed", linewidth = 1.2) +
+    geom_vline(xintercept = diff_result$ci_lower, 
+               color = "#d73027", linetype = "dotted", linewidth = 1) +
+    geom_vline(xintercept = diff_result$ci_upper, 
+               color = "#d73027", linetype = "dotted", linewidth = 1) +
+    geom_vline(xintercept = 0, color = "grey30", linetype = "solid", linewidth = 0.8) +
     labs(
-      title = "Bootstrap Distribution of Correlation Difference",
-      subtitle = paste("Mean difference:", sprintf("%.3f", diff_result$correlation), 
-                      "• 95% CI: [", sprintf("%.3f", diff_result$ci_lower), ",", 
-                      sprintf("%.3f", diff_result$ci_upper), "]"),
+      title = NULL,
+      subtitle = NULL,
       x = "Correlation Difference (Original - Scrambled)",
       y = "Frequency",
-      caption = "Solid line = zero, dashed = point estimate, dotted = CI bounds\nPositive values indicate less data leakage"
+      caption = "") +
+    theme_minimal(base_family = "Segoe UI") +
+    theme(
+      plot.caption = element_text(hjust = 0, size = 9, color = "grey50"),
+      axis.text = element_text(size = 14),
+      axis.title = element_text(size = 20, face = "bold"),
+      legend.text = element_text(size = 18),
+      strip.text = element_text(size = 24),
+      panel.grid.minor = element_blank(),
+    )
+  
+  # Save Plot 3
+  ggsave(
+    filename = file.path(output_dir, "bootstrap_difference_analysis.png"),
+    plot = p3,
+    dpi = 320,
+    width = 10,
+    height = 6,
+    bg = "white"
+  )
+  
+  #------------------------------------------------------------------------------
+  ## Plot 4: Summary statistics bar chart
+  #------------------------------------------------------------------------------
+  
+  summary_stats_df <- results_df %>%
+    filter(experiment != "Difference") %>%
+    mutate(
+      experiment = factor(experiment, levels = c("Original", "Scrambled")),
+      bootstrap_se_formatted = sprintf("%.3f", bootstrap_se)
+    )
+  
+  p4 <- ggplot(summary_stats_df, aes(x = experiment, y = bootstrap_se, fill = experiment)) +
+    geom_col(width = 0.5, col = "white", alpha = 0.8) +
+    geom_text(aes(label = bootstrap_se_formatted), 
+              vjust = -0.5, size = 4, fontface = "bold") +
+    scale_fill_manual(values = colors) +
+    labs(
+      title = NULL,
+      subtitle = NULL,
+      x = "",
+      y = "Bootstrap Standard Error",
+      caption = ""
     ) +
     theme_minimal(base_family = "Segoe UI") +
     theme(
-      plot.title = element_text(size = 14, face = "bold"),
-      plot.subtitle = element_text(size = 11, color = "grey30"),
+      plot.caption = element_text(hjust = 0, size = 9, color = "grey50"),
+      axis.text.x = element_text(vjust = 0.5, hjust = 0.5, size = 24),
+      axis.text.y = element_text(size = 14),
+      axis.title = element_text(size = 20, face = "bold"),
+      legend.text = element_text(size = 18),
+      strip.text = element_text(size = 24),
+      legend.position = "none",
       panel.grid.minor = element_blank(),
-      plot.caption = element_text(size = 9, color = "grey50", hjust = 0)
+      panel.grid.major.x = element_blank(),
     )
   
-  # Plot 4: Summary table as visualization
-  summary_table_data <- results_df %>%
+  # Save Plot 4
+  ggsave(
+    filename = file.path(output_dir, "bootstrap_standard_errors.png"),
+    plot = p4,
+    dpi = 320,
+    width = 8,
+    height = 6,
+    bg = "white"
+  )
+  
+  #------------------------------------------------------------------------------
+  ## Return summary information
+  #------------------------------------------------------------------------------
+  
+  cat("Bootstrap visualization plots created successfully!\n")
+  cat("Files saved to:", output_dir, "\n")
+  cat("- bootstrap_main_results.png\n")
+  cat("- bootstrap_distributions.png\n") 
+  cat("- bootstrap_difference_analysis.png\n")
+  cat("- bootstrap_standard_errors.png\n")
+  
+  # Create summary table for console output
+  summary_table <- results_df %>%
     mutate(
       ci_text = paste0("[", sprintf("%.3f", ci_lower), ", ", sprintf("%.3f", ci_upper), "]"),
-      correlation_text = sprintf("%.3f", correlation)
+      correlation_text = sprintf("%.3f", correlation),
+      se_text = sprintf("%.3f", bootstrap_se)
     ) %>%
-    select(experiment, correlation_text, ci_text, bootstrap_se) %>%
+    select(experiment, correlation_text, ci_text, se_text) %>%
     rename(
       "Experiment" = experiment,
       "Correlation" = correlation_text,
       "95% CI" = ci_text,
-      "Bootstrap SE" = bootstrap_se
+      "Bootstrap SE" = se_text
     )
   
-  # Create a summary statistics plot
-  p4 <- summary_table_data %>%
-    mutate(Bootstrap_SE = sprintf("%.3f", `Bootstrap SE`)) %>%
-    select(-`Bootstrap SE`) %>%
-    gather(key = "Metric", value = "Value", -Experiment) %>%
-    ggplot(aes(x = Metric, y = Experiment, fill = Experiment)) +
-    geom_tile(color = "white", alpha = 0.3) +
-    geom_text(aes(label = Value), size = 4, fontface = "bold") +
-    scale_fill_manual(values = colors) +
-    labs(
-      title = "Summary Statistics",
-      x = NULL,
-      y = NULL
-    ) +
-    theme_minimal(base_family = "Segoe UI") +
-    theme(
-      plot.title = element_text(size = 14, face = "bold"),
-      panel.grid = element_blank(),
-      legend.position = "none",
-      axis.text = element_text(size = 11)
-    )
+  cat("\nSummary Statistics:\n")
+  print(summary_table)
   
-  # Save plots
-  ggsave(file.path(output_dir, "data_leakage_bootstrap_main.png"), 
-         plot = p1, width = 10, height = 6, dpi = 300, bg = "white")
+  # Return verdict
+  verdict <- bootstrap_results$verdict
+  cat("\nData Leakage Test Verdict:", verdict, "\n")
   
-  ggsave(file.path(output_dir, "data_leakage_bootstrap_distributions.png"), 
-         plot = p2, width = 10, height = 8, dpi = 300, bg = "white")
-  
-  ggsave(file.path(output_dir, "data_leakage_difference_analysis.png"), 
-         plot = p3, width = 10, height = 6, dpi = 300, bg = "white")
-  
-  ggsave(file.path(output_dir, "data_leakage_summary_table.png"), 
-         plot = p4, width = 8, height = 4, dpi = 300, bg = "white")
-  
-  cat("Plots saved to:", output_dir, "\n")
-  cat("Files created:\n")
-  cat("- data_leakage_bootstrap_main.png\n")
-  cat("- data_leakage_bootstrap_distributions.png\n")
-  cat("- data_leakage_difference_analysis.png\n")
-  cat("- data_leakage_summary_table.png\n")
-  
-  return(list(p1 = p1, p2 = p2, p3 = p3, p4 = p4))
+  return(list(
+    plot1 = p1,
+    plot2 = p2, 
+    plot3 = p3,
+    plot4 = p4,
+    summary_table = summary_table,
+    verdict = verdict
+  ))
 }
 
 # Function to save detailed results
