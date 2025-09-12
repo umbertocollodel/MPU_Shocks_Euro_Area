@@ -408,7 +408,7 @@ clean_prompt_robustness_results <- function() {
   
   cat(paste0("Successfully processed ", nrow(all_results), " individual predictions\n"))
 
-  write_xlsx(all_results, path = file.path(OUTPUT_DIR, "df_prompt_robustness.xlsx"))
+  write_xlsx(all_results, path = paste0(OUTPUT_DIR, "df_prompt_robustness.xlsx"))
   
 # Compute disagreement measures for each variation and conference
 disagreement_measures <- all_results %>%
