@@ -339,7 +339,7 @@ return(list(
 }
 
 # Clean and analyze robustness results: ----
-analyze_robustness_results <- function() {
+clean_prompt_robustness_results <- function() {
   
   cat(crayon::blue("Analyzing robustness results...\n"))
   
@@ -407,6 +407,8 @@ analyze_robustness_results <- function() {
   }
   
   cat(paste0("Successfully processed ", nrow(all_results), " individual predictions\n"))
+
+  write_xlsx(all_results, path = file.path(OUTPUT_DIR, "df_prompt_robustness.xlsx"))
   
 # Compute disagreement measures for each variation and conference
 disagreement_measures <- all_results %>%
@@ -417,235 +419,7 @@ disagreement_measures <- all_results %>%
     n_agents = n(),
     .groups = "drop"
   ) %>%
-  filter(n_agents >= 20)  # Ensure sufficient observations
-
-# ICC Reliability Analysis
-reliability_stats_icc <- disagreement_measures %>%
-  group_by(tenor) %>%
-  summarise(
-    # Step 1: Calculate between-conference variance (σ²_between)
-    # This captures true differences in disagreement across conferences
-    var_between_conferences = {
-      conference_means <- disagreement_measures %>%
-        filter(tenor == first(tenor)) %>%
-        group_by(conference_date) %>%
-        summarise(conference_mean = mean(std_rate, na.rm = TRUE), .groups = "drop")
-      
-      var(conference_means$conference_mean, na.rm = TRUE)
-    },
-    
-    # Step 2: Calculate within-conference variance (σ²_within)  
-    # This captures measurement error across prompt variations
-    var_within_conferences = {
-      within_vars <- disagreement_measures %>%
-        filter(tenor == first(tenor)) %>%
-        group_by(conference_date) %>%
-        summarise(var_within = var(std_rate, na.rm = TRUE), .groups = "drop") %>%
-        pull(var_within)
-      
-      # Average within-conference variance
-      mean(within_vars, na.rm = TRUE)
-    },
-    
-    # Step 3: Calculate ICC = σ²_between / (σ²_between + σ²_within)
-    icc_reliability = var_between_conferences / (var_between_conferences + var_within_conferences),
-    
-    # Additional diagnostic statistics
-    n_conferences = n_distinct(disagreement_measures$conference_date[disagreement_measures$tenor == first(tenor)]),
-    n_variations = n_distinct(disagreement_measures$variation_id[disagreement_measures$tenor == first(tenor)]),
-    total_variance = var_between_conferences + var_within_conferences,
-    signal_to_noise_ratio = var_between_conferences / var_within_conferences,
-    
-    .groups = "drop"
-  ) %>%
-  mutate(
-    # Handle edge cases and bound ICC between 0 and 1
-    icc_reliability = case_when(
-      is.na(icc_reliability) | is.infinite(icc_reliability) ~ 0,
-      icc_reliability < 0 ~ 0,
-      icc_reliability > 1 ~ 1,
-      TRUE ~ icc_reliability
-    ),
-    
-    # Create reliability interpretation
-    reliability_interpretation = case_when(
-      icc_reliability >= 0.9 ~ "Excellent (≥0.9)",
-      icc_reliability >= 0.8 ~ "Good (0.8-0.89)", 
-      icc_reliability >= 0.7 ~ "Acceptable (0.7-0.79)",
-      icc_reliability >= 0.5 ~ "Poor (0.5-0.69)",
-      TRUE ~ "Unacceptable (<0.5)"
-    ),
-    
-    # Calculate percentage of variance explained by true conference differences
-    percent_signal = round(icc_reliability * 100, 1)
-
-  )
-
-# Detailed conference-level consistency analysis
-conference_level_stats <- disagreement_measures %>%
-  group_by(conference_date, tenor) %>%
-  summarise(
-    mean_disagreement = mean(std_rate, na.rm = TRUE),
-    sd_disagreement = sd(std_rate, na.rm = TRUE),
-    cv_disagreement = sd_disagreement / mean_disagreement,  # Coefficient of variation
-    min_disagreement = min(std_rate, na.rm = TRUE),
-    max_disagreement = max(std_rate, na.rm = TRUE),
-    range_disagreement = max_disagreement - min_disagreement,
-    n_variations = n(),
-    .groups = "drop"
-  ) %>%
-  mutate(
-    # How consistent are the measurements for this conference?
-    measurement_consistency = pmax(0, 1 - cv_disagreement),
-    date = as.Date(conference_date)
-  )
-
-return(list(
-  disagreement_measures = disagreement_measures,
-  reliability_stats_icc = reliability_stats_icc,
-  conference_level_stats = conference_level_stats
-))
-
-}
-
-# Generate robustness visualizations: ----
-create_robustness_plots <- function(analysis_results) {
-  
-  if (is.null(analysis_results)) {
-    cat(crayon::red("No analysis results to plot.\n"))
-    return(NULL)
-  }
-  
-  cat(crayon::blue("Creating robustness visualizations...\n"))
-  
-  # Color palette
-  colors_tenor <- c("3M" = "#91bfdb", "2Y" = "#4575b4", "10Y" = "#d73027")
-  colors_variation <- c("minor" = "#2166ac", "medium" = "#762a83")
-  
-  # Plot 1: Standard deviation by variation type and tenor
-  p1 <- analysis_results$disagreement_measures %>%
-    ggplot(aes(x = variation_type, y = std_rate, fill = variation_type)) +
-    geom_boxplot(alpha = 0.7) +
-    facet_wrap(~ tenor, scales = "free_y", nrow = 1) +
-    scale_fill_manual(values = colors_variation) +
-    labs(
-      title = "LLM Response Disagreement Across Prompt Variations",
-      subtitle = "Distribution of standard deviations by variation type and tenor",
-      x = "Prompt Variation Type",
-      y = "Standard Deviation of Predicted Rates",
-      fill = "Variation Type"
-    ) +
-    theme_minimal(base_family = "Segoe UI") +
-    theme(
-      plot.title = element_text(size = 14, face = "bold"),
-      plot.subtitle = element_text(size = 12, color = "grey30"),
-      strip.text = element_text(face = "bold", size = 12),
-      axis.text.x = element_text(size = 10),
-      legend.position = "none"
-    )
-  
-  ggsave(file.path(FIGURES_DIR, "disagreement_by_variation.pdf"), 
-         plot = p1, width = 12, height = 6, dpi = 320, bg = "white")
-  
-  # Plot 2: Reliability ratios by tenor
-  p2 <- analysis_results$overall_reliability %>%
-    mutate(tenor = factor(tenor, levels = c("3M", "2Y", "10Y"))) %>%
-    ggplot(aes(x = tenor, y = mean_reliability, fill = tenor)) +
-    geom_col(width = 0.6, alpha = 0.8) +
-    geom_errorbar(aes(ymin = mean_reliability - sd_reliability, 
-                      ymax = mean_reliability + sd_reliability),
-                  width = 0.3, alpha = 0.8) +
-    geom_text(aes(label = sprintf("%.3f", mean_reliability)), 
-              vjust = -0.5, size = 4, fontface = "bold") +
-    scale_fill_manual(values = colors_tenor) +
-    scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) +
-    labs(
-      title = "Measurement Reliability by Tenor",
-      subtitle = "Higher values indicate more signal relative to prompt-induced noise",
-      x = "OIS Tenor",
-      y = "Reliability Ratio (R_d)",
-      caption = "Error bars show ±1 standard deviation. Values closer to 1 indicate higher reliability."
-    ) +
-    theme_minimal(base_family = "Segoe UI") +
-    theme(
-      plot.title = element_text(size = 14, face = "bold"),
-      plot.subtitle = element_text(size = 12, color = "grey30"),
-      plot.caption = element_text(size = 10, color = "grey50", hjust = 0),
-      axis.text = element_text(size = 11),
-      axis.title = element_text(size = 12, face = "bold"),
-      legend.position = "none"
-    )
-  
-  ggsave(file.path(FIGURES_DIR, "reliability_ratios.pdf"), 
-         plot = p2, width = 8, height = 6, dpi = 320, bg = "white")
-  
-  # Plot 3: Variation in disagreement across prompt types
-  p3 <- analysis_results$disagreement_measures %>%
-    group_by(conference_date, tenor, variation_type) %>%
-    summarise(mean_std = mean(std_rate, na.rm = TRUE), .groups = "drop") %>%
-    pivot_wider(names_from = variation_type, values_from = mean_std) %>%
-    ggplot(aes(x = minor, y = medium, color = tenor)) +
-    geom_point(size = 2, alpha = 0.7) +
-    geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "grey50") +
-    scale_color_manual(values = colors_tenor) +
-    facet_wrap(~ tenor, scales = "free") +
-    labs(
-      title = "Consistency Between Minor and Medium Prompt Variations",
-      subtitle = "Points near the diagonal line indicate consistent responses across variation types",
-      x = "Mean Disagreement - Minor Variations",
-      y = "Mean Disagreement - Medium Variations",
-      color = "Tenor"
-    ) +
-    theme_minimal(base_family = "Segoe UI") +
-    theme(
-      plot.title = element_text(size = 14, face = "bold"),
-      plot.subtitle = element_text(size = 12, color = "grey30"),
-      strip.text = element_text(face = "bold", size = 12),
-      legend.position = "bottom"
-    )
-  
-  ggsave(file.path(FIGURES_DIR, "variation_consistency.pdf"), 
-         plot = p3, width = 10, height = 8, dpi = 320, bg = "white")
-  
-  cat(crayon::green("Robustness plots saved to ", FIGURES_DIR, "\n"))
-  
-  return(list(p1 = p1, p2 = p2, p3 = p3))
-}
-
-# Export comprehensive results: ----
-export_robustness_results <- function(analysis_results, prompt_variations) {
-  
-  if (is.null(analysis_results)) {
-    cat(crayon::red("No results to export.\n"))
-    return(NULL)
-  }
-  
-  timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
-  output_file <- file.path(OUTPUT_DIR, paste0("robustness_analysis_results_", timestamp, ".xlsx"))
-  
-  # Prepare export data
-  export_list <- list(
-    "Overall_Reliability" = analysis_results$overall_reliability,
-    "Reliability_by_Conference" = analysis_results$reliability_stats,
-    "Disagreement_Measures" = analysis_results$disagreement_measures,
-    "Prompt_Variations_Metadata" = prompt_variations$metadata,
-    "Summary_Statistics" = analysis_results$disagreement_measures %>%
-      group_by(variation_type, tenor) %>%
-      summarise(
-        mean_disagreement = mean(std_rate, na.rm = TRUE),
-        sd_disagreement = sd(std_rate, na.rm = TRUE),
-        median_disagreement = median(std_rate, na.rm = TRUE),
-        n_observations = n(),
-        .groups = "drop"
-      )
-  )
-  
-  # Export to Excel
-  writexl::write_xlsx(export_list, output_file)
-  
-  cat(crayon::green("Results exported to: ", output_file, "\n"))
-  
-  return(output_file)
+  filter(n_agents >= 20)  
 }
 
 # Main execution function: ----
@@ -654,53 +428,19 @@ main_robustness_analysis <- function() {
   cat(crayon::blue("PROMPT ROBUSTNESS ANALYSIS\n"))
   cat(crayon::blue("==========================\n\n"))
   
-  # Step 1: Run robustness analysis
-  cat("Step 1: Running robustness analysis with prompt variations...\n")
+  # Run robustness analysis i.e. LLM calls
+  cat("Running robustness analysis with prompt variations...\n")
   robustness_results <- run_robustness_analysis()
   
   if (robustness_results$success_rate < 0.5) {
     cat(crayon::yellow("Warning: Low success rate. Consider checking API limits or connection.\n"))
   }
   
-  # Step 2: Analyze results
-  cat("\nStep 2: Analyzing results...\n")
-  analysis_results <- analyze_robustness_results()
-  
-  if (is.null(analysis_results)) {
-    cat(crayon::red("Analysis failed. Check error logs.\n"))
-    return(NULL)
-  }
-  
-  # Step 3: Create visualizations
-  cat("\nStep 3: Creating visualizations...\n")
-  plots <- create_robustness_plots(analysis_results)
-  
-  # Step 4: Export results
-  cat("\nStep 4: Exporting results...\n")
-  output_file <- export_robustness_results(analysis_results, robustness_results$prompt_variations)
-  
-  # Step 5: Print summary
-  cat(crayon::green("\n=== ROBUSTNESS ANALYSIS SUMMARY ===\n"))
-  cat("Sample Size: ", length(unique(map_chr(robustness_results$param_list, "conf_date"))), 
-      " conferences\n")
-  cat("Total Variations: ", N_TOTAL_VARIATIONS, " (", N_MINOR_VARIATIONS, " minor + ", N_MEDIUM_VARIATIONS, " medium)\n")
-  cat("Success Rate: ", round(robustness_results$success_rate * 100, 1), "%\n\n")
-  
-  cat("Overall Reliability by Tenor:\n")
-  print(analysis_results$overall_reliability)
-  
-  cat(crayon::green("\nAnalysis complete! Check the following locations:\n"))
-  cat("- Raw results: ", OUTPUT_DIR, "\n")
-  cat("- Figures: ", FIGURES_DIR, "\n")
-  cat("- Comprehensive results: ", output_file, "\n")
-  
-  return(list(
-    robustness_results = robustness_results,
-    analysis_results = analysis_results,
-    plots = plots,
-    output_file = output_file
-  ))
+  return(llm_results)
 }
+
+
+
 
 # ==============================================================================
 # EXECUTION
@@ -714,23 +454,17 @@ if (interactive()) {
   final_results <- main_robustness_analysis()
 }
 
-  final_results <- main_robustness_analysis()
-  
+llm_results <- main_robustness_analysis()
+final_results <- clean_prompt_robustness_results()
 
-
-
-prompt_stability_list <- analyze_robustness_results()
-
-
-disagreement_measures=prompt_stability_list$disagreement_measures 
-  
 
 # ============================================================================
 # SIMPLE ICC ANALYSIS WITH CLEAN VISUALIZATION
 # ============================================================================
+if (is.null(final_results)) {
+  stop("No results available for ICC analysis. Please run the robustness analysis first.")
+}
 
-library(tidyverse)
-library(ggplot2)
 
 # Simple ICC calculation function
 calculate_icc <- function(data) {
@@ -751,7 +485,7 @@ calculate_icc <- function(data) {
 }
 
 # Calculate ICC by tenor and variation type
-icc_results <- disagreement_measures %>%
+icc_results <- final_results %>%
   group_by(tenor, variation_type) %>%
   group_split() %>%
   map_dfr(function(data) {
@@ -791,33 +525,9 @@ print(summary_tenor)
 # Color palette (consistent with your previous code)
 color_palette <- c("3M" = "#91bfdb", "2Y" = "#4575b4", "10Y" = "#d73027")
 
-# Visualization 1: Heatmap
-p1 <- ggplot(icc_results, aes(x = variation_type, y = tenor, fill = icc)) +
-  geom_tile(color = "white", linewidth = 0.5) +
-  geom_text(aes(label = sprintf("%.3f", icc)), 
-            color = "white", size = 4, fontface = "bold") +
-  scale_fill_gradient2(
-    low = "#d73027", mid = "#ffffbf", high = "#4575b4",
-    midpoint = 0.6, name = "ICC", limits = c(0, 1)
-  ) +
-  labs(
-    title = "ICC Reliability: Tenor × Variation Type",
-    subtitle = "Higher values = better reliability",
-    x = "Variation Type",
-    y = "OIS Tenor"
-  ) +
-  theme_minimal(base_family = "Segoe UI") +
-  theme(
-    plot.title = element_text(size = 16, face = "bold"),
-    plot.subtitle = element_text(size = 12, color = "grey40"),
-    axis.text = element_text(size = 12),
-    axis.title = element_text(size = 14),
-    legend.position = "right",
-    panel.grid = element_blank()
-  )
 
-# Visualization 2: Bar chart by variation type
-p2 <- ggplot(summary_variation, aes(x = reorder(variation_type, avg_icc), y = avg_icc, fill = variation_type)) +
+# Visualization 1: Bar chart by variation type
+p1 <- ggplot(summary_variation, aes(x = reorder(variation_type, avg_icc), y = avg_icc, fill = variation_type)) +
   geom_col(width = 0.6, alpha = 0.8, show.legend = FALSE) +
   geom_text(aes(label = sprintf("%.3f", avg_icc)), 
             hjust = -0.1, size = 4, fontface = "bold") +
@@ -839,8 +549,8 @@ p2 <- ggplot(summary_variation, aes(x = reorder(variation_type, avg_icc), y = av
     axis.title = element_text(size = 14)
   )
 
-# Visualization 3: Bar chart by tenor
-p3 <- ggplot(summary_tenor, aes(x = factor(tenor, levels = c("3M", "2Y", "10Y")), y = avg_icc, fill = tenor)) +
+# Visualization 2: Bar chart by tenor
+p2 <- ggplot(summary_tenor, aes(x = factor(tenor, levels = c("3M", "2Y", "10Y")), y = avg_icc, fill = tenor)) +
   geom_col(width = 0.6, alpha = 0.8, show.legend = FALSE) +
   geom_text(aes(label = sprintf("%.3f", avg_icc)), 
             vjust = -0.5, size = 4, fontface = "bold") +
@@ -886,3 +596,4 @@ if(overall_avg >= 0.7) {
 } else {
   cat("⚠️  NEEDS IMPROVEMENT: Consider refining your approach\n")
 }
+
