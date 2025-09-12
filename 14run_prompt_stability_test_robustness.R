@@ -23,8 +23,6 @@ pacman::p_load(
   showtext,
   readxl,
   tidyverse,
-  future,
-  furrr,
   lubridate,
   boot,
   RColorBrewer
@@ -38,7 +36,6 @@ setAPI(Sys.getenv("GEMINI_API_KEY"))
 N_MINOR_VARIATIONS <- 10
 N_MEDIUM_VARIATIONS <- 5
 N_TOTAL_VARIATIONS <- N_MINOR_VARIATIONS + N_MEDIUM_VARIATIONS
-MAX_WORKERS <- 6  # Adjust based on your system and API limits
 OUTPUT_DIR <- "../intermediate_data/robustness_analysis/"
 FIGURES_DIR <- "../output/figures/robustness/"
 
@@ -214,9 +211,13 @@ load_conference_data <- function() {
 }
 
 # Process single conference with specific prompt variation: ----
-process_conference_variation <- function(conf_date, conf_text, prompt_variation, 
-                                       variation_id, variation_type, 
-                                       log_file_path, seed = 120) {
+process_conference_variation <- function(params, log_file_path, seed = 120) {
+  
+  conf_date <- params$conf_date
+  conf_text <- params$conf_text
+  prompt_variation <- params$prompt_variation
+  variation_id <- params$variation_id
+  variation_type <- params$variation_type
   
   cat(crayon::yellow(paste0("🔄 Processing ", conf_date, " with variation ", variation_id, " (", variation_type, ")\n")))
   
@@ -261,76 +262,80 @@ run_robustness_analysis <- function() {
   cat("Generating prompt variations...\n")
   prompt_variations <- generate_prompt_variations(base_prompt)
   
-  # Load conference data
-  cat("Loading ECB conference data...\n")
-  conference_data <- load_conference_data()
-  
-  # Subset for testing (use first 20 conferences for computational efficiency)
-  n_conferences_test <- 30
-  test_dates <- conference_data$dates[1:n_conferences_test]
-  test_texts <- conference_data$texts[1:n_conferences_test]
-  
-  cat(paste0("Testing with ", n_conferences_test, " conferences and ", N_TOTAL_VARIATIONS, " prompt variations\n"))
-  cat(paste0("Total API calls: ", n_conferences_test * N_TOTAL_VARIATIONS, "\n"))
-  
-  # Set up parallel processing
-  log_file <- paste0(OUTPUT_DIR, "robustness_errors_", Sys.Date(), ".log")
-  if (file.exists(log_file)) file.remove(log_file)
-  
-  plan(multisession, workers = MAX_WORKERS)
-  
-  # Create parameter grid for parallel processing
-  param_grid <- expand_grid(
-    conf_date = test_dates,
-    variation_id = 1:N_TOTAL_VARIATIONS
+# Load conference data
+cat("Loading ECB conference data...\n")
+conference_data <- load_conference_data()
+
+# Subset for testing (use 30 RANDOM conferences for computational efficiency)
+n_conferences_test <- 30
+set.seed(42)  # Set seed for reproducibility
+random_indices <- sample(1:length(conference_data$dates), n_conferences_test, replace = FALSE)
+
+test_dates <- conference_data$dates[random_indices]
+test_texts <- conference_data$texts[random_indices]
+
+cat(paste0("Testing with ", n_conferences_test, " randomly selected conferences and ", N_TOTAL_VARIATIONS, " prompt variations\n"))
+cat(paste0("Selected conference dates: ", paste(sort(test_dates), collapse = ", "), "\n"))
+cat(paste0("Total API calls: ", n_conferences_test * N_TOTAL_VARIATIONS, "\n"))
+
+# Set up log file
+log_file <- paste0(OUTPUT_DIR, "robustness_errors_", Sys.Date(), ".log")
+if (file.exists(log_file)) file.remove(log_file)
+
+# Create parameter list for sequential processing
+param_list <- expand_grid(
+  conf_date = test_dates,
+  variation_id = 1:N_TOTAL_VARIATIONS
+) %>%
+  mutate(
+    conf_text = map_chr(conf_date, ~ test_texts[[which(test_dates == .x)]]),
+    prompt_variation = map_chr(variation_id, ~ prompt_variations$variations[[.x]]),
+    variation_type = map_chr(variation_id, ~ prompt_variations$metadata$variation_type[.x])
   ) %>%
-    mutate(
-      conf_text = map_chr(conf_date, ~ test_texts[[which(test_dates == .x)]]),
-      prompt_variation = map_chr(variation_id, ~ prompt_variations$variations[[.x]]),
-      variation_type = map_chr(variation_id, ~ prompt_variations$metadata$variation_type[.x])
-    )
+# Convert to list of lists for map function
+transpose()
+
+start_time <- Sys.time()
+
+# Run sequential processing
+cat(crayon::blue("Starting sequential processing...\n"))
+
+# Initialize progress counter
+total_tasks <- length(param_list)
+completed <- 0
+
+results <- map_lgl(param_list, function(params) {
+  # Update progress
+  completed <<- completed + 1
+  cat(crayon::cyan(paste0("Progress: ", completed, "/", total_tasks, " (",
+                          round(completed/total_tasks * 100, 1), "%)\n")))
   
-  start_time <- Sys.time()
-  
-  # Run parallel processing
-  cat(crayon::blue("Starting parallel processing...\n"))
-  
-  results <- future_pmap_lgl(
-    list(
-      param_grid$conf_date,
-      param_grid$conf_text,
-      param_grid$prompt_variation,
-      param_grid$variation_id,
-      param_grid$variation_type
-    ),
-    process_conference_variation,
-    log_file_path = log_file,
-    seed = 120,
-    .options = furrr_options(seed = TRUE)
-  )
-  
-  end_time <- Sys.time()
-  total_time <- end_time - start_time
-  
-  # Report results
-  successful_runs <- sum(results)
-  total_runs <- length(results)
-  success_rate <- successful_runs / total_runs
-  
-  cat(crayon::blue("\nRobustness Analysis Complete\n"))
-  cat(crayon::blue("============================\n"))
-  cat(paste0("Successful runs: ", successful_runs, "/", total_runs, " (", round(success_rate * 100, 1), "%)\n"))
-  cat(paste0("Total time: ", round(total_time, 2), " ", units(total_time), "\n"))
-  
-  plan(sequential)
-  
-  return(list(
-    results = results,
-    param_grid = param_grid,
-    prompt_variations = prompt_variations,
-    success_rate = success_rate,
-    total_time = total_time
-  ))
+  # Process the task
+  process_conference_variation(params, log_file_path = log_file, seed = 120)
+})
+
+end_time <- Sys.time()
+total_time <- end_time - start_time
+
+# Report results
+successful_runs <- sum(results)
+total_runs <- length(results)
+success_rate <- successful_runs / total_runs
+
+cat(crayon::blue("\nRobustness Analysis Complete\n"))
+cat(crayon::blue("============================\n"))
+cat(paste0("Successful runs: ", successful_runs, "/", total_runs, " (", round(success_rate * 100, 1), "%)\n"))
+cat(paste0("Total time: ", round(total_time, 2), " ", units(total_time), "\n"))
+
+return(list(
+  results = results,
+  param_list = param_list,
+  prompt_variations = prompt_variations,
+  success_rate = success_rate,
+  total_time = total_time,
+  selected_indices = random_indices,  # Save the random indices for reproducibility
+  selected_dates = test_dates         # Save the selected dates for reference
+))
 }
 
 # Clean and analyze robustness results: ----
@@ -403,55 +408,104 @@ analyze_robustness_results <- function() {
   
   cat(paste0("Successfully processed ", nrow(all_results), " individual predictions\n"))
   
-  # Compute disagreement measures for each variation and conference
-  disagreement_measures <- all_results %>%
-    group_by(conference_date, variation_id, variation_type, tenor) %>%
-    summarise(
-      std_rate = sd(rate, na.rm = TRUE),
-      mean_rate = mean(rate, na.rm = TRUE),
-      n_agents = n(),
-      .groups = "drop"
-    ) %>%
-    filter(n_agents >= 20)  # Ensure sufficient observations
-  
-  # Compute reliability statistics following the framework
-  reliability_stats <- disagreement_measures %>%
-    group_by(conference_date, tenor) %>%
-    summarise(
-      mean_std = mean(std_rate, na.rm = TRUE),          # η̄_d (signal)
-      var_across_variations = var(std_rate, na.rm = TRUE),  # σ²_ε (noise across variations)
-      var_signal = var(mean_std, na.rm = TRUE),             # σ²_η (signal variance)
-      reliability_ratio = var_signal / (var_signal + var_across_variations),  # R_d
-      n_variations = n(),
-      .groups = "drop"
-    ) %>%
-    mutate(
-      # Handle edge cases
-      reliability_ratio = ifelse(is.na(reliability_ratio) | is.infinite(reliability_ratio), 
-                                 0, reliability_ratio),
-      reliability_ratio = pmax(0, pmin(1, reliability_ratio))  # Bound between 0 and 1
-    )
-  
-  # Overall reliability by tenor
-  overall_reliability <- reliability_stats %>%
-    group_by(tenor) %>%
-    summarise(
-      mean_reliability = mean(reliability_ratio, na.rm = TRUE),
-      median_reliability = median(reliability_ratio, na.rm = TRUE),
-      sd_reliability = sd(reliability_ratio, na.rm = TRUE),
-      min_reliability = min(reliability_ratio, na.rm = TRUE),
-      max_reliability = max(reliability_ratio, na.rm = TRUE),
-      .groups = "drop"
-    )
-  
-  cat(crayon::green("Reliability analysis complete!\n"))
-  
-  return(list(
-    all_results = all_results,
-    disagreement_measures = disagreement_measures,
-    reliability_stats = reliability_stats,
-    overall_reliability = overall_reliability
-  ))
+# Compute disagreement measures for each variation and conference
+disagreement_measures <- all_results %>%
+  group_by(conference_date, variation_id, variation_type, tenor) %>%
+  summarise(
+    std_rate = sd(rate, na.rm = TRUE),
+    mean_rate = mean(rate, na.rm = TRUE),
+    n_agents = n(),
+    .groups = "drop"
+  ) %>%
+  filter(n_agents >= 20)  # Ensure sufficient observations
+
+# ICC Reliability Analysis
+reliability_stats_icc <- disagreement_measures %>%
+  group_by(tenor) %>%
+  summarise(
+    # Step 1: Calculate between-conference variance (σ²_between)
+    # This captures true differences in disagreement across conferences
+    var_between_conferences = {
+      conference_means <- disagreement_measures %>%
+        filter(tenor == first(tenor)) %>%
+        group_by(conference_date) %>%
+        summarise(conference_mean = mean(std_rate, na.rm = TRUE), .groups = "drop")
+      
+      var(conference_means$conference_mean, na.rm = TRUE)
+    },
+    
+    # Step 2: Calculate within-conference variance (σ²_within)  
+    # This captures measurement error across prompt variations
+    var_within_conferences = {
+      within_vars <- disagreement_measures %>%
+        filter(tenor == first(tenor)) %>%
+        group_by(conference_date) %>%
+        summarise(var_within = var(std_rate, na.rm = TRUE), .groups = "drop") %>%
+        pull(var_within)
+      
+      # Average within-conference variance
+      mean(within_vars, na.rm = TRUE)
+    },
+    
+    # Step 3: Calculate ICC = σ²_between / (σ²_between + σ²_within)
+    icc_reliability = var_between_conferences / (var_between_conferences + var_within_conferences),
+    
+    # Additional diagnostic statistics
+    n_conferences = n_distinct(disagreement_measures$conference_date[disagreement_measures$tenor == first(tenor)]),
+    n_variations = n_distinct(disagreement_measures$variation_id[disagreement_measures$tenor == first(tenor)]),
+    total_variance = var_between_conferences + var_within_conferences,
+    signal_to_noise_ratio = var_between_conferences / var_within_conferences,
+    
+    .groups = "drop"
+  ) %>%
+  mutate(
+    # Handle edge cases and bound ICC between 0 and 1
+    icc_reliability = case_when(
+      is.na(icc_reliability) | is.infinite(icc_reliability) ~ 0,
+      icc_reliability < 0 ~ 0,
+      icc_reliability > 1 ~ 1,
+      TRUE ~ icc_reliability
+    ),
+    
+    # Create reliability interpretation
+    reliability_interpretation = case_when(
+      icc_reliability >= 0.9 ~ "Excellent (≥0.9)",
+      icc_reliability >= 0.8 ~ "Good (0.8-0.89)", 
+      icc_reliability >= 0.7 ~ "Acceptable (0.7-0.79)",
+      icc_reliability >= 0.5 ~ "Poor (0.5-0.69)",
+      TRUE ~ "Unacceptable (<0.5)"
+    ),
+    
+    # Calculate percentage of variance explained by true conference differences
+    percent_signal = round(icc_reliability * 100, 1)
+
+  )
+
+# Detailed conference-level consistency analysis
+conference_level_stats <- disagreement_measures %>%
+  group_by(conference_date, tenor) %>%
+  summarise(
+    mean_disagreement = mean(std_rate, na.rm = TRUE),
+    sd_disagreement = sd(std_rate, na.rm = TRUE),
+    cv_disagreement = sd_disagreement / mean_disagreement,  # Coefficient of variation
+    min_disagreement = min(std_rate, na.rm = TRUE),
+    max_disagreement = max(std_rate, na.rm = TRUE),
+    range_disagreement = max_disagreement - min_disagreement,
+    n_variations = n(),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    # How consistent are the measurements for this conference?
+    measurement_consistency = pmax(0, 1 - cv_disagreement),
+    date = as.Date(conference_date)
+  )
+
+return(list(
+  disagreement_measures = disagreement_measures,
+  reliability_stats_icc = reliability_stats_icc,
+  conference_level_stats = conference_level_stats
+))
+
 }
 
 # Generate robustness visualizations: ----
@@ -605,7 +659,7 @@ main_robustness_analysis <- function() {
   robustness_results <- run_robustness_analysis()
   
   if (robustness_results$success_rate < 0.5) {
-    cat(crayon::yellow("Warning: Low success rate. Consider reducing parallelization or checking API limits.\n"))
+    cat(crayon::yellow("Warning: Low success rate. Consider checking API limits or connection.\n"))
   }
   
   # Step 2: Analyze results
@@ -627,8 +681,7 @@ main_robustness_analysis <- function() {
   
   # Step 5: Print summary
   cat(crayon::green("\n=== ROBUSTNESS ANALYSIS SUMMARY ===\n"))
-  cat("Sampling Strategy: ", SAMPLING_STRATEGY, "\n")
-  cat("Sample Size: ", length(robustness_results$param_grid$conf_date[!duplicated(robustness_results$param_grid$conf_date)]), 
+  cat("Sample Size: ", length(unique(map_chr(robustness_results$param_list, "conf_date"))), 
       " conferences\n")
   cat("Total Variations: ", N_TOTAL_VARIATIONS, " (", N_MINOR_VARIATIONS, " minor + ", N_MEDIUM_VARIATIONS, " medium)\n")
   cat("Success Rate: ", round(robustness_results$success_rate * 100, 1), "%\n\n")
@@ -658,5 +711,178 @@ if (interactive()) {
   cat("Ready to run robustness analysis. Execute: main_robustness_analysis()\n")
 } else {
   # Uncomment the next line to run automatically
-   final_results <- main_robustness_analysis()
+  final_results <- main_robustness_analysis()
+}
+
+  final_results <- main_robustness_analysis()
+  
+
+
+
+prompt_stability_list <- analyze_robustness_results()
+
+
+disagreement_measures=prompt_stability_list$disagreement_measures 
+  
+
+# ============================================================================
+# SIMPLE ICC ANALYSIS WITH CLEAN VISUALIZATION
+# ============================================================================
+
+library(tidyverse)
+library(ggplot2)
+
+# Simple ICC calculation function
+calculate_icc <- function(data) {
+  conference_means <- data %>%
+    group_by(conference_date) %>%
+    summarise(conf_mean = mean(std_rate, na.rm = TRUE), .groups = "drop")
+  
+  within_variances <- data %>%
+    group_by(conference_date) %>%
+    summarise(within_var = var(std_rate, na.rm = TRUE), .groups = "drop") %>%
+    filter(!is.na(within_var), within_var > 0)
+  
+  var_between <- var(conference_means$conf_mean, na.rm = TRUE)
+  var_within <- mean(within_variances$within_var, na.rm = TRUE)
+  icc <- var_between / (var_between + var_within)
+  
+  return(round(icc, 3))
+}
+
+# Calculate ICC by tenor and variation type
+icc_results <- disagreement_measures %>%
+  group_by(tenor, variation_type) %>%
+  group_split() %>%
+  map_dfr(function(data) {
+    if(nrow(data) < 15) return(NULL)  # Skip if too few observations
+    
+    tibble(
+      tenor = data$tenor[1],
+      variation_type = data$variation_type[1],
+      icc = calculate_icc(data),
+      n_obs = nrow(data)
+    )
+  }) %>%
+  filter(!is.na(icc))
+
+# Display results table
+cat("=== ICC RESULTS ===\n")
+print(icc_results %>% arrange(desc(icc)))
+
+# Summary by variation type
+summary_variation <- icc_results %>%
+  group_by(variation_type) %>%
+  summarise(avg_icc = round(mean(icc), 3), .groups = "drop") %>%
+  arrange(desc(avg_icc))
+
+cat("\nAverage ICC by Variation Type:\n")
+print(summary_variation)
+
+# Summary by tenor
+summary_tenor <- icc_results %>%
+  group_by(tenor) %>%
+  summarise(avg_icc = round(mean(icc), 3), .groups = "drop") %>%
+  arrange(desc(avg_icc))
+
+cat("\nAverage ICC by Tenor:\n")
+print(summary_tenor)
+
+# Color palette (consistent with your previous code)
+color_palette <- c("3M" = "#91bfdb", "2Y" = "#4575b4", "10Y" = "#d73027")
+
+# Visualization 1: Heatmap
+p1 <- ggplot(icc_results, aes(x = variation_type, y = tenor, fill = icc)) +
+  geom_tile(color = "white", linewidth = 0.5) +
+  geom_text(aes(label = sprintf("%.3f", icc)), 
+            color = "white", size = 4, fontface = "bold") +
+  scale_fill_gradient2(
+    low = "#d73027", mid = "#ffffbf", high = "#4575b4",
+    midpoint = 0.6, name = "ICC", limits = c(0, 1)
+  ) +
+  labs(
+    title = "ICC Reliability: Tenor × Variation Type",
+    subtitle = "Higher values = better reliability",
+    x = "Variation Type",
+    y = "OIS Tenor"
+  ) +
+  theme_minimal(base_family = "Segoe UI") +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12, color = "grey40"),
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 14),
+    legend.position = "right",
+    panel.grid = element_blank()
+  )
+
+# Visualization 2: Bar chart by variation type
+p2 <- ggplot(summary_variation, aes(x = reorder(variation_type, avg_icc), y = avg_icc, fill = variation_type)) +
+  geom_col(width = 0.6, alpha = 0.8, show.legend = FALSE) +
+  geom_text(aes(label = sprintf("%.3f", avg_icc)), 
+            hjust = -0.1, size = 4, fontface = "bold") +
+  geom_hline(yintercept = c(0.5, 0.7), linetype = "dashed", alpha = 0.6) +
+  coord_flip() +
+  scale_y_continuous(limits = c(0, max(summary_variation$avg_icc) * 1.1)) +
+  scale_fill_brewer(palette = "Set2") +
+  labs(
+    title = "Average ICC by Variation Type",
+    subtitle = "Dashed lines: 0.5 (minimum), 0.7 (good)",
+    x = "Variation Type",
+    y = "Average ICC"
+  ) +
+  theme_minimal(base_family = "Segoe UI") +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12, color = "grey40"),
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 14)
+  )
+
+# Visualization 3: Bar chart by tenor
+p3 <- ggplot(summary_tenor, aes(x = factor(tenor, levels = c("3M", "2Y", "10Y")), y = avg_icc, fill = tenor)) +
+  geom_col(width = 0.6, alpha = 0.8, show.legend = FALSE) +
+  geom_text(aes(label = sprintf("%.3f", avg_icc)), 
+            vjust = -0.5, size = 4, fontface = "bold") +
+  geom_hline(yintercept = c(0.5, 0.7), linetype = "dashed", alpha = 0.6) +
+  scale_y_continuous(limits = c(0, max(summary_tenor$avg_icc) * 1.1)) +
+  scale_fill_manual(values = color_palette) +
+  labs(
+    title = "Average ICC by Tenor",
+    subtitle = "Dashed lines: 0.5 (minimum), 0.7 (good)",
+    x = "OIS Tenor",
+    y = "Average ICC"
+  ) +
+  theme_minimal(base_family = "Segoe UI") +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12, color = "grey40"),
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 14)
+  )
+
+# Display plots
+print(p1)
+print(p2) 
+print(p3)
+
+# Simple interpretation
+cat("\n=== INTERPRETATION ===\n")
+best_variation <- summary_variation$variation_type[1]
+best_tenor <- summary_tenor$tenor[1]
+best_combo <- icc_results %>% slice_max(icc, n = 1)
+
+cat(sprintf("🏆 BEST VARIATION TYPE: %s (avg ICC = %.3f)\n", best_variation, summary_variation$avg_icc[1]))
+cat(sprintf("🏆 BEST TENOR: %s (avg ICC = %.3f)\n", best_tenor, summary_tenor$avg_icc[1]))
+cat(sprintf("🏆 BEST COMBINATION: %s %s (ICC = %.3f)\n", best_combo$tenor, best_combo$variation_type, best_combo$icc))
+
+overall_avg <- round(mean(icc_results$icc), 3)
+cat(sprintf("\n📊 OVERALL AVERAGE ICC: %.3f\n", overall_avg))
+
+if(overall_avg >= 0.7) {
+  cat("✅ EXCELLENT: Your method is highly reliable!\n")
+} else if(overall_avg >= 0.5) {
+  cat("📈 GOOD: Your method captures more signal than noise\n")
+} else {
+  cat("⚠️  NEEDS IMPROVEMENT: Consider refining your approach\n")
 }
