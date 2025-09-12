@@ -528,7 +528,7 @@ color_palette <- c("3M" = "#91bfdb", "2Y" = "#4575b4", "10Y" = "#d73027")
 
 # Visualization 1: Bar chart by variation type
 p1 <- ggplot(summary_variation, aes(x = reorder(variation_type, avg_icc), y = avg_icc, fill = variation_type)) +
-  geom_col(width = 0.6, alpha = 0.8, show.legend = FALSE) +
+  geom_col(width = 0.4, alpha = 0.8, show.legend = FALSE) +
   geom_text(aes(label = sprintf("%.3f", avg_icc)), 
             hjust = -0.1, size = 4, fontface = "bold") +
   geom_hline(yintercept = c(0.5, 0.7), linetype = "dashed", alpha = 0.6) +
@@ -536,8 +536,8 @@ p1 <- ggplot(summary_variation, aes(x = reorder(variation_type, avg_icc), y = av
   scale_y_continuous(limits = c(0, max(summary_variation$avg_icc) * 1.1)) +
   scale_fill_brewer(palette = "Set2") +
   labs(
-    title = "Average ICC by Variation Type",
-    subtitle = "Dashed lines: 0.5 (minimum), 0.7 (good)",
+    title = "",
+    subtitle = "",
     x = "Variation Type",
     y = "Average ICC"
   ) +
@@ -551,16 +551,16 @@ p1 <- ggplot(summary_variation, aes(x = reorder(variation_type, avg_icc), y = av
 
 # Visualization 2: Bar chart by tenor
 p2 <- ggplot(summary_tenor, aes(x = factor(tenor, levels = c("3M", "2Y", "10Y")), y = avg_icc, fill = tenor)) +
-  geom_col(width = 0.6, alpha = 0.8, show.legend = FALSE) +
+  geom_col(width = 0.4, alpha = 0.8, show.legend = FALSE) +
   geom_text(aes(label = sprintf("%.3f", avg_icc)), 
             vjust = -0.5, size = 4, fontface = "bold") +
   geom_hline(yintercept = c(0.5, 0.7), linetype = "dashed", alpha = 0.6) +
   scale_y_continuous(limits = c(0, max(summary_tenor$avg_icc) * 1.1)) +
   scale_fill_manual(values = color_palette) +
   labs(
-    title = "Average ICC by Tenor",
-    subtitle = "Dashed lines: 0.5 (minimum), 0.7 (good)",
-    x = "OIS Tenor",
+    title = "",
+    subtitle = "",
+    x = "",
     y = "Average ICC"
   ) +
   theme_minimal(base_family = "Segoe UI") +
@@ -571,10 +571,67 @@ p2 <- ggplot(summary_tenor, aes(x = factor(tenor, levels = c("3M", "2Y", "10Y"))
     axis.title = element_text(size = 14)
   )
 
+# Visualization 3: Grouped bar chart - Minor vs Medium variations by tenor
+p3 <- ggplot(icc_results, aes(x = factor(tenor, levels = c("3M", "2Y", "10Y")), y = icc, fill = variation_type)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7, alpha = 0.8) +
+  geom_text(aes(label = sprintf("%.3f", icc)), 
+            position = position_dodge(width = 0.8), 
+            vjust = -0.3, size = 3.5, fontface = "bold") +
+  geom_hline(yintercept = c(0.4, 0.5, 0.7), linetype = "dashed", alpha = 0.6, color = "grey50") +
+  scale_y_continuous(limits = c(0, max(icc_results$icc) * 1.15)) +
+  scale_fill_brewer(palette = "Set2", name = "Variation Type") +
+  labs(
+    title = "ICC by Tenor: Minor vs Medium Variations",
+    subtitle = "Dashed lines: 0.4 (moderate), 0.5 (good), 0.7 (excellent)",
+    x = "OIS Tenor",
+    y = "ICC",
+    fill = "Variation Type"
+  ) +
+  theme_minimal(base_family = "Segoe UI") +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12, color = "grey40"),
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 14),
+    legend.position = "top",
+    legend.title = element_text(size = 12, face = "bold")
+  )
+
 # Display plots
 print(p1)
 print(p2) 
 print(p3)
+
+# Save Plot 1: ICC by Variation Type
+ggsave(
+  filename = paste0(output_dir, "robustness/icc_by_variation_type.pdf"),
+  plot = p1,
+  dpi = 320,
+  width = 8,
+  height = 6,
+  bg = "white"
+)
+
+# Save Plot 2: ICC by Tenor
+ggsave(
+  filename = paste0(output_dir, "robustness/icc_by_tenor.pdf"),
+  plot = p2,
+  dpi = 320,
+  width = 8,
+  height = 6,
+  bg = "white"
+)
+
+# Save Plot 3: Minor vs Medium by Tenor (your robustness plot)
+ggsave(
+  filename = paste0(output_dir, "robustness/icc_robustness_minor_vs_medium.pdf"),
+  plot = p3,
+  dpi = 320,
+  width = 10,
+  height = 6,
+  bg = "white"
+)
+
 
 # Simple interpretation
 cat("\n=== INTERPRETATION ===\n")
