@@ -50,7 +50,7 @@ scramble_words <- function(text) {
 # SIMPLIFIED SAMPLING
 # ==============================================================================
 
-create_sample <- function(conference_dates, n_sample = 30) {
+create_sample <- function(conference_dates, n_sample = 60) {
   sample_dates <- sample(conference_dates, n_sample)
   
   cat("Sample size:", length(sample_dates), "\n")
