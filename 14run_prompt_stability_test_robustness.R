@@ -498,7 +498,9 @@ icc_results <- final_results %>%
       n_obs = nrow(data)
     )
   }) %>%
-  filter(!is.na(icc))
+  filter(!is.na(icc)) |> 
+  mutate(variation_type = factor(variation_type, levels = c("minor", "medium"))) |> 
+  mutate(variation_type = recode(variation_type, "minor" = "Minor", "medium" = "Medium"))
 
 # Display results table
 cat("=== ICC RESULTS ===\n")
@@ -577,15 +579,15 @@ p3 <- ggplot(icc_results, aes(x = factor(tenor, levels = c("3M", "2Y", "10Y")), 
   geom_text(aes(label = sprintf("%.3f", icc)), 
             position = position_dodge(width = 0.8), 
             vjust = -0.3, size = 3.5, fontface = "bold") +
-  geom_hline(yintercept = c(0.4, 0.5, 0.7), linetype = "dashed", alpha = 0.6, color = "grey50") +
+  geom_hline(yintercept = c(0.5, 0.7), linetype = "dashed", alpha = 0.6, color = "grey50") +
   scale_y_continuous(limits = c(0, max(icc_results$icc) * 1.15)) +
-  scale_fill_brewer(palette = "Set2", name = "Variation Type") +
+  scale_fill_manual(values = c("Minor" = "#91bfdb", "Medium" = "#4575b4"), name = "Variation Type") +
   labs(
-    title = "ICC by Tenor: Minor vs Medium Variations",
-    subtitle = "Dashed lines: 0.4 (moderate), 0.5 (good), 0.7 (excellent)",
-    x = "OIS Tenor",
+    title = "",
+    subtitle = "",
+    x = "OIS Tenor", 
     y = "ICC",
-    fill = "Variation Type"
+    fill = "Variation Intensity"
   ) +
   theme_minimal(base_family = "Segoe UI") +
   theme(
@@ -593,8 +595,9 @@ p3 <- ggplot(icc_results, aes(x = factor(tenor, levels = c("3M", "2Y", "10Y")), 
     plot.subtitle = element_text(size = 12, color = "grey40"),
     axis.text = element_text(size = 12),
     axis.title = element_text(size = 14),
-    legend.position = "top",
-    legend.title = element_text(size = 12, face = "bold")
+    legend.position = "bottom",
+    legend.title = element_text(size = 12, face = "bold"),
+    panel.grid.minor = element_blank(),
   )
 
 # Display plots
