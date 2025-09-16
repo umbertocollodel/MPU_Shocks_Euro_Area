@@ -79,27 +79,59 @@ dates=read_xlsx("raw_data/dates_govc.xlsx") %>%
 
 df_list_clean <- df_list %>% 
   map(~ .x %>%
-  mutate(govc = case_when(daily %in% dates ~ 1,
-                          T ~ 0)) %>%
-  mutate(gap = high - low) %>% 
-  mutate(post_govc = ifelse(lag(govc, 1) == 1 | lag(govc, 2) == 1 | lag(govc, 3) == 1, 1, 0)) %>% 
-  mutate(pre_govc = ifelse(lead(govc, 1) == 1 | lead(govc, 2) == 1 | lead(govc, 3) == 1, 1, 0)) %>% 
-  mutate(sum_govc = cumsum(govc)) %>% 
-  mutate(sum_govc = ifelse(govc == 1, sum_govc, 0))  %>%
-  calculate_lags(sum_govc, 1:3) %>%
-  calculate_leads(sum_govc, 1:3) %>% 
-  mutate(govc_id = rowSums(select(., starts_with("sum_")), na.rm = TRUE)) %>% 
-  group_by(govc_id,pre_govc) %>% 
-  mutate(pre_mean = mean(gap,na.rm=T)) %>%
-  group_by(govc_id,post_govc) %>% 
-  mutate(post_mean = mean(gap,na.rm=T)) %>%
-  ungroup() %>%
-  mutate(correct_post_mean = lead(post_mean,1),
-         correct_pre_mean = lag(pre_mean,1)) %>% 
-  distinct(sum_govc, .keep_all = T) %>%
-  filter(!is.na(gap)) %>% 
-  select(govc_id,correct_pre_mean,correct_post_mean) %>% 
-  mutate(diff = (correct_post_mean - correct_pre_mean)*100))
+        # mark government change days
+        mutate(govc = ifelse(daily %in% dates, 1, 0)) %>%
+        # daily high-low gap
+        mutate(gap = high - low) %>%
+        
+        # post_govc and pre_govc for 3-day window
+        mutate(post_govc = ifelse(lag(govc, 1) == 1 | lag(govc, 2) == 1 | lag(govc, 3) == 1, 1, 0),
+               pre_govc  = ifelse(lead(govc, 1) == 1 | lead(govc, 2) == 1 | lead(govc, 3) == 1, 1, 0)) %>%
+        
+        # cumulative govc count
+        mutate(sum_govc = cumsum(govc),
+               sum_govc = ifelse(govc == 1, sum_govc, 0)) %>%
+        
+        # calculate lags and leads for 3-day window
+        calculate_lags(sum_govc, 1:3) %>%
+        calculate_leads(sum_govc, 1:3) %>%
+        
+        # govc_id as sum of lag/lead indicators
+        mutate(govc_id = rowSums(select(., starts_with("sum_")), na.rm = TRUE)) %>%
+        
+        # pre/post means for 3-day window
+        group_by(govc_id, pre_govc) %>%
+        mutate(pre_mean = mean(gap, na.rm = TRUE)) %>%
+        group_by(govc_id, post_govc) %>%
+        mutate(post_mean = mean(gap, na.rm = TRUE)) %>%
+        ungroup() %>%
+        mutate(correct_post_mean = lead(post_mean, 1),
+               correct_pre_mean  = lag(pre_mean, 1)) %>%
+        
+        # ---- new: post means for shorter windows ----
+        # 1-day window
+        mutate(post_govc_1 = ifelse(lag(govc, 1) == 1, 1, 0)) %>%
+        group_by(govc_id, post_govc_1) %>%
+        mutate(post_mean_1 = mean(gap, na.rm = TRUE)) %>%
+        ungroup() %>%
+        mutate(correct_post_mean_1 = lead(post_mean_1, 1)) %>%
+        
+        # 2-day window
+        mutate(post_govc_2 = ifelse(lag(govc, 1) == 1 | lag(govc, 2) == 1, 1, 0)) %>%
+        group_by(govc_id, post_govc_2) %>%
+        mutate(post_mean_2 = mean(gap, na.rm = TRUE)) %>%
+        ungroup() %>%
+        mutate(correct_post_mean_2 = lead(post_mean_2, 1)) %>%
+        
+        # keep only relevant rows and variables
+        distinct(sum_govc, .keep_all = TRUE) %>%
+        filter(!is.na(gap)) %>%
+        select(govc_id, correct_pre_mean, correct_post_mean, correct_post_mean_1, correct_post_mean_2) %>%
+        
+        # difference in gap for main 3-day window
+        mutate(diff = (correct_post_mean - correct_pre_mean) * 100)
+      )
+
 
 # Add back govc dates:
 
@@ -164,6 +196,7 @@ differences_df %>%
 dir.create("intermediate_data")
 
 differences_df %>% 
-  select(tenor,date, correct_pre_mean, correct_post_mean,diff,spike) %>% 
-  saveRDS("intermediate_data/range_difference_df.rds")
+  select(tenor,date, correct_pre_mean, correct_post_mean,diff, correct_post_mean_1,
+    correct_post_mean_2,spike) %>% 
+  saveRDS("../intermediate_data/range_difference_df.rds")
   
