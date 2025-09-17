@@ -159,8 +159,7 @@ load_transcripts <- function() {
         tibble(date = as.Date(date_match), filename = filename, text = text)
       }, error = function(e) tibble())
     }) %>%
-    arrange(date) %>%
-    slice_tail(n = N_CONFERENCES)
+    arrange(date) 
 }
 
 load_gemini_results <- function() {
