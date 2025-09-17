@@ -192,6 +192,8 @@ load_gemini_results <- function() {
 # Single Conference Processing ----
 simulate_single_conference <- function(model_name, conference_info, analyst_prompt) {
   conference_date <- as.character(conference_info$date)
+  cat(crayon::cyan(glue("→ {model_name} {conference_date}\n")))   # add this line
+
   
   # Check cache
   cache_file <- file.path(INTERMEDIATE_DIR, glue("{model_name}_{conference_date}.rds"))
@@ -236,13 +238,19 @@ simulate_single_conference <- function(model_name, conference_info, analyst_prom
 }
 
 # Main Analysis ----
-run_cross_llm_analysis <- function() {
+run_cross_llm_analysis <- function(limit_conferences = NULL) {
   cat(crayon::blue("🚀 Cross-LLM Robustness Analysis\n"))
   cat(crayon::blue("Models: Gemini 2.5 Flash vs GPT-4o vs DeepSeek-V3\n\n"))
   
   # Load data
   transcript_data <- load_transcripts()
   gemini_data <- load_gemini_results()
+
+    # Optionally limit number of conferences
+  if (!is.null(limit_conferences)) {
+    transcript_data <- head(transcript_data, limit_conferences)
+    cat(crayon::yellow(glue("⚠️ Limiting to first {limit_conferences} conferences for testing\n")))
+  }
   
   cat(glue("📊 Analyzing {nrow(transcript_data)} conferences\n"))
   
@@ -254,7 +262,7 @@ run_cross_llm_analysis <- function() {
   plan(multisession, workers = MAX_WORKERS)
   
   # Process new models
-  new_models <- c("chatgpt", "deepseek")
+  new_models <- c("chatgpt")
   
   new_results <- new_models %>%
     set_names() %>%
@@ -507,12 +515,14 @@ create_report <- function(correlation_results, icc_results) {
   return(filename)
 }
 
-# Main Execution ----
-main_analysis <- function() {
+
+# Main_analysis ----
+
+main_analysis <- function(limit_conferences = NULL) {
   cat(crayon::blue("🎯 Starting Cross-LLM Robustness Analysis\n\n"))
   
   # Run analysis
-  results_df <- run_cross_llm_analysis()
+  results_df <- run_cross_llm_analysis(limit_conferences = limit_conferences)
   disagreement_df <- compute_disagreement_measures(results_df)
   market_data_df <- load_market_data()
   
@@ -560,3 +570,6 @@ if (interactive()) {
 } else {
   main_analysis()
 }
+
+
+results <- main_analysis(limit_conferences = 5)  # For testing, limit to first 5 conferences
