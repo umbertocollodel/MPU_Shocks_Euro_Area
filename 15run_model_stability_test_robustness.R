@@ -18,7 +18,7 @@ Sys.setenv(OPENAI_API_KEY = Sys.getenv("OPENAI_API_KEY"))
 
 TEMPERATURE <- 1.0
 TARGET_TENORS <- c("3M", "2Y", "10Y")
-MAX_WORKERS <- 4
+MAX_WORKERS <- 2
 
 # Directories
 OUTPUT_DIR <- "../intermediate_data/cross_llm_analysis"
@@ -30,14 +30,13 @@ walk(c(OUTPUT_DIR, RESULTS_DIR, INTERMEDIATE_DIR), ~dir.create(.x, recursive = T
 # API Functions ----
 call_chatgpt <- function(prompt, user_message, temperature = 1.0) {
   create_chat_completion(
-    model = "gpt-4o",
+    model = "gpt-5-mini",
     messages = list(
       list(role = "system", content = prompt),
       list(role = "user", content = user_message)
     ),
-    temperature = temperature,
-    max_tokens = 4000
-  ) %>% pluck("choices", 1, "message", "content")
+    temperature = temperature
+  ) %>% pluck("choices", "message.content")
 }
 
 call_deepseek <- function(prompt, user_message, temperature = 1.0) {
@@ -51,7 +50,7 @@ call_deepseek <- function(prompt, user_message, temperature = 1.0) {
       list(role = "user", content = user_message)
     ),
     temperature = temperature,
-    max_tokens = 4000
+    max_tokens = 1000000
   )
   
   request("https://api.deepseek.com/chat/completions") |>
@@ -194,6 +193,8 @@ simulate_single_conference <- function(model_name, conference_info, analyst_prom
   conference_date <- as.character(conference_info$date)
   cat(crayon::cyan(glue("→ {model_name} {conference_date}\n")))   # add this line
 
+  # Right before API call:
+  cat(crayon::yellow(glue("   Calling {model_name} API for {conference_date}\n")))
   
   # Check cache
   cache_file <- file.path(INTERMEDIATE_DIR, glue("{model_name}_{conference_date}.rds"))
@@ -205,8 +206,7 @@ simulate_single_conference <- function(model_name, conference_info, analyst_prom
   # Prepare prompt
   formatted_prompt <- str_replace_all(analyst_prompt, "\\[date\\]", conference_date)
   user_message <- glue(
-    "ECB press conference for {conference_date}:\n\n{conference_info$text}\n\n",
-    "Please simulate the 30 traders as instructed. Output only a markdown table."
+    "ECB press conference for {conference_date}:\n\n{conference_info$text}\n\n"
   )
   
   # Try with retries
@@ -258,33 +258,33 @@ run_cross_llm_analysis <- function(limit_conferences = NULL) {
   source("create_prompts.R")
   analyst_prompt <- prompt_naive
   
-  # Setup parallel processing
-  plan(multisession, workers = MAX_WORKERS)
-  
   # Process new models
   new_models <- c("chatgpt")
   
   new_results <- new_models %>%
-    set_names() %>%
-    map(~{
-      cat(crayon::magenta(glue("🤖 Processing {toupper(.x)}\n")))
-      
-      model_results <- transcript_data %>%
-        future_pmap(function(date, filename, text) {
-          simulate_single_conference(.x, list(date = date, text = text), analyst_prompt)
-        }, .options = furrr_options(seed = TRUE)) %>%
-        discard(is.null)
-      
-      if (length(model_results) > 0) {
-        combined <- bind_rows(model_results)
-        write_csv(combined, file.path(OUTPUT_DIR, glue("{.x}_results.csv")))
-        cat(crayon::green(glue("✅ {toupper(.x)}: {nrow(combined)} rows\n")))
-        combined
-      } else {
-        NULL
-      }
-    }) %>%
-    discard(is.null)
+  set_names() %>%
+  map(~{
+    cat(crayon::magenta(glue("🤖 Processing {toupper(.x)}\n")))
+    
+    # Sequential processing with error handling
+    model_results <- transcript_data %>%
+      pmap(function(date, filename, text) {
+        safely_simulate <- possibly(simulate_single_conference, otherwise = NULL)
+        Sys.sleep(1)  # small delay to reduce rate-limit errors
+        safely_simulate(.x, list(date = date, text = text), analyst_prompt)
+      }) %>%
+      discard(is.null)
+    
+    if (length(model_results) > 0) {
+      combined <- bind_rows(model_results)
+      write_csv(combined, file.path(OUTPUT_DIR, glue("{.x}_results.csv")))
+      cat(crayon::green(glue("✅ {toupper(.x)}: {nrow(combined)} rows\n")))
+      combined
+    } else {
+      NULL
+    }
+  }) %>%
+  discard(is.null)
   
   plan(sequential)
   
@@ -572,4 +572,4 @@ if (interactive()) {
 }
 
 
-results <- main_analysis(limit_conferences = 5)  # For testing, limit to first 5 conferences
+results <- main_analysis(limit_conferences = 2)  # For testing, limit to first 5 conferences
