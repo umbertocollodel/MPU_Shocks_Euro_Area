@@ -19,7 +19,6 @@ Sys.setenv(OPENAI_API_KEY = Sys.getenv("OPENAI_API_KEY"))
 TEMPERATURE <- 1.0
 TARGET_TENORS <- c("3M", "2Y", "10Y")
 MAX_WORKERS <- 4
-N_CONFERENCES <- 60  # Adjust as needed
 
 # Directories
 OUTPUT_DIR <- "../intermediate_data/cross_llm_analysis"
