@@ -2,13 +2,453 @@
 # =======================================================
 # This script tests robustness across ChatGPT and DeepSeek (Gemini results already exist)
 # and computes ICC analysis for model sensitivity assessment.
+# Models: Gemini 2.5 Flash, GPT-4o, DeepSeek-V3 (coherent capability tier)
 
 # Load necessary libraries and set parameters ----
 
 if (!require("pacman")) install.packages("pacman")
 
 pacman::p_load(
-  openai,      # For ChatGPT API
+  # Overall ICC across all tenors
+  if (length(icc_results) > 0) {
+    tryCatch({
+      overall_data <- icc_data %>%
+        select(all_of(model_cols))
+      
+      complete_overall <- overall_data[complete.cases(overall_data), ]
+      
+      if (nrow(complete_overall) >= 3) {
+        overall_icc <- psych::ICC(complete_overall, missing = FALSE)
+        
+        icc_results[["overall"]] <- list(
+          tenor = "Overall",
+          n_observations = nrow(complete_overall),
+          n_models = ncol(complete_overall),
+          models_included = model_cols,
+          icc_2_1 = overall_icc$results["ICC2", "ICC"],
+          icc_2_k = overall_icc$results["ICC2k", "ICC"],
+          icc_2_1_lower = overall_icc$results["ICC2", "lower bound"],
+          icc_2_1_upper = overall_icc$results["ICC2", "upper bound"],
+          p_value = overall_icc$results["ICC2", "p"]
+        )
+        
+        cat(glue("\n  🎯 Overall ICC: ICC(2,1) = {round(icc_results$overall$icc_2_1, 3)} ",
+                "p = {round(icc_results$overall$p_value, 3)}\n"))
+      }
+    }, error = function(e) {
+      cat(glue("  ⚠️ Could not compute overall ICC: {e$message}\n"))
+    })
+  }
+  
+  return(icc_results)
+}
+
+# Visualization Functions ----
+
+create_robustness_plots <- function(correlation_results, icc_results) {
+  timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
+  
+  # 1. Correlation comparison plot
+  p1 <- correlation_results$detailed %>%
+    mutate(
+      significance = case_when(
+        spearman_p_value < 0.001 ~ "***",
+        spearman_p_value < 0.01 ~ "**", 
+        spearman_p_value < 0.05 ~ "*",
+        TRUE ~ ""
+      ),
+      tenor = factor(tenor, levels = TARGET_TENORS)
+    ) %>%
+    ggplot(aes(x = tenor, y = spearman_correlation, fill = model_name)) +
+    geom_col(position = "dodge", width = 0.7, alpha = 0.8) +
+    geom_text(aes(label = paste0(round(spearman_correlation, 3), significance)), 
+              position = position_dodge(0.7), vjust = -0.5, size = 3.5) +
+    scale_fill_brewer(palette = "Set2") +
+    labs(
+      title = "Cross-LLM Performance: Correlations with Market Volatility",
+      subtitle = "Spearman correlations between LLM disagreement and market-based measures",
+      x = "OIS Tenor", 
+      y = "Spearman Correlation",
+      fill = "Model",
+      caption = "*** p<0.001, ** p<0.01, * p<0.05"
+    ) +
+    theme_minimal(base_family = "Segoe UI") +
+    theme(
+      plot.title = element_text(size = 16, face = "bold"),
+      plot.subtitle = element_text(size = 12, color = "grey50"),
+      legend.position = "bottom",
+      panel.grid.minor = element_blank(),
+      panel.grid.major.x = element_blank()
+    )
+  
+  # 2. ICC comparison plot
+  if (length(icc_results) > 0) {
+    icc_df <- icc_results %>%
+      map_dfr(~{
+        tibble(
+          tenor = .x$tenor,
+          icc_2_1 = .x$icc_2_1,
+          icc_lower = .x$icc_2_1_lower,
+          icc_upper = .x$icc_2_1_upper,
+          p_value = .x$p_value,
+          n_obs = .x$n_observations
+        )
+      }) %>%
+      filter(tenor != "Overall") %>%
+      mutate(
+        tenor = factor(tenor, levels = TARGET_TENORS),
+        significance = case_when(
+          p_value < 0.001 ~ "***",
+          p_value < 0.01 ~ "**",
+          p_value < 0.05 ~ "*", 
+          TRUE ~ ""
+        )
+      )
+    
+    p2 <- icc_df %>%
+      ggplot(aes(x = tenor, y = icc_2_1)) +
+      geom_col(fill = "steelblue", alpha = 0.7, width = 0.5) +
+      geom_errorbar(aes(ymin = icc_lower, ymax = icc_upper), 
+                    width = 0.2, color = "darkred", linewidth = 0.8) +
+      geom_text(aes(label = paste0(round(icc_2_1, 3), significance)), 
+                vjust = -0.5, size = 4) +
+      labs(
+        title = "Cross-LLM Consistency: Intraclass Correlation Coefficients",
+        subtitle = "ICC(2,1) measures consistency across models (higher = more consistent)",
+        x = "OIS Tenor",
+        y = "ICC(2,1)",
+        caption = "Error bars: 95% confidence intervals; *** p<0.001, ** p<0.01, * p<0.05"
+      ) +
+      theme_minimal(base_family = "Segoe UI") +
+      theme(
+        plot.title = element_text(size = 16, face = "bold"),
+        plot.subtitle = element_text(size = 12, color = "grey50"),
+        panel.grid.minor = element_blank(),
+        panel.grid.major.x = element_blank()
+      )
+  } else {
+    p2 <- ggplot() + 
+      geom_text(aes(x = 0.5, y = 0.5, label = "Insufficient data for ICC analysis"), 
+                size = 6, color = "grey50") +
+      labs(title = "ICC Analysis: Insufficient Data") +
+      theme_void()
+  }
+  
+  # 3. Model comparison heatmap
+  p3 <- correlation_results$detailed %>%
+    ggplot(aes(x = tenor, y = model_name, fill = spearman_correlation)) +
+    geom_tile(color = "white", size = 1) +
+    geom_text(aes(label = round(spearman_correlation, 3)), 
+              color = "white", fontface = "bold", size = 4) +
+    scale_fill_gradient2(
+      low = "red", mid = "white", high = "blue", 
+      midpoint = 0, name = "Correlation"
+    ) +
+    labs(
+      title = "Cross-LLM Performance Heatmap",
+      subtitle = "Spearman correlations by model and tenor",
+      x = "OIS Tenor",
+      y = "Model"
+    ) +
+    theme_minimal(base_family = "Segoe UI") +
+    theme(
+      plot.title = element_text(size = 16, face = "bold"),
+      plot.subtitle = element_text(size = 12, color = "grey50"),
+      axis.text.x = element_text(angle = 0),
+      panel.grid = element_blank()
+    )
+  
+  # Save plots
+  plot_files <- c(
+    glue("correlation_comparison_{timestamp}.png"),
+    glue("icc_analysis_{timestamp}.png"), 
+    glue("performance_heatmap_{timestamp}.png")
+  )
+  
+  plots <- list(p1, p2, p3)
+  
+  walk2(plots, plot_files, ~{
+    ggsave(
+      file.path(RESULTS_DIR, .y), .x, 
+      width = 10, height = 6, dpi = 320, bg = "white"
+    )
+  })
+  
+  cat(glue("📊 Plots saved: {paste(plot_files, collapse = ', ')}\n"))
+  
+  return(list(correlation_plot = p1, icc_plot = p2, heatmap_plot = p3))
+}
+
+create_robustness_report <- function(correlation_results, icc_results, filename = NULL) {
+  if (is.null(filename)) {
+    timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
+    filename <- file.path(RESULTS_DIR, glue("robustness_report_{timestamp}.md"))
+  }
+  
+  # Build report content
+  report_lines <- c(
+    "# Cross-LLM Robustness Analysis Report",
+    glue("**Generated:** {format(Sys.time(), '%Y-%m-%d %H:%M:%S')}"),
+    "",
+    "## Executive Summary",
+    "",
+    glue("This report presents robustness testing across **{n_distinct(correlation_results$detailed$model_name)} LLM models** of similar capability tiers:"),
+    ""
+  )
+  
+  # Add model specifications
+  model_specs <- correlation_results$detailed %>%
+    distinct(model_name) %>%
+    mutate(
+      model_info = case_when(
+        model_name == "gemini" ~ "Gemini 2.5 Flash (Google, mid-tier efficient)",
+        model_name == "chatgpt" ~ "GPT-4o (OpenAI, flagship multimodal)",
+        model_name == "deepseek" ~ "DeepSeek-V3 (ByteDance, latest capable)",
+        TRUE ~ model_name
+      )
+    ) %>%
+    pull(model_info)
+  
+  report_lines <- c(
+    report_lines,
+    pmap_chr(list(model_specs), ~glue("- {.x}")),
+    "",
+    glue("Analysis covers **{n_distinct(correlation_results$detailed$tenor)} interest rate tenors**: {paste(TARGET_TENORS, collapse = ', ')}"),
+    glue("Based on **{N_CONFERENCES} ECB press conferences** (most recent sample)"),
+    "",
+    "## Model Performance Comparison",
+    ""
+  )
+  
+  # Add model averages table
+  model_performance <- correlation_results$averages %>%
+    arrange(desc(avg_spearman_correlation)) %>%
+    mutate(
+      rank = row_number(),
+      avg_spearman = round(avg_spearman_correlation, 3),
+      avg_pearson = round(avg_pearson_correlation, 3)
+    )
+  
+  report_lines <- c(
+    report_lines,
+    "### Overall Model Rankings (by Average Spearman Correlation):",
+    "",
+    "| Rank | Model | Avg Spearman | Avg Pearson | Total Obs | Tenors |",
+    "|------|-------|--------------|-------------|-----------|--------|"
+  )
+  
+  model_table_lines <- model_performance %>%
+    pmap_chr(~glue("| {..6} | {..1} | {..7} | {..8} | {..4} | {..5} |"))
+  
+  report_lines <- c(report_lines, model_table_lines, "")
+  
+  # Add detailed results by tenor
+  report_lines <- c(
+    report_lines,
+    "### Detailed Results by Tenor:",
+    ""
+  )
+  
+  for (t in TARGET_TENORS) {
+    tenor_results <- correlation_results$detailed %>%
+      filter(tenor == t) %>%
+      arrange(desc(spearman_correlation))
+    
+    report_lines <- c(
+      report_lines,
+      glue("#### {t} Tenor:"),
+      ""
+    )
+    
+    tenor_lines <- tenor_results %>%
+      pmap_chr(~glue("- **{..1}**: ρ = {round(..4, 3)} (p = {round(..5, 3)}, n = {..3})"))
+    
+    report_lines <- c(report_lines, tenor_lines, "")
+  }
+  
+  # Add ICC results
+  if (length(icc_results) > 0) {
+    report_lines <- c(
+      report_lines,
+      "## Intraclass Correlation Analysis",
+      "",
+      "The ICC measures **consistency across models**. Values closer to 1 indicate higher consistency.",
+      "ICC(2,1) assumes each target is rated by the same set of judges (models) and measures single-measurement reliability.",
+      ""
+    )
+    
+    icc_lines <- icc_results %>%
+      imap_chr(~{
+        if (.y == "overall") {
+          glue("**Overall**: ICC(2,1) = {round(.x$icc_2_1, 3)} [{round(.x$icc_2_1_lower, 3)}, {round(.x$icc_2_1_upper, 3)}], p = {round(.x$p_value, 3)} (n = {.x$n_observations})")
+        } else {
+          glue("**{.y}**: ICC(2,1) = {round(.x$icc_2_1, 3)} [{round(.x$icc_2_1_lower, 3)}, {round(.x$icc_2_1_upper, 3)}], p = {round(.x$p_value, 3)} (n = {.x$n_observations})")
+        }
+      })
+    
+    report_lines <- c(report_lines, icc_lines, "")
+  }
+  
+  # Add interpretation section
+  report_lines <- c(
+    report_lines,
+    "## Key Findings & Interpretation",
+    "",
+    "### Model Performance:",
+    glue("- **Best performing model**: {model_performance$model_name[1]} (ρ = {model_performance$avg_spearman[1]})"),
+    glue("- **Correlation range**: {min(correlation_results$detailed$spearman_correlation, na.rm=TRUE) |> round(3)} to {max(correlation_results$detailed$spearman_correlation, na.rm=TRUE) |> round(3)}"),
+    glue("- **Average correlation**: {mean(correlation_results$detailed$spearman_correlation, na.rm=TRUE) |> round(3)}"),
+    ""
+  )
+  
+  if (length(icc_results) > 0) {
+    overall_icc <- icc_results$overall$icc_2_1 %||% NA
+    consistency_level <- case_when(
+      is.na(overall_icc) ~ "Unknown",
+      overall_icc >= 0.75 ~ "Excellent",
+      overall_icc >= 0.60 ~ "Good", 
+      overall_icc >= 0.40 ~ "Fair",
+      TRUE ~ "Poor"
+    )
+    
+    report_lines <- c(
+      report_lines,
+      "### Model Consistency:",
+      if (!is.na(overall_icc)) glue("- **Overall ICC**: {round(overall_icc, 3)} ({consistency_level} consistency)") else "- **Overall ICC**: Not available",
+      if (!is.na(overall_icc)) glue("- **Interpretation**: Models show {str_to_lower(consistency_level)} agreement in uncertainty predictions"),
+      ""
+    )
+  }
+  
+  # Add robustness conclusions
+  avg_correlation <- mean(correlation_results$detailed$spearman_correlation, na.rm = TRUE)
+  significant_correlations <- sum(correlation_results$detailed$spearman_p_value < 0.05, na.rm = TRUE)
+  total_correlations <- nrow(correlation_results$detailed)
+  
+  report_lines <- c(
+    report_lines,
+    "### Robustness Assessment:",
+    glue("- **Statistical significance**: {significant_correlations}/{total_correlations} correlations significant (p < 0.05)"),
+    if (avg_correlation >= 0.4) "- **Economic significance**: Results suggest economically meaningful relationships" else "- **Economic significance**: Relationships present but modest",
+    if (length(icc_results) >= 2 && !is.na(overall_icc) && overall_icc >= 0.4) "- **Cross-model consistency**: Models show adequate agreement" else "- **Cross-model consistency**: Mixed consistency across models",
+    "",
+    "## Conclusions",
+    "",
+    case_when(
+      avg_correlation >= 0.5 & significant_correlations >= 2 ~ "**Strong robustness**: Results are consistent across multiple LLM architectures, providing strong evidence for the underlying methodology.",
+      avg_correlation >= 0.3 & significant_correlations >= 2 ~ "**Moderate robustness**: Results show consistent patterns across models with room for improvement.",
+      TRUE ~ "**Limited robustness**: Results vary significantly across models, suggesting methodology may be model-dependent."
+    ),
+    "",
+    "---",
+    "",
+    "*This analysis demonstrates the cross-model robustness of LLM-based market simulation across different AI architectures.*",
+    glue("*Models tested: {paste(sort(unique(correlation_results$detailed$model_name)), collapse = ', ')}*")
+  )
+  
+  # Write report
+  writeLines(report_lines, filename)
+  cat(glue("📄 Report saved to: {filename}\n"))
+  
+  return(filename)
+}
+
+# Main execution function ----
+
+main_robustness_analysis <- function() {
+  cat(crayon::blue("🎯 Starting Complete Cross-LLM Robustness Analysis\n"))
+  cat(crayon::blue("🔬 Testing consistency across Gemini 2.5 Flash, GPT-4o, and DeepSeek-V3\n\n"))
+  
+  # Step 1: Run cross-LLM analysis
+  results_df <- run_cross_llm_analysis()
+  
+  # Step 2: Compute disagreement measures
+  disagreement_df <- compute_disagreement_measures(results_df)
+  
+  # Step 3: Load market data
+  market_data_df <- load_market_data()
+  
+  if (is.null(market_data_df) || nrow(market_data_df) == 0) {
+    stop("❌ Could not load market data - aborting analysis")
+  }
+  
+  # Step 4: Compute correlations
+  correlation_results <- compute_model_correlations(disagreement_df, market_data_df)
+  
+  if (is.null(correlation_results)) {
+    stop("❌ Could not compute correlations - aborting analysis")
+  }
+  
+  # Step 5: Compute ICC analysis
+  icc_results <- compute_icc_analysis(disagreement_df)
+  
+  # Step 6: Create visualizations
+  plots <- create_robustness_plots(correlation_results, icc_results)
+  
+  # Step 7: Create comprehensive report
+  report_file <- create_robustness_report(correlation_results, icc_results)
+  
+  # Step 8: Save detailed results
+  timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
+  
+  results_list <- list(
+    correlations_detailed = correlation_results$detailed,
+    correlations_summary = correlation_results$averages,
+    disagreement_measures = disagreement_df,
+    raw_results = results_df
+  )
+  
+  # Add ICC results if available
+  if (length(icc_results) > 0) {
+    results_list$icc_results <- map_dfr(icc_results, ~as_tibble(.x), .id = "tenor")
+  }
+  
+  results_file <- file.path(RESULTS_DIR, glue("robustness_analysis_{timestamp}.xlsx"))
+  write_xlsx(results_list, results_file)
+  
+  # Print final summary
+  cat(crayon::green("\n🎉 Complete Cross-LLM Robustness Analysis Finished!\n"))
+  cat(str_dup("=", 60), "\n")
+  cat(glue("📊 **SUMMARY:**\n"))
+  cat(glue("   • Models tested: {n_distinct(results_df$model_name)} ({paste(sort(unique(results_df$model_name)), collapse = ', ')})\n"))
+  cat(glue("   • Conferences analyzed: {n_distinct(results_df$conference_date)}\n"))
+  cat(glue("   • Total observations: {nrow(results_df)}\n"))
+  cat(glue("   • Average correlation: {round(mean(correlation_results$detailed$spearman_correlation, na.rm=TRUE), 3)}\n"))
+  
+  if (length(icc_results) > 0 && !is.null(icc_results$overall)) {
+    cat(glue("   • Overall ICC(2,1): {round(icc_results$overall$icc_2_1, 3)}\n"))
+  }
+  
+  cat(glue("\n📁 **OUTPUTS:**\n"))
+  cat(glue("   • Report: {basename(report_file)}\n"))
+  cat(glue("   • Data: {basename(results_file)}\n"))
+  cat(glue("   • Plots: {RESULTS_DIR}/\n"))
+  cat(str_dup("=", 60), "\n")
+  
+  return(list(
+    results = results_df,
+    correlations = correlation_results,
+    icc = icc_results,
+    plots = plots,
+    report_file = report_file,
+    summary = list(
+      n_models = n_distinct(results_df$model_name),
+      n_conferences = n_distinct(results_df$conference_date),
+      avg_correlation = mean(correlation_results$detailed$spearman_correlation, na.rm = TRUE),
+      overall_icc = icc_results$overall$icc_2_1 %||% NA
+    )
+  ))
+}
+
+# Execute the analysis ----
+if (interactive()) {
+  cat("🚀 Ready to run cross-LLM robustness analysis!\n")
+  cat("📋 Models: Gemini 2.5 Flash (existing), GPT-4o, DeepSeek-V3\n") 
+  cat("⚡ Execute: robustness_output <- main_robustness_analysis()\n")
+} else {
+  # Run automatically if sourced non-interactively
+  main_robustness_analysis()
+}openai,      # For ChatGPT API
   httr2,       # For DeepSeek API calls
   readtext,
   crayon,
@@ -40,7 +480,14 @@ Sys.setenv(OPENAI_API_KEY = Sys.getenv("OPENAI_API_KEY"))
 TEMPERATURE <- 1.0
 TARGET_TENORS <- c("3M", "2Y", "10Y")
 MAX_WORKERS <- 4
-N_CONFERENCES <- 100 # Adjust based on needs
+N_CONFERENCES <- 60  # Adjust based on needs (60 recommended for efficiency)
+
+# Model specifications for coherent comparison
+MODELS_INFO <- list(
+  gemini = list(name = "Gemini 2.5 Flash", tier = "mid-tier efficient"),
+  chatgpt = list(name = "GPT-4o", tier = "flagship multimodal"),  
+  deepseek = list(name = "DeepSeek-V3", tier = "latest capable")
+)
 
 # Directories
 OUTPUT_DIR <- "../intermediate_data/cross_llm_analysis"
@@ -54,7 +501,7 @@ walk(c(OUTPUT_DIR, RESULTS_DIR, INTERMEDIATE_DIR), ~dir.create(.x, recursive = T
 call_chatgpt <- function(prompt, user_message, temperature = 1.0) {
   tryCatch({
     create_chat_completion(
-      model = "gpt-4o",
+      model = "gpt-4o",  # Coherent with Gemini 2.5 Flash capability tier
       messages = list(
         list(role = "system", content = prompt),
         list(role = "user", content = user_message)
@@ -73,7 +520,7 @@ call_deepseek <- function(prompt, user_message, temperature = 1.0) {
   if (api_key == "") stop("DEEPSEEK_API_KEY environment variable not set")
   
   request_body <- list(
-    model = "deepseek-chat",
+    model = "deepseek-v3",  # Latest, most capable - coherent with Gemini 2.5 Flash
     messages = list(
       list(role = "system", content = prompt),
       list(role = "user", content = user_message)
@@ -336,6 +783,7 @@ simulate_single_conference <- function(model_name, conference_info, analyst_prom
 
 run_cross_llm_analysis <- function() {
   cat(crayon::blue("🚀 Starting Cross-LLM Robustness Analysis\n"))
+  cat(crayon::blue("📋 Model Comparison: Gemini 2.5 Flash vs GPT-4o vs DeepSeek-V3\n"))
   cat(crayon::blue(str_dup("=", 60)), "\n")
   
   # Load data
@@ -345,7 +793,7 @@ run_cross_llm_analysis <- function() {
   # Load the best-performing naive prompt from create_prompts.R
   source("create_prompts.R")
   analyst_prompt <- prompt_naive
-
+  
   start_time <- Sys.time()
   
   # Set up parallel processing
@@ -360,7 +808,8 @@ run_cross_llm_analysis <- function() {
   new_results <- new_models %>%
     set_names() %>%
     map(~{
-      cat(crayon::magenta(glue("📍 Processing {toupper(.x)} model\n")))
+      model_info <- MODELS_INFO[[.x]]
+      cat(crayon::magenta(glue("📍 Processing {toupper(.x)} ({model_info$name})\n")))
       
       # Process all conferences for this model in parallel
       model_results <- transcript_data %>%
@@ -596,382 +1045,3 @@ compute_icc_analysis <- function(disagreement_df) {
       }
     }) %>%
     discard(is.null)
-  
-  # Overall ICC across all tenors
-  if (length(icc_results) > 0) {
-    tryCatch({
-      overall_data <- icc_data %>%
-        select(all_of(model_cols))
-      
-      complete_overall <- overall_data[complete.cases(overall_data), ]
-      
-      if (nrow(complete_overall) >= 3) {
-        overall_icc <- psych::ICC(complete_overall, missing = FALSE)
-        
-        icc_results[["overall"]] <- list(
-          tenor = "Overall",
-          n_observations = nrow(complete_overall),
-          n_models = ncol(complete_overall),
-          models_included = model_cols,
-          icc_2_1 = overall_icc$results["ICC2", "ICC"],
-          icc_2_k = overall_icc$results["ICC2k", "ICC"],
-          icc_2_1_lower = overall_icc$results["ICC2", "lower bound"],
-          icc_2_1_upper = overall_icc$results["ICC2", "upper bound"],
-          p_value = overall_icc$results["ICC2", "p"]
-        )
-        
-        cat(glue("\n  🎯 Overall ICC: ICC(2,1) = {round(icc_results$overall$icc_2_1, 3)} ",
-                "p = {round(icc_results$overall$p_value, 3)}\n"))
-      }
-    }, error = function(e) {
-      cat(glue("  ⚠️ Could not compute overall ICC: {e$message}\n"))
-    })
-  }
-  
-  return(icc_results)
-}
-
-# Visualization Functions ----
-
-create_robustness_plots <- function(correlation_results, icc_results) {
-  timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
-  
-  # 1. Correlation comparison plot
-  p1 <- correlation_results$detailed %>%
-    mutate(
-      significance = case_when(
-        spearman_p_value < 0.001 ~ "***",
-        spearman_p_value < 0.01 ~ "**", 
-        spearman_p_value < 0.05 ~ "*",
-        TRUE ~ ""
-      ),
-      tenor = factor(tenor, levels = TARGET_TENORS)
-    ) %>%
-    ggplot(aes(x = tenor, y = spearman_correlation, fill = model_name)) +
-    geom_col(position = "dodge", width = 0.7, alpha = 0.8) +
-    geom_text(aes(label = paste0(round(spearman_correlation, 3), significance)), 
-              position = position_dodge(0.7), vjust = -0.5, size = 3.5) +
-    scale_fill_brewer(palette = "Set2") +
-    labs(
-      title = "Cross-LLM Performance: Correlations with Market Volatility",
-      subtitle = "Spearman correlations between LLM disagreement and market-based measures",
-      x = "OIS Tenor", 
-      y = "Spearman Correlation",
-      fill = "Model",
-      caption = "*** p<0.001, ** p<0.01, * p<0.05"
-    ) +
-    theme_minimal(base_family = "Segoe UI") +
-    theme(
-      plot.title = element_text(size = 16, face = "bold"),
-      plot.subtitle = element_text(size = 12, color = "grey50"),
-      legend.position = "bottom",
-      panel.grid.minor = element_blank(),
-      panel.grid.major.x = element_blank()
-    )
-  
-  # 2. ICC comparison plot
-  if (length(icc_results) > 0) {
-    icc_df <- icc_results %>%
-      map_dfr(~{
-        tibble(
-          tenor = .x$tenor,
-          icc_2_1 = .x$icc_2_1,
-          icc_lower = .x$icc_2_1_lower,
-          icc_upper = .x$icc_2_1_upper,
-          p_value = .x$p_value,
-          n_obs = .x$n_observations
-        )
-      }) %>%
-      filter(tenor != "Overall") %>%
-      mutate(
-        tenor = factor(tenor, levels = TARGET_TENORS),
-        significance = case_when(
-          p_value < 0.001 ~ "***",
-          p_value < 0.01 ~ "**",
-          p_value < 0.05 ~ "*", 
-          TRUE ~ ""
-        )
-      )
-    
-    p2 <- icc_df %>%
-      ggplot(aes(x = tenor, y = icc_2_1)) +
-      geom_col(fill = "steelblue", alpha = 0.7, width = 0.5) +
-      geom_errorbar(aes(ymin = icc_lower, ymax = icc_upper), 
-                    width = 0.2, color = "darkred", linewidth = 0.8) +
-      geom_text(aes(label = paste0(round(icc_2_1, 3), significance)), 
-                vjust = -0.5, size = 4) +
-      labs(
-        title = "Cross-LLM Consistency: Intraclass Correlation Coefficients",
-        subtitle = "ICC(2,1) measures consistency across models (higher = more consistent)",
-        x = "OIS Tenor",
-        y = "ICC(2,1)",
-        caption = "Error bars: 95% confidence intervals; *** p<0.001, ** p<0.01, * p<0.05"
-      ) +
-      theme_minimal(base_family = "Segoe UI") +
-      theme(
-        plot.title = element_text(size = 16, face = "bold"),
-        plot.subtitle = element_text(size = 12, color = "grey50"),
-        panel.grid.minor = element_blank(),
-        panel.grid.major.x = element_blank()
-      )
-  } else {
-    p2 <- ggplot() + 
-      geom_text(aes(x = 0.5, y = 0.5, label = "Insufficient data for ICC analysis"), 
-                size = 6, color = "grey50") +
-      labs(title = "ICC Analysis: Insufficient Data") +
-      theme_void()
-  }
-  
-  # 3. Model comparison heatmap
-  p3 <- correlation_results$detailed %>%
-    ggplot(aes(x = tenor, y = model_name, fill = spearman_correlation)) +
-    geom_tile(color = "white", size = 1) +
-    geom_text(aes(label = round(spearman_correlation, 3)), 
-              color = "white", fontface = "bold", size = 4) +
-    scale_fill_gradient2(
-      low = "red", mid = "white", high = "blue", 
-      midpoint = 0, name = "Correlation"
-    ) +
-    labs(
-      title = "Cross-LLM Performance Heatmap",
-      subtitle = "Spearman correlations by model and tenor",
-      x = "OIS Tenor",
-      y = "Model"
-    ) +
-    theme_minimal(base_family = "Segoe UI") +
-    theme(
-      plot.title = element_text(size = 16, face = "bold"),
-      plot.subtitle = element_text(size = 12, color = "grey50"),
-      axis.text.x = element_text(angle = 0),
-      panel.grid = element_blank()
-    )
-  
-  # Save plots
-  plot_files <- c(
-    glue("correlation_comparison_{timestamp}.png"),
-    glue("icc_analysis_{timestamp}.png"), 
-    glue("performance_heatmap_{timestamp}.png")
-  )
-  
-  plots <- list(p1, p2, p3)
-  
-  walk2(plots, plot_files, ~{
-    ggsave(
-      file.path(RESULTS_DIR, .y), .x, 
-      width = 10, height = 6, dpi = 320, bg = "white"
-    )
-  })
-  
-  cat(glue("📊 Plots saved: {paste(plot_files, collapse = ', ')}\n"))
-  
-  return(list(correlation_plot = p1, icc_plot = p2, heatmap_plot = p3))
-}
-
-create_robustness_report <- function(correlation_results, icc_results, filename = NULL) {
-  if (is.null(filename)) {
-    timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
-    filename <- file.path(RESULTS_DIR, glue("robustness_report_{timestamp}.md"))
-  }
-  
-  # Build report content
-  report_lines <- c(
-    "# Cross-LLM Robustness Analysis Report",
-    glue("**Generated:** {format(Sys.time(), '%Y-%m-%d %H:%M:%S')}"),
-    "",
-    "## Executive Summary",
-    "",
-    glue("This report presents robustness testing across **{n_distinct(correlation_results$detailed$model_name)} LLM models**:"),
-    paste("*", sort(unique(correlation_results$detailed$model_name)), collapse = ", "),
-    "",
-    glue("Analysis covers **{n_distinct(correlation_results$detailed$tenor)} interest rate tenors**: {paste(TARGET_TENORS, collapse = ', ')}"),
-    "",
-    "## Model Performance Comparison",
-    ""
-  )
-  
-  # Add model averages table
-  model_performance <- correlation_results$averages %>%
-    arrange(desc(avg_spearman_correlation)) %>%
-    mutate(
-      rank = row_number(),
-      avg_spearman = round(avg_spearman_correlation, 3),
-      avg_pearson = round(avg_pearson_correlation, 3)
-    )
-  
-  report_lines <- c(
-    report_lines,
-    "### Overall Model Rankings (by Average Spearman Correlation):",
-    "",
-    "| Rank | Model | Avg Spearman | Avg Pearson | Total Obs | Tenors |",
-    "|------|-------|--------------|-------------|-----------|--------|"
-  )
-  
-  model_table_lines <- model_performance %>%
-    pmap_chr(~glue("| {..6} | {..1} | {..7} | {..8} | {..4} | {..5} |"))
-  
-  report_lines <- c(report_lines, model_table_lines, "")
-  
-  # Add detailed results by tenor
-  report_lines <- c(
-    report_lines,
-    "### Detailed Results by Tenor:",
-    ""
-  )
-  
-  for (t in TARGET_TENORS) {
-    tenor_results <- correlation_results$detailed %>%
-      filter(tenor == t) %>%
-      arrange(desc(spearman_correlation))
-    
-    report_lines <- c(
-      report_lines,
-      glue("#### {t} Tenor:"),
-      ""
-    )
-    
-    tenor_lines <- tenor_results %>%
-      pmap_chr(~glue("- **{..1}**: ρ = {round(..4, 3)} (p = {round(..5, 3)}, n = {..3})"))
-    
-    report_lines <- c(report_lines, tenor_lines, "")
-  }
-  
-  # Add ICC results
-  if (length(icc_results) > 0) {
-    report_lines <- c(
-      report_lines,
-      "## Intraclass Correlation Analysis",
-      "",
-      "The ICC measures **consistency across models**. Values closer to 1 indicate higher consistency.",
-      ""
-    )
-    
-    icc_lines <- icc_results %>%
-      imap_chr(~{
-        if (.y == "overall") {
-          glue("**Overall**: ICC(2,1) = {round(.x$icc_2_1, 3)} [{round(.x$icc_2_1_lower, 3)}, {round(.x$icc_2_1_upper, 3)}], p = {round(.x$p_value, 3)} (n = {.x$n_observations})")
-        } else {
-          glue("**{.y}**: ICC(2,1) = {round(.x$icc_2_1, 3)} [{round(.x$icc_2_1_lower, 3)}, {round(.x$icc_2_1_upper, 3)}], p = {round(.x$p_value, 3)} (n = {.x$n_observations})")
-        }
-      })
-    
-    report_lines <- c(report_lines, icc_lines, "")
-  }
-  
-  # Add interpretation section
-  report_lines <- c(
-    report_lines,
-    "## Key Findings & Interpretation",
-    "",
-    "### Model Performance:",
-    glue("- **Best performing model**: {model_performance$model_name[1]} (ρ = {model_performance$avg_spearman[1]})"),
-    glue("- **Correlation range**: {min(correlation_results$detailed$spearman_correlation, na.rm=TRUE) |> round(3)} to {max(correlation_results$detailed$spearman_correlation, na.rm=TRUE) |> round(3)}"),
-    ""
-  )
-  
-  if (length(icc_results) > 0) {
-    overall_icc <- icc_results$overall$icc_2_1 %||% NA
-    consistency_level <- case_when(
-      is.na(overall_icc) ~ "Unknown",
-      overall_icc >= 0.75 ~ "Excellent",
-      overall_icc >= 0.60 ~ "Good", 
-      overall_icc >= 0.40 ~ "Fair",
-      TRUE ~ "Poor"
-    )
-    
-    report_lines <- c(
-      report_lines,
-      "### Model Consistency:",
-      if (!is.na(overall_icc)) glue("- **Overall ICC**: {round(overall_icc, 3)} ({consistency_level} consistency)") else "- **Overall ICC**: Not available",
-      ""
-    )
-  }
-  
-  report_lines <- c(
-    report_lines,
-    "---",
-    "",
-    "*This analysis demonstrates the robustness of LLM-based market simulation across different model architectures.*"
-  )
-  
-  # Write report
-  writeLines(report_lines, filename)
-  cat(glue("📄 Report saved to: {filename}\n"))
-  
-  return(filename)
-}
-
-# Main execution function ----
-
-main_robustness_analysis <- function() {
-  cat(crayon::blue("🎯 Starting Complete Cross-LLM Robustness Analysis\n\n"))
-  
-  # Step 1: Run cross-LLM analysis
-  results_df <- run_cross_llm_analysis()
-  
-  # Step 2: Compute disagreement measures
-  disagreement_df <- compute_disagreement_measures(results_df)
-  
-  # Step 3: Load market data
-  market_data_df <- load_market_data()
-  
-  if (is.null(market_data_df) || nrow(market_data_df) == 0) {
-    stop("❌ Could not load market data - aborting analysis")
-  }
-  
-  # Step 4: Compute correlations
-  correlation_results <- compute_model_correlations(disagreement_df, market_data_df)
-  
-  if (is.null(correlation_results)) {
-    stop("❌ Could not compute correlations - aborting analysis")
-  }
-  
-  # Step 5: Compute ICC analysis
-  icc_results <- compute_icc_analysis(disagreement_df)
-  
-  # Step 6: Create visualizations
-  plots <- create_robustness_plots(correlation_results, icc_results)
-  
-  # Step 7: Create comprehensive report
-  report_file <- create_robustness_report(correlation_results, icc_results)
-  
-  # Step 8: Save detailed results
-  timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
-  
-  results_list <- list(
-    correlations_detailed = correlation_results$detailed,
-    correlations_summary = correlation_results$averages,
-    disagreement_measures = disagreement_df,
-    raw_results = results_df
-  )
-  
-  # Add ICC results if available
-  if (length(icc_results) > 0) {
-    results_list$icc_results <- map_dfr(icc_results, ~as_tibble(.x), .id = "tenor")
-  }
-  
-  results_file <- file.path(RESULTS_DIR, glue("robustness_analysis_{timestamp}.xlsx"))
-  write_xlsx(results_list, results_file)
-  
-  cat(crayon::green("\n🎉 Complete Cross-LLM Robustness Analysis Finished!\n"))
-  cat(glue("📊 Summary: {nrow(results_df)} total observations across {n_distinct(results_df$model_name)} models\n"))
-  cat(glue("📄 Report: {report_file}\n"))
-  cat(glue("📊 Data: {results_file}\n"))
-  cat(glue("🎨 Plots: {RESULTS_DIR}/\n"))
-  
-  return(list(
-    results = results_df,
-    correlations = correlation_results,
-    icc = icc_results,
-    plots = plots,
-    report_file = report_file
-  ))
-}
-
-# Execute the analysis ----
-if (interactive()) {
-  cat("🚀 Ready to run cross-LLM robustness analysis!\n")
-  cat("Execute: robustness_output <- main_robustness_analysis()\n")
-} else {
-  # Run automatically if sourced non-interactively
-  main_robustness_analysis()
-}
