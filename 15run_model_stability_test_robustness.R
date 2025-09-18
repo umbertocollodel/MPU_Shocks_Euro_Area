@@ -188,53 +188,85 @@ load_gemini_results <- function() {
   })
 }
 
-# Single Conference Processing ----
+# MODIFIED: Single Conference Processing with Raw Response Saving ----
 simulate_single_conference <- function(model_name, conference_info, analyst_prompt) {
   conference_date <- as.character(conference_info$date)
-  cat(crayon::cyan(glue("→ {model_name} {conference_date}\n")))   # add this line
-
-  # Right before API call:
-  cat(crayon::yellow(glue("   Calling {model_name} API for {conference_date}\n")))
+  cat(crayon::cyan(glue("→ {model_name} {conference_date}\n")))
   
-  # Check cache
+  # Check cache for processed data
   cache_file <- file.path(INTERMEDIATE_DIR, glue("{model_name}_{conference_date}.rds"))
   if (file.exists(cache_file)) {
     cat(crayon::blue(glue("📂 {model_name} {conference_date} (cached)\n")))
     return(readRDS(cache_file))
   }
   
-  # Prepare prompt
-  formatted_prompt <- str_replace_all(analyst_prompt, "\\[date\\]", conference_date)
-  user_message <- glue(
-    "ECB press conference for {conference_date}:\n\n{conference_info$text}\n\n"
-  )
+  # Check if raw response exists
+  raw_response_file <- file.path(RAW_RESPONSES_DIR, glue("{model_name}_{conference_date}_raw.rds"))
   
-  # Try with retries
-  for (attempt in 1:3) {
-    if (attempt > 1) Sys.sleep(2^(attempt-1))
+  if (file.exists(raw_response_file)) {
+    # Load existing raw response
+    cat(crayon::yellow(glue("📄 Loading existing raw response for {model_name} {conference_date}\n")))
+    response <- readRDS(raw_response_file)
+  } else {
+    # Prepare prompt and call API
+    formatted_prompt <- str_replace_all(analyst_prompt, "\\[date\\]", conference_date)
+    user_message <- glue(
+      "ECB press conference for {conference_date}:\n\n{conference_info$text}\n\n"
+    )
     
-    tryCatch({
-      cat(crayon::blue(glue("🔄 {model_name} {conference_date} (attempt {attempt})\n")))
+    # Try with retries to get raw response
+    response <- NULL
+    for (attempt in 1:3) {
+      if (attempt > 1) Sys.sleep(2^(attempt-1))
       
-      response <- call_llm(model_name, formatted_prompt, user_message, TEMPERATURE)
-      parsed_df <- parse_markdown_table(response)
-      
-      if (!is.null(parsed_df) && nrow(parsed_df) > 0) {
-        result <- parsed_df %>%
-          mutate(conference_date = conference_date, model_name = model_name)
+      tryCatch({
+        cat(crayon::blue(glue("🔄 {model_name} {conference_date} API call (attempt {attempt})\n")))
         
-        saveRDS(result, cache_file)  # Save to cache
+        response <- call_llm(model_name, formatted_prompt, user_message, TEMPERATURE)
         
-        cat(crayon::green(glue("✅ {model_name} {conference_date}: {nrow(result)} rows\n")))
-        return(result)
-      }
-    }, error = function(e) {
-      cat(crayon::red(glue("❌ Attempt {attempt}: {e$message}\n")))
-    })
+        # SAVE RAW RESPONSE IMMEDIATELY
+        if (!is.null(response) && response != "") {
+          saveRDS(response, raw_response_file)
+          cat(crayon::green(glue("💾 Raw response saved: {raw_response_file}\n")))
+          break  # Successfully got response, exit retry loop
+        }
+      }, error = function(e) {
+        cat(crayon::red(glue("❌ API call attempt {attempt} failed: {e$message}\n")))
+        response <- NULL
+      })
+    }
+    
+    if (is.null(response) || response == "") {
+      cat(crayon::red(glue("❌ {model_name} {conference_date} failed to get response\n")))
+      return(NULL)
+    }
   }
   
-  cat(crayon::red(glue("❌ {model_name} {conference_date} failed completely\n")))
-  return(NULL)
+  # Now parse the response (whether newly obtained or loaded from file)
+  cat(crayon::yellow(glue("🔍 Parsing response for {model_name} {conference_date}\n")))
+  
+  parsed_df <- tryCatch({
+    parse_markdown_table(response)
+  }, error = function(e) {
+    cat(crayon::red(glue("⚠️ Parse error for {model_name} {conference_date}: {e$message}\n")))
+    cat(crayon::yellow("   Raw response is saved, can be manually inspected\n"))
+    return(NULL)
+  })
+  
+  if (!is.null(parsed_df) && nrow(parsed_df) > 0) {
+    result <- parsed_df %>%
+      mutate(conference_date = conference_date, model_name = model_name)
+    
+    # Save processed result to cache
+    saveRDS(result, cache_file)
+    
+    cat(crayon::green(glue("✅ {model_name} {conference_date}: {nrow(result)} rows parsed\n")))
+    return(result)
+  } else {
+    cat(crayon::yellow(glue("⚠️ {model_name} {conference_date}: Parsing yielded no data\n")))
+    cat(crayon::yellow(glue("   Check raw response at: {raw_response_file}\n")))
+    return(NULL)
+  }
 }
 
 # Main Analysis ----
