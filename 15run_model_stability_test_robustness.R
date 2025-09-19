@@ -813,10 +813,265 @@ call_results2 <- step2_call_llms(data$transcripts, models = c('claude'), limit_c
 parsed <- step3_parse_responses(data$transcripts, models = c('chatgpt', 'claude'))
   
   cat("# Step 4: Analyze\n")
-  cat("analysis <- step4_analyze_results(parsed, data$gemini, data$market)\n\n")
+analysis <- step4_analyze_results(parsed, data$gemini, data$market)
   
   cat("# Check results\n")
-  cat("print(analysis$correlations$detailed)\n")
+print(analysis$correlations$detailed)
   
-  cat(crayon::yellow("\n📝 Don't forget to add ANTHROPIC_API_KEY to your .Renviron file!\n"))
 }
+# ============================================================================
+# CROSS-LLM MODEL STABILITY ICC ANALYSIS
+# ============================================================================
+# Measures reliability/consistency between different LLM models
+# Higher ICC indicates models agree more on disagreement patterns
+
+if (!exists("analysis") || is.null(analysis$disagreement)) {
+  stop("No disagreement results available. Please run step4_analyze_results first.")
+}
+
+# Prepare data for ICC analysis
+model_stability_data <- analysis$disagreement %>%
+  # Ensure we have at least 2 models for comparison
+  group_by(conference_date, tenor) %>%
+  filter(n() >= 2) %>%
+  ungroup() %>%
+  # Use predicted_sd as the measure of disagreement
+  select(conference_date, tenor, model_name, std_rate = predicted_sd) %>%
+  filter(!is.na(std_rate), std_rate > 0)
+
+cat("=== MODEL STABILITY DATA SUMMARY ===\n")
+cat("Total observations:", nrow(model_stability_data), "\n")
+cat("Models available:", paste(unique(model_stability_data$model_name), collapse = ", "), "\n")
+cat("Date range:", min(model_stability_data$conference_date), "to", max(model_stability_data$conference_date), "\n")
+
+# Check data coverage
+coverage_summary <- model_stability_data %>%
+  count(model_name, tenor, name = "n_conferences") %>%
+  arrange(model_name, tenor)
+
+cat("\nData coverage by model and tenor:\n")
+print(coverage_summary)
+
+# Simple ICC calculation function (adapted for model comparison)
+calculate_model_icc <- function(data) {
+  # Calculate between-conference variance (signal)
+  conference_means <- data %>%
+    group_by(conference_date) %>%
+    summarise(conf_mean = mean(std_rate, na.rm = TRUE), .groups = "drop")
+  
+  # Calculate within-conference variance across models (noise)
+  within_variances <- data %>%
+    group_by(conference_date) %>%
+    summarise(within_var = var(std_rate, na.rm = TRUE), .groups = "drop") %>%
+    filter(!is.na(within_var), within_var > 0)
+  
+  if (nrow(within_variances) == 0) return(NA)
+  
+  var_between <- var(conference_means$conf_mean, na.rm = TRUE)
+  var_within <- mean(within_variances$within_var, na.rm = TRUE)
+  
+  icc <- var_between / (var_between + var_within)
+  
+  return(round(icc, 3))
+}
+
+# Calculate ICC by tenor
+icc_by_tenor <- model_stability_data %>%
+  group_by(tenor) %>%
+  group_split() %>%
+  map_dfr(function(data) {
+    if(nrow(data) < 15) return(NULL)  # Skip if too few observations
+    
+    # Check if we have multiple models
+    n_models <- length(unique(data$model_name))
+    if(n_models < 2) return(NULL)
+    
+    tibble(
+      tenor = data$tenor[1],
+      icc = calculate_model_icc(data),
+      n_obs = nrow(data),
+      n_models = n_models,
+      n_conferences = length(unique(data$conference_date))
+    )
+  }) %>%
+  filter(!is.na(icc))
+
+# Calculate overall ICC (across all tenors)
+overall_icc <- calculate_model_icc(model_stability_data)
+
+# Display results
+cat("\n=== MODEL STABILITY ICC RESULTS ===\n")
+cat("Overall ICC (all tenors):", overall_icc, "\n\n")
+
+print(icc_by_tenor %>% arrange(desc(icc)))
+
+# Calculate pairwise correlations between models for additional insight
+pairwise_correlations <- model_stability_data %>%
+  select(conference_date, tenor, model_name, std_rate) %>%
+  pivot_wider(names_from = model_name, values_from = std_rate) %>%
+  group_by(tenor) %>%
+  do({
+    models <- names(.)[!names(.) %in% c("conference_date", "tenor")]
+    if(length(models) < 2) return(tibble())
+    
+    # Calculate all pairwise correlations
+    corr_results <- tibble()
+    for(i in 1:(length(models)-1)) {
+      for(j in (i+1):length(models)) {
+        model1 <- models[i]
+        model2 <- models[j]
+        
+        valid_pairs <- !is.na(.[[model1]]) & !is.na(.[[model2]])
+        if(sum(valid_pairs) >= 10) {
+          corr <- cor(.[[model1]][valid_pairs], .[[model2]][valid_pairs], 
+                     method = "spearman", use = "complete.obs")
+          
+          corr_results <- bind_rows(corr_results, tibble(
+            model1 = model1,
+            model2 = model2,
+            correlation = round(corr, 3),
+            n_pairs = sum(valid_pairs)
+          ))
+        }
+      }
+    }
+    corr_results
+  }) %>%
+  ungroup()
+
+cat("\n=== PAIRWISE MODEL CORRELATIONS ===\n")
+print(pairwise_correlations %>% arrange(desc(correlation)))
+
+# Color palette for visualizations
+color_palette <- c("3M" = "#91bfdb", "2Y" = "#4575b4", "10Y" = "#d73027")
+model_colors <- c("chatgpt" = "#10a37f", "claude" = "#d97706", "gemini" = "#4285f4")
+
+# Create simple, clear visualizations that tell a story
+
+# Define standard colors
+color_palette <- c("3M" = "#91bfdb", "2Y" = "#4575b4", "10Y" = "#d73027")
+model_colors <- c("chatgpt" = "#10a37f", "claude" = "#d97706", "gemini" = "#4285f4")
+
+# Plot 1: Model disagreement scatter with 45-degree line
+biggest_differences <- model_stability_data %>%
+  select(conference_date, tenor, model_name, std_rate) %>%
+  pivot_wider(names_from = model_name, values_from = std_rate) %>%
+  filter(complete.cases(.)) %>%
+  rowwise() %>%
+  mutate(
+    max_val = max(c_across(where(is.numeric)), na.rm = TRUE),
+    min_val = min(c_across(where(is.numeric)), na.rm = TRUE),
+    difference = max_val - min_val,
+    avg_val = mean(c_across(where(is.numeric)), na.rm = TRUE)
+  ) %>%
+  ungroup() %>%
+  mutate(conference_date = as.Date(conference_date))
+
+p1 <- ggplot(biggest_differences, aes(x = avg_val, y = difference)) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "grey50", size = 0.8) +
+  geom_point(aes(color = factor(tenor, levels = c("3M", "2Y", "10Y"))), 
+             size = 2, alpha = 0.7) +
+  scale_color_manual(values = color_palette, name = "Tenor") +
+  facet_wrap(~tenor) +
+  labs(
+    title = "Model Agreement vs Average Uncertainty",
+    x = "Average Uncertainty Level",
+    y = "Disagreement Between Models"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+    legend.position = "bottom"
+  )
+
+# Plot 2: Model correlations with market data by tenor
+if(exists("analysis") && !is.null(analysis$correlations$detailed)) {
+  market_corr_data <- analysis$correlations$detailed %>%
+    mutate(tenor = factor(tenor, levels = c("3M", "2Y", "10Y")))
+  
+  p2 <- ggplot(market_corr_data, aes(x = model_name, y = spearman_correlation, fill = model_name)) +
+    geom_col(alpha = 0.8, width = 0.6) +
+    geom_text(aes(label = sprintf("%.3f", spearman_correlation)), 
+              vjust = -0.3, size = 3) +
+    facet_wrap(~tenor, nrow = 1) +
+    scale_fill_manual(values = model_colors, guide = "none") +
+    labs(
+      title = "Model Performance: Correlation with Market Data",
+      x = "Model",
+      y = "Spearman Correlation"
+    ) +
+    theme_minimal(base_size = 12) +
+    theme(
+      plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      strip.text = element_text(face = "bold")
+    )
+} else {
+  p2 <- ggplot(data.frame(x = 1, y = 1, label = "Market correlation data not available")) +
+    geom_text(aes(x, y, label = label), size = 5) +
+    theme_void()
+}
+
+# Plot 3: Clean correlation matrix between models
+if(nrow(pairwise_correlations) > 0) {
+  # Create a clean correlation matrix
+  corr_clean <- pairwise_correlations %>%
+    select(tenor, model1, model2, correlation) %>%
+    # Create symmetric matrix
+    bind_rows(
+      pairwise_correlations %>% 
+        select(tenor, model1 = model2, model2 = model1, correlation)
+    ) %>%
+    # Add diagonal (self-correlation = 1)
+    bind_rows(
+      expand_grid(
+        tenor = unique(pairwise_correlations$tenor),
+        model1 = unique(c(pairwise_correlations$model1, pairwise_correlations$model2))
+      ) %>%
+      mutate(model2 = model1, correlation = 1.0)
+    ) %>%
+    distinct() %>%
+    arrange(tenor, model1, model2)
+  
+  p3 <- ggplot(corr_clean, aes(x = model1, y = model2, fill = correlation)) +
+    geom_tile(color = "white", size = 1) +
+    geom_text(aes(label = sprintf("%.2f", correlation)), 
+              color = "white", fontface = "bold", size = 4) +
+    facet_wrap(~factor(tenor, levels = c("3M", "2Y", "10Y")), nrow = 1) +
+    scale_fill_gradient2(low = "#d73027", mid = "#ffffbf", high = "#4575b4", 
+                        midpoint = 0.5, limits = c(0, 1),
+                        name = "Correlation") +
+    labs(
+      title = "Inter-Model Correlations by Tenor",
+      x = "Model",
+      y = "Model"
+    ) +
+    theme_minimal(base_size = 12) +
+    theme(
+      plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      strip.text = element_text(face = "bold"),
+      legend.position = "bottom"
+    )
+} else {
+  p3 <- ggplot(data.frame(x = 1, y = 1, label = "Pairwise correlation data not available")) +
+    geom_text(aes(x, y, label = label), size = 5) +
+    theme_void()
+}
+
+# Print plots
+print(p1)
+if(exists("p2")) print(p2)
+print(p3)
+
+# Save plots
+ggsave("../output/cross_llm_results/model_stability_icc.png", 
+       p1, width = 10, height = 6, dpi = 300, bg = "white")
+
+if(exists("p2")) {
+  ggsave("../output/cross_llm_results/model_agreement_heatmap.png", 
+         p2, width = 12, height = 8, dpi = 300, bg = "white")
+}
+
+ggsave("../output/cross_llm_results/model_disagreement_timeseries.png", 
+       p3, width = 12, height = 6, dpi = 300, bg = "white")
