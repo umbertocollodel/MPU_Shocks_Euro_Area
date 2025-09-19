@@ -309,23 +309,65 @@ call_all_llm_responses <- function(transcript_data, models = c("chatgpt", "claud
 # =============================================================================
 # STEP 4: PARSING (completely separate from API calling)
 # =============================================================================
+# Fixed Cross-LLM Parsing Functions with Better Error Handling
+# ==============================================================
+
+# Fixed Cross-LLM Parsing Functions with Better Error Handling
+# ==============================================================
+
+# Fixed Cross-LLM Parsing Functions with Better Error Handling
+# ==============================================================
 
 parse_markdown_table <- function(markdown_string) {
   if (is.null(markdown_string) || is.na(markdown_string) || nzchar(markdown_string) == FALSE) {
+    cat(crayon::yellow("⚠️ Empty or null markdown string\n"))
     return(NULL)
   }
+  
+  # Handle case where markdown_string is a vector
+  if (is.vector(markdown_string) && length(markdown_string) == 1) {
+    text_content <- markdown_string[1]
+  } else {
+    text_content <- paste(markdown_string, collapse = "\n")
+  }
+  
+  # Debug: Show first few lines of content
+  lines_preview <- str_split_1(text_content, "\n")[1:min(10, length(str_split_1(text_content, "\n")))]
+  cat(crayon::cyan("📄 First few lines of content:\n"))
+  walk(lines_preview, ~cat(crayon::cyan(paste("  ", .x, "\n"))))
   
   # Split into lines and clean
-  lines <- str_split_1(markdown_string, "\n") %>% str_trim() %>% keep(~nzchar(.x))
+  lines <- str_split_1(text_content, "\n") %>% str_trim()
+  
+  # Keep only non-empty lines
+  lines <- lines[nzchar(lines)]
   
   if (length(lines) < 3) {
+    cat(crayon::yellow(glue("⚠️ Too few lines ({length(lines)})\n")))
     return(NULL)
   }
   
-  # Find table separator (line with dashes and pipes)
-  separator_indices <- which(str_detect(lines, "^\\|[\\s\\-\\|]+\\|$"))
+  cat(crayon::cyan(glue("📋 Total lines after cleaning: {length(lines)}\n")))
+  
+  # More flexible separator detection - look for lines with multiple dashes and pipes
+  separator_patterns <- c(
+    "^\\|[\\s\\-\\|]+\\|$",           # Standard markdown separator
+    "^[\\|\\s]*[-]+[\\|\\s\\-]*$",   # Looser separator pattern
+    "^\\|.*[-]{2,}.*\\|$"            # At least 2 dashes with pipes
+  )
+  
+  separator_indices <- c()
+  for (pattern in separator_patterns) {
+    separator_indices <- which(str_detect(lines, pattern))
+    if (length(separator_indices) > 0) {
+      cat(crayon::green(glue("✅ Found separator with pattern: {pattern}\n")))
+      break
+    }
+  }
   
   if (length(separator_indices) == 0) {
+    cat(crayon::yellow("⚠️ No separator found, showing all lines:\n"))
+    iwalk(lines, ~cat(crayon::yellow(glue("  Line {.y}: {.x}\n"))))
     return(NULL)
   }
   
@@ -333,77 +375,147 @@ parse_markdown_table <- function(markdown_string) {
   header_idx <- separator_idx - 1
   
   if (header_idx < 1) {
+    cat(crayon::red("❌ Invalid header index\n"))
     return(NULL)
   }
   
-  # Extract headers
-  headers <- lines[header_idx] %>%
-    str_remove_all("^\\||\\|$") %>%
+  cat(crayon::cyan(glue("📍 Header line {header_idx}: {lines[header_idx]}\n")))
+  cat(crayon::cyan(glue("📍 Separator line {separator_idx}: {lines[separator_idx]}\n")))
+  
+  # Extract headers with more flexible parsing
+  header_line <- lines[header_idx]
+  headers <- header_line %>%
+    str_remove_all("^\\|+|\\|+$") %>%  # Remove leading/trailing pipes
     str_split_1("\\|") %>%
     str_trim() %>%
     keep(~nzchar(.x))
   
   if (length(headers) == 0) {
+    cat(crayon::red("❌ No headers found\n"))
     return(NULL)
   }
   
-  # Extract data rows
+  cat(crayon::green(glue("✅ Found {length(headers)} headers: {paste(headers, collapse = ', ')}\n")))
+  
+  # Extract data rows - be more flexible about what constitutes a data row
   data_lines <- lines[(separator_idx + 1):length(lines)] %>%
-    keep(~str_detect(.x, "^\\|.*\\|$"))
+    keep(~str_detect(.x, "\\|")) %>%  # Any line with at least one pipe
+    keep(~!str_detect(.x, "^\\|[\\s\\-\\|]+\\|$"))  # But not separator lines
   
   if (length(data_lines) == 0) {
+    cat(crayon::yellow("⚠️ No data lines found after separator\n"))
     return(NULL)
   }
   
+  cat(crayon::green(glue("✅ Found {length(data_lines)} data lines\n")))
+  
+  # Show first few data lines for debugging
+  cat(crayon::cyan("📄 First few data lines:\n"))
+  walk(head(data_lines, 3), ~cat(crayon::cyan(paste("  ", .x, "\n"))))
+  
   tryCatch({
-    # Parse each row
+    # Parse each row with more robust error handling
     parsed_data <- data_lines %>%
       map(~{
         cells <- .x %>%
-          str_remove_all("^\\||\\|$") %>%
+          str_remove_all("^\\|+|\\|+$") %>%  # Remove leading/trailing pipes
           str_split_1("\\|") %>%
-          str_trim() %>%
-          keep(~nzchar(.x))
+          str_trim()
         
-        if (length(cells) == length(headers)) {
-          return(cells)
-        } else {
-          return(NULL)
+        # Filter out completely empty cells
+        cells <- cells[nzchar(cells)]
+        
+        # Handle cases where there are missing cells by padding with NA
+        if (length(cells) < length(headers)) {
+          cells <- c(cells, rep(NA_character_, length(headers) - length(cells)))
+        } else if (length(cells) > length(headers)) {
+          # If too many cells, take only the first n
+          cells <- cells[1:length(headers)]
         }
+        
+        return(cells)
       }) %>%
-      discard(is.null)
+      # Remove any NULL results
+      discard(is.null) %>%
+      # Filter out rows that don't have enough data
+      keep(~length(.x) >= length(headers))
     
     if (length(parsed_data) == 0) {
+      cat(crayon::yellow("⚠️ No valid data rows after parsing\n"))
       return(NULL)
     }
+    
+    cat(crayon::green(glue("✅ Successfully parsed {length(parsed_data)} data rows\n")))
     
     # Create dataframe
     df <- map_dfr(parsed_data, ~set_names(.x, headers))
     
-    # Find rate column and convert
-    rate_col <- names(df) %>% str_subset("(?i)rate.*%|expected.*rate") %>% first()
+    cat(crayon::green(glue("✅ Created dataframe with {nrow(df)} rows and {ncol(df)} columns\n")))
     
-    if (!is.null(rate_col)) {
+    # Find rate column and convert - be more flexible with column names
+    rate_cols <- names(df) %>% 
+      str_subset("(?i)rate.*%?|expected.*rate|new.*expected.*rate")
+    
+    cat(crayon::cyan(glue("🔍 Potential rate columns: {paste(rate_cols, collapse = ', ')}\n")))
+    
+    rate_col <- rate_cols[1]  # Take first match
+    
+    if (!is.null(rate_col) && !is.na(rate_col)) {
+      cat(crayon::green(glue("✅ Using rate column: {rate_col}\n")))
       df <- df %>%
-        mutate(rate = as.numeric(.data[[rate_col]])) %>%
+        mutate(
+          rate = as.numeric(str_remove_all(.data[[rate_col]], "[^0-9.-]"))
+        ) %>%
         select(-all_of(rate_col))
+    } else {
+      cat(crayon::yellow("⚠️ No rate column found\n"))
     }
     
-    # Standardize column names
+    # Find confidence column if it exists
+    confidence_cols <- names(df) %>% 
+      str_subset("(?i)confidence")
+    
+    confidence_col <- confidence_cols[1]
+    
+    if (!is.null(confidence_col) && !is.na(confidence_col)) {
+      cat(crayon::green(glue("✅ Using confidence column: {confidence_col}\n")))
+      df <- df %>%
+        mutate(
+          confidence_numeric = as.numeric(str_remove_all(.data[[confidence_col]], "[^0-9.-]"))
+        ) %>%
+        select(-all_of(confidence_col)) %>%
+        rename(confidence = confidence_numeric)
+    }
+    
+    # Standardize column names more robustly
     df <- df %>%
       rename_with(~case_when(
         str_detect(.x, "(?i)tenor") ~ "tenor",
-        str_detect(.x, "(?i)trader.*id|id") ~ "trader_id",
+        str_detect(.x, "(?i)trader.*id|^id$") ~ "trader_id",
         str_detect(.x, "(?i)direction") ~ "direction", 
-        str_detect(.x, "(?i)confidence") ~ "confidence",
+        str_detect(.x, "(?i)date") ~ "date",
         TRUE ~ .x
       )) %>%
-      filter(if("tenor" %in% names(.)) tenor %in% TARGET_TENORS else TRUE)
+      # Standardize tenor values
+      mutate(
+        tenor = case_when(
+          str_detect(toupper(tenor), "3M") ~ "3M",
+          str_detect(toupper(tenor), "2Y") ~ "2Y", 
+          str_detect(toupper(tenor), "10Y") ~ "10Y",
+          TRUE ~ toupper(tenor)
+        )
+      ) %>%
+      # Filter for valid tenors if TARGET_TENORS is defined
+      {if(exists("TARGET_TENORS")) filter(., tenor %in% TARGET_TENORS) else .}
+    
+    cat(crayon::green(glue("✅ Final dataframe: {nrow(df)} rows, columns: {paste(names(df), collapse = ', ')}\n")))
     
     return(df)
     
   }, error = function(e) {
-    cat(crayon::red(glue("Parse error: {e$message}\n")))
+    cat(crayon::red(glue("❌ Parse error: {e$message}\n")))
+    cat(crayon::red("Stack trace:\n"))
+    traceback()
     return(NULL)
   })
 }
@@ -411,22 +523,31 @@ parse_markdown_table <- function(markdown_string) {
 parse_single_response <- function(model_name, conference_date) {
   raw_file <- file.path(RAW_RESPONSES_DIR, glue("{model_name}_{conference_date}_raw.rds"))
   
+  cat(crayon::cyan(glue("🔍 Parsing {model_name} {conference_date}\n")))
+  
   if (!file.exists(raw_file)) {
-    cat(crayon::red(glue("❌ Raw file not found: {model_name} {conference_date}\n")))
+    cat(crayon::red(glue("❌ Raw file not found: {raw_file}\n")))
     return(NULL)
   }
   
   # Load raw response
   raw_response <- tryCatch({
-    readRDS(raw_file)
+    response <- readRDS(raw_file)
+    cat(crayon::green(glue("✅ Loaded raw response, type: {class(response)}, length: {length(response)}\n")))
+    response
   }, error = function(e) {
     cat(crayon::red(glue("❌ Error reading raw file {model_name} {conference_date}: {e$message}\n")))
     return(NULL)
   })
   
   if (is.null(raw_response)) {
+    cat(crayon::red("❌ Raw response is NULL\n"))
     return(NULL)
   }
+  
+  # Debug: show first few characters of raw response
+  response_preview <- substr(paste(raw_response, collapse = " "), 1, 200)
+  cat(crayon::cyan(glue("📄 Response preview: {response_preview}...\n")))
   
   # Parse the response
   parsed_df <- parse_markdown_table(raw_response)
@@ -436,12 +557,45 @@ parse_single_response <- function(model_name, conference_date) {
     return(NULL)
   }
   
-  # Add metadata
+  # Add metadata and ensure consistent column structure
   result <- parsed_df %>%
     mutate(
-      conference_date = conference_date,
-      model_name = model_name
-    )
+      conference_date = as.character(conference_date),
+      model_name = model_name,
+      # Add date column if missing (use conference_date)
+      date = if("date" %in% names(.)) as.character(date) else as.character(conference_date),
+      # Ensure trader_id is consistent - handle after column renaming
+      id = if("trader_id" %in% names(.)) trader_id else paste0("T", str_pad(row_number(), 3, pad = "0"))
+    ) %>%
+    # Ensure required columns exist
+    {
+      df_temp <- .
+      required_cols <- c("date", "id", "tenor", "direction", "rate")
+      missing_cols <- setdiff(required_cols, names(df_temp))
+      
+      if (length(missing_cols) > 0) {
+        cat(crayon::yellow(glue("⚠️ Missing required columns: {paste(missing_cols, collapse = ', ')}\n")))
+        for (col in missing_cols) {
+          df_temp[[col]] <- NA
+        }
+      }
+      df_temp
+    } %>%
+    # Standardize final column names to match your existing workflow
+    select(
+      date,
+      id,
+      tenor,
+      direction,
+      rate,
+      any_of("confidence"),  # Use any_of() for optional columns
+      conference_date,
+      model_name
+    ) %>%
+    # Remove confidence column if it's all NA
+    {if("confidence" %in% names(.) && all(is.na(.$confidence))) select(., -confidence) else .} %>%
+    # Remove any rows with completely missing essential data
+    filter(!is.na(tenor), !is.na(rate), !is.na(direction))
   
   cat(crayon::green(glue("✅ Parsed {model_name} {conference_date}: {nrow(result)} rows\n")))
   
@@ -451,16 +605,27 @@ parse_single_response <- function(model_name, conference_date) {
 parse_all_responses <- function(transcript_data, models = c("chatgpt", "claude")) {
   cat(crayon::blue("🔍 Parsing all raw responses...\n"))
   
+  # Ensure TARGET_TENORS is defined for filtering
+  if (!exists("TARGET_TENORS")) {
+    TARGET_TENORS <<- c("3M", "2Y", "10Y")
+    cat(crayon::yellow("⚠️ TARGET_TENORS not defined, using default: 3M, 2Y, 10Y\n"))
+  }
+  
   # Get all combinations that should exist
   parse_grid <- expand_grid(
     model_name = models,
     conference_date = as.character(transcript_data$date)
   )
   
-  # Parse each response
+  cat(crayon::blue(glue("📋 Attempting to parse {nrow(parse_grid)} model-date combinations\n")))
+  
+  # Parse each response with detailed progress
   parsed_results <- parse_grid %>%
     pmap(function(model_name, conference_date) {
-      parse_single_response(model_name, conference_date)
+      cat(crayon::magenta(glue("\n--- Parsing {model_name} {conference_date} ---\n")))
+      result <- parse_single_response(model_name, conference_date)
+      cat(crayon::magenta("--- End parsing ---\n\n"))
+      return(result)
     }) %>%
     discard(is.null)
   
@@ -472,7 +637,30 @@ parse_all_responses <- function(transcript_data, models = c("chatgpt", "claude")
   # Combine all results
   combined_results <- bind_rows(parsed_results)
   
-  cat(crayon::green(glue("✅ Parsing complete: {nrow(combined_results)} total rows from {length(parsed_results)} responses\n")))
+  # Data quality summary
+  cat(crayon::blue("\n📊 Parsing Summary:\n"))
+  cat(crayon::green(glue("✅ Successfully parsed: {length(parsed_results)}/{nrow(parse_grid)} responses\n")))
+  cat(crayon::green(glue("📈 Total observations: {nrow(combined_results)} rows\n")))
+  
+  # Summary by model
+  model_summary <- combined_results %>%
+    count(model_name, name = "observations") %>%
+    arrange(desc(observations))
+  
+  cat(crayon::blue("📊 Observations by model:\n"))
+  walk2(model_summary$model_name, model_summary$observations, 
+        ~cat(crayon::green(glue("  {.x}: {.y} observations\n"))))
+  
+  # Summary by tenor
+  if ("tenor" %in% names(combined_results)) {
+    tenor_summary <- combined_results %>%
+      count(tenor, name = "observations") %>%
+      arrange(desc(observations))
+    
+    cat(crayon::blue("📊 Observations by tenor:\n"))
+    walk2(tenor_summary$tenor, tenor_summary$observations,
+          ~cat(crayon::green(glue("  {.x}: {.y} observations\n"))))
+  }
   
   return(combined_results)
 }
@@ -622,7 +810,7 @@ data <- step1_load_data()
 call_results2 <- step2_call_llms(data$transcripts, models = c('claude'), limit_conferences = NULL)
   
   cat("# Step 3: Parse responses\n")
-  cat("parsed <- step3_parse_responses(data$transcripts, models = c('chatgpt', 'claude'))\n\n")
+parsed <- step3_parse_responses(data$transcripts, models = c('chatgpt', 'claude'))
   
   cat("# Step 4: Analyze\n")
   cat("analysis <- step4_analyze_results(parsed, data$gemini, data$market)\n\n")
