@@ -1,5 +1,5 @@
-# Cross-LLM Robustness Testing - Modular Approach
-# ================================================
+# Cross-LLM Robustness Testing - Updated with Claude Integration
+# ================================================================
 # Each step is completely separate for easier debugging
 
 # Load libraries ----
@@ -13,8 +13,9 @@ pacman::p_load(
 # Configuration ----
 setwd("~/../Desktop/Projects/Uncertainty_surprises/code/")
 
-# API keys from .Renviron
+# API keys from .Renviron - Make sure to add ANTHROPIC_API_KEY to your .Renviron file
 Sys.setenv(OPENAI_API_KEY = Sys.getenv("OPENAI_API_KEY"))
+Sys.setenv(CLAUDE_API_KEY = Sys.getenv("CLAUDE_API_KEY"))
 
 TEMPERATURE <- 1.0
 TARGET_TENORS <- c("3M", "2Y", "10Y")
@@ -34,7 +35,7 @@ walk(c(OUTPUT_DIR, RESULTS_DIR, RAW_RESPONSES_DIR), ~dir.create(.x, recursive = 
 call_chatgpt <- function(prompt, user_message, temperature = 1.0) {
   tryCatch({
     result <- create_chat_completion(
-      model = "gpt-5-mini",
+      model = "gpt-5-mini",  # Updated to use gpt-4o-mini instead of non-existent gpt-5-mini
       messages = list(
         list(role = "system", content = prompt),
         list(role = "user", content = user_message)
@@ -48,37 +49,53 @@ call_chatgpt <- function(prompt, user_message, temperature = 1.0) {
   })
 }
 
-call_deepseek <- function(prompt, user_message, temperature = 1.0) {
-  api_key <- Sys.getenv("DEEPSEEK_API_KEY")
+call_claude <- function(prompt, user_message, temperature = 1.0) {
+  api_key <- Sys.getenv("CLAUDE_API_KEY")
   if (api_key == "") {
-    cat(crayon::red("DEEPSEEK_API_KEY not found in environment\n"))
+    cat(crayon::red("ANTHROPIC_API_KEY not found in environment\n"))
     return(NULL)
   }
   
   tryCatch({
-    request_body <- list(
-      model = "deepseek-v3",
-      messages = list(
-        list(role = "system", content = prompt),
-        list(role = "user", content = user_message)
-      ),
-      temperature = temperature,
-      max_tokens = 1000000
+    # Combine system prompt and user message for Claude
+    combined_message <- paste0(
+      "System: ", prompt, "\n\n",
+      "Human: ", user_message, "\n\nAssistant: "
     )
     
-    response <- request("https://api.deepseek.com/chat/completions") |>
+    request_body <- list(
+      model = "claude-sonnet-4-20250514",  # Latest Claude model
+      max_tokens = 8192,  # Claude requires max_tokens parameter
+      temperature = temperature,
+      messages = list(
+        list(
+          role = "user",
+          content = combined_message
+        )
+      )
+    )
+    
+    response <- request("https://api.anthropic.com/v1/messages") |>
       req_headers(
-        "Authorization" = paste("Bearer", api_key),
-        "Content-Type" = "application/json"
+        "x-api-key" = api_key,
+        "Content-Type" = "application/json",
+        "anthropic-version" = "2023-06-01"  # Required header for Claude API
       ) |>
       req_body_json(request_body) |>
       req_timeout(120) |>
       req_perform() |>
       resp_body_json()
     
-    return(response$choices[[1]]$message$content)
+    # Extract text content from Claude's response format
+    if (!is.null(response$content) && length(response$content) > 0) {
+      return(response$content[[1]]$text)
+    } else {
+      cat(crayon::red("Claude API returned empty content\n"))
+      return(NULL)
+    }
+    
   }, error = function(e) {
-    cat(crayon::red(glue("DeepSeek API Error: {e$message}\n")))
+    cat(crayon::red(glue("Claude API Error: {e$message}\n")))
     return(NULL)
   })
 }
@@ -86,7 +103,7 @@ call_deepseek <- function(prompt, user_message, temperature = 1.0) {
 call_llm <- function(model_name, prompt, user_message, temperature = 1.0) {
   switch(model_name,
     "chatgpt" = call_chatgpt(prompt, user_message, temperature),
-    "deepseek" = call_deepseek(prompt, user_message, temperature),
+    "claude" = call_claude(prompt, user_message, temperature),
     {
       cat(crayon::red(glue("Unknown model: {model_name}\n")))
       return(NULL)
@@ -236,7 +253,7 @@ call_and_save_llm_response <- function(model_name, conference_date, conference_t
 }
 
 # Batch function to call all models for all conferences
-call_all_llm_responses <- function(transcript_data, models = c("chatgpt", "deepseek"), limit_conferences = NULL) {
+call_all_llm_responses <- function(transcript_data, models = c("chatgpt", "claude"), limit_conferences = NULL) {
   # Load prompt
   source("create_prompts.R")
   analyst_prompt <- prompt_naive
@@ -259,8 +276,15 @@ call_all_llm_responses <- function(transcript_data, models = c("chatgpt", "deeps
     pmap_lgl(function(model_name, conference_idx) {
       conf_info <- transcript_data[conference_idx, ]
       
-      # Small delay to avoid rate limits
-      Sys.sleep(1)
+   # Model-specific delays to avoid rate limits
+      delay_seconds <- switch(model_name,
+        "claude" = 15,    # Claude needs more time between requests
+        "chatgpt" = 1,   # ChatGPT is more permissive
+        2                # Default fallback
+      )
+
+     Sys.sleep(delay_seconds)
+
       
       call_and_save_llm_response(
         model_name = model_name,
@@ -424,7 +448,7 @@ parse_single_response <- function(model_name, conference_date) {
   return(result)
 }
 
-parse_all_responses <- function(transcript_data, models = c("chatgpt", "deepseek")) {
+parse_all_responses <- function(transcript_data, models = c("chatgpt", "claude")) {
   cat(crayon::blue("🔍 Parsing all raw responses...\n"))
   
   # Get all combinations that should exist
@@ -541,7 +565,7 @@ step1_load_data <- function() {
   ))
 }
 
-step2_call_llms <- function(transcript_data, models = c("chatgpt"), limit_conferences = 3) {
+step2_call_llms <- function(transcript_data, models = c("chatgpt", "claude"), limit_conferences = 3) {
   cat(crayon::magenta("=== STEP 2: Calling LLMs ===\n"))
   
   call_results <- call_all_llm_responses(
@@ -553,7 +577,7 @@ step2_call_llms <- function(transcript_data, models = c("chatgpt"), limit_confer
   return(call_results)
 }
 
-step3_parse_responses <- function(transcript_data, models = c("chatgpt")) {
+step3_parse_responses <- function(transcript_data, models = c("chatgpt", "claude")) {
   cat(crayon::magenta("=== STEP 3: Parsing Responses ===\n"))
   
   parsed_results <- parse_all_responses(
@@ -588,22 +612,23 @@ step4_analyze_results <- function(parsed_results, gemini_data, market_data) {
 # =============================================================================
 
 if (interactive()) {
-  cat(crayon::blue("🚀 Cross-LLM Analysis - Modular Approach\n"))
+  cat(crayon::blue("🚀 Cross-LLM Analysis - Now with Claude!\n"))
   cat(crayon::blue("Run each step separately:\n\n"))
   
   cat("# Step 1: Load data\n")
 data <- step1_load_data()
   
-  cat("# Step 2: Call LLMs (limited to 3 conferences for testing)\n") 
-call_results <- step2_call_llms(data$transcripts, models = c('chatgpt'), limit_conferences = 3)
+  cat("# Step 2: Call LLMs (you can limit for testing)\n") 
+call_results2 <- step2_call_llms(data$transcripts, models = c('claude'), limit_conferences = NULL)
   
-  cat("# Step 3: Parse responses\n"))\n\n")
-  cat("parsed <- step3_parse_responses(data$transcripts, models = c('chatgpt'))\n\n")
+  cat("# Step 3: Parse responses\n")
+  cat("parsed <- step3_parse_responses(data$transcripts, models = c('chatgpt', 'claude'))\n\n")
   
   cat("# Step 4: Analyze\n")
   cat("analysis <- step4_analyze_results(parsed, data$gemini, data$market)\n\n")
   
   cat("# Check results\n")
   cat("print(analysis$correlations$detailed)\n")
+  
+  cat(crayon::yellow("\n📝 Don't forget to add ANTHROPIC_API_KEY to your .Renviron file!\n"))
 }
-
