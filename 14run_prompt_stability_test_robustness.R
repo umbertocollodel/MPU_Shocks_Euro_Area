@@ -657,3 +657,60 @@ if(overall_avg >= 0.7) {
   cat("⚠️  NEEDS IMPROVEMENT: Consider refining your approach\n")
 }
 
+# Table: all prompt variations
+
+
+library(xtable)
+
+# Create data ----
+prompt_variations <- data.frame(
+  variation_id = 1:15,
+  variation_type = c(rep("Minor", 10), rep("Medium", 5)),
+  key_changes = c(
+    "Individual traders → distinct market participants",
+    "Trading decision → investment choice", 
+    "Risk aversion order: High/Medium/Low → Low/Medium/High",
+    "Interpretation of conference → analysis of meeting",
+    "Markdown table → structured table format",
+    "Confidence score → certainty level",
+    "Monetary policy decisions → interest rate policies", 
+    "Maximize profit → optimize returns",
+    "Reordered behavioral biases (Anchoring first)",
+    "Press conference → policy meeting throughout",
+    "Individual traders → heterogeneous market agents; formulates investment decision",
+    "Interpret → process through behavioral lenses; distinct psychological profiles",
+    "Risk Aversion: High/Medium/Low → Risk Tolerance: Conservative/Moderate/Aggressive",
+    "Monetary policy decisions → policy signals, economic outlook, forward guidance",
+    "Trading action → position-taking behavior; Rate Trajectory \\& Target Rate Level headers"
+  ),
+  prompt_section = c(
+    "Context", "Context", "Trader Characteristics", "Context", "Guidelines",
+    "Task", "Context", "Context", "Trader Characteristics", "Multiple sections",
+    "Context", "Context", "Trader Characteristics \\& Context", 
+    "Context \\& Characteristics", "Task \\& Output"
+  )
+)
+
+# Create LaTeX table ----
+create_latex_table <- function(df) {
+  table_data <- df %>%
+    rename("Variation" = variation_id, "Type" = variation_type, 
+           "Key Changes" = key_changes, "Modified Section" = prompt_section)
+  
+  xt <- xtable(table_data, 
+               caption = "Prompt Variations: Systematic Modifications to Baseline Prompt",
+               label = "tab:prompt_variations")
+  
+  align(xt) <- c("l", "c", "c", "p{7cm}", "p{3cm}")
+  
+  print(xt, type = "latex", include.rownames = FALSE,
+        size = "footnotesize", table.placement = "htbp",
+        hline.after = c(-1, 0, 10, nrow(table_data)),
+        sanitize.text.function = function(x) x,
+        print.results = FALSE)
+}
+
+# Generate and save table ----
+latex_output <- create_latex_table(prompt_variations)
+writeLines(latex_output, "prompt_variations_table.tex")
+cat(latex_output)
