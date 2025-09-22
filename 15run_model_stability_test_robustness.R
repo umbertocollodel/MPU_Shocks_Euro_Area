@@ -828,21 +828,27 @@ print(analysis$correlations$detailed)
 if (!exists("analysis") || is.null(analysis$disagreement)) {
   stop("No disagreement results available. Please run step4_analyze_results first.")
 }
+# --- Prepare data for ICC analysis with per-model standardization ---
 
-# Prepare data for ICC analysis
 model_stability_data <- analysis$disagreement %>%
   # Ensure we have at least 2 models for comparison
   group_by(conference_date, tenor) %>%
   filter(n() >= 2) %>%
   ungroup() %>%
-  # Use predicted_sd as the measure of disagreement
-  select(conference_date, tenor, model_name, std_rate = predicted_sd) %>%
-  filter(!is.na(std_rate), std_rate > 0)
+  # Keep raw predicted_sd
+  select(conference_date, tenor, model_name, predicted_sd) %>%
+  filter(!is.na(predicted_sd), predicted_sd > 0) %>%
+  # Standardize within each model (mean 0, sd 1)
+  group_by(model_name) %>%
+  mutate(std_rate = as.numeric(scale(predicted_sd))) %>%
+  ungroup()
 
 cat("=== MODEL STABILITY DATA SUMMARY ===\n")
 cat("Total observations:", nrow(model_stability_data), "\n")
 cat("Models available:", paste(unique(model_stability_data$model_name), collapse = ", "), "\n")
 cat("Date range:", min(model_stability_data$conference_date), "to", max(model_stability_data$conference_date), "\n")
+
+# --- Data coverage and ICC analysis ---
 
 # Check data coverage
 coverage_summary <- model_stability_data %>%
@@ -854,12 +860,12 @@ print(coverage_summary)
 
 # Simple ICC calculation function (adapted for model comparison)
 calculate_model_icc <- function(data) {
-  # Calculate between-conference variance (signal)
+  # Between-conference variance (signal)
   conference_means <- data %>%
     group_by(conference_date) %>%
     summarise(conf_mean = mean(std_rate, na.rm = TRUE), .groups = "drop")
   
-  # Calculate within-conference variance across models (noise)
+  # Within-conference variance across models (noise)
   within_variances <- data %>%
     group_by(conference_date) %>%
     summarise(within_var = var(std_rate, na.rm = TRUE), .groups = "drop") %>%
@@ -868,10 +874,9 @@ calculate_model_icc <- function(data) {
   if (nrow(within_variances) == 0) return(NA)
   
   var_between <- var(conference_means$conf_mean, na.rm = TRUE)
-  var_within <- mean(within_variances$within_var, na.rm = TRUE)
+  var_within  <- mean(within_variances$within_var, na.rm = TRUE)
   
   icc <- var_between / (var_between + var_within)
-  
   return(round(icc, 3))
 }
 
@@ -880,18 +885,17 @@ icc_by_tenor <- model_stability_data %>%
   group_by(tenor) %>%
   group_split() %>%
   map_dfr(function(data) {
-    if(nrow(data) < 15) return(NULL)  # Skip if too few observations
+    if (nrow(data) < 15) return(NULL)  # Skip if too few observations
     
-    # Check if we have multiple models
     n_models <- length(unique(data$model_name))
-    if(n_models < 2) return(NULL)
+    if (n_models < 2) return(NULL)
     
     tibble(
-      tenor = data$tenor[1],
-      icc = calculate_model_icc(data),
-      n_obs = nrow(data),
-      n_models = n_models,
-      n_conferences = length(unique(data$conference_date))
+      tenor          = data$tenor[1],
+      icc            = calculate_model_icc(data),
+      n_obs          = nrow(data),
+      n_models       = n_models,
+      n_conferences  = length(unique(data$conference_date))
     )
   }) %>%
   filter(!is.na(icc))
@@ -904,6 +908,7 @@ cat("\n=== MODEL STABILITY ICC RESULTS ===\n")
 cat("Overall ICC (all tenors):", overall_icc, "\n\n")
 
 print(icc_by_tenor %>% arrange(desc(icc)))
+
 
 # Calculate pairwise correlations between models for additional insight
 pairwise_correlations <- model_stability_data %>%
@@ -1085,3 +1090,46 @@ if(exists("p2")) {
 
 ggsave("../output/cross_llm_results/model_disagreement_timeseries.png", 
        p3, width = 12, height = 6, dpi = 300, bg = "white")
+
+
+# =============================================================================
+# COMBINED ICC + ENSEMBLE SIDE-BY-SIDE BAR PLOT
+# =============================================================================
+
+# Step 1: Prepare combined data
+combined_plot_data <- bind_rows(
+  icc_by_tenor %>% select(tenor, value = icc) %>% mutate(metric = "ICC"),
+  ensemble_corr %>% select(tenor, value = spearman_corr) %>% mutate(metric = "Ensemble")
+) %>%
+  mutate(
+    tenor = factor(tenor, levels = c("3M", "2Y", "10Y")),
+    metric = factor(metric, levels = c("ICC", "Ensemble"))
+  )
+
+# Step 2: Plot side-by-side bars
+p_combined <- ggplot(combined_plot_data, aes(x = tenor, y = value, fill = metric)) +
+  geom_col(position = position_dodge(width = 0.7), width = 0.6, alpha = 0.8) +
+  geom_text(aes(label = sprintf("%.3f", value)), 
+            position = position_dodge(width = 0.7), vjust = -0.3, size = 5) +
+  scale_fill_manual(values = c("ICC" = "#4575b4", "Ensemble" = "#d73027")) +
+  labs(
+    title = "Model Agreement and Ensemble Predictive Power",
+    x = "Tenor",
+    y = "Value",
+    fill = ""
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    axis.text = element_text(size = 14),
+    axis.title = element_text(size = 16),
+    legend.position = "bottom"
+  )
+
+# Step 3: Print plot
+print(p_combined)
+
+# Step 4: Save plot
+ggsave("../output/cross_llm_results/model_agreement_ensemble_combined.png", 
+       p_combined, width = 10, height = 6, dpi = 300, bg = "white")
+
