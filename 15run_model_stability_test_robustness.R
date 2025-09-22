@@ -975,18 +975,18 @@ biggest_differences <- model_stability_data %>%
     date_label = format(conference_date, "%Y-%m")  # Format as YYYY-MM for readability
   )
 
+# --- Plot 1: Model disagreement vs average uncertainty ---
 p1 <- ggplot(biggest_differences, aes(x = avg_val, y = difference)) +
   geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "grey50", size = 0.8) +
-  geom_text(aes(label = date_label, 
-                color = factor(tenor, levels = c("3M", "2Y", "10Y"))),
+  geom_text(aes(label = date_label, color = factor(tenor, levels = c("3M", "2Y", "10Y"))),
             size = 3, alpha = 0.7, check_overlap = TRUE) +
-  scale_color_manual(values = color_palette, name = "Tenor") +
+  scale_color_manual(values = c("3M" = "#91bfdb", "2Y" = "#4575b4", "10Y" = "#d73027"), name = "Tenor") +
   facet_wrap(~tenor) +
   labs(
-    title = "Model Agreement vs Average Uncertainty",
-    x = "Average Uncertainty Level",
+    title = "Model Disagreement vs Average Uncertainty",
+    x = "Average Uncertainty",
     y = "Disagreement Between Models",
-    caption = "Labels show conference dates (YYYY-MM)"
+    caption = "Conference dates shown (YYYY-MM)"
   ) +
   theme_minimal(base_size = 12) +
   theme(
@@ -995,128 +995,57 @@ p1 <- ggplot(biggest_differences, aes(x = avg_val, y = difference)) +
     plot.caption = element_text(size = 10, hjust = 0, color = "grey50")
   )
 
-# Plot 2: Model correlations with market data by tenor
-if(exists("analysis") && !is.null(analysis$correlations$detailed)) {
-  market_corr_data <- analysis$correlations$detailed %>%
-    mutate(tenor = factor(tenor, levels = c("3M", "2Y", "10Y")))
-  
-  p2 <- ggplot(market_corr_data, aes(x = model_name, y = spearman_correlation, fill = model_name)) +
-    geom_col(alpha = 0.8, width = 0.6) +
-    geom_text(aes(label = sprintf("%.3f", spearman_correlation)), 
-              vjust = -0.3, size = 6) +
-    facet_wrap(~tenor, nrow = 1) +
-    scale_fill_manual(values = model_colors, guide = "none") +
-    labs(
-      title = "",
-      x = "",
-      y = "Spearman Correlation"
-    ) +
+# --- Plot 2: Individual model correlations with market ---
+p2 <- ggplot(market_corr_data, aes(x = model_name, y = spearman_correlation, fill = model_name)) +
+  geom_col(alpha = 0.8, width = 0.6) +
+  geom_text(aes(label = sprintf("%.3f", spearman_correlation)), vjust = -0.3, size = 6) +
+  facet_wrap(~tenor, nrow = 1) +
+  scale_fill_manual(values = c("chatgpt" = "#91bfdb", "claude" = "#4575b4", "gemini" = "#d73027"), guide = "none") +
+  labs(
+    title = "Individual Model Correlations with Market Volatility",
+    x = "Model",
+    y = "Spearman Correlation"
+  ) +
   theme_minimal(base_family = "Segoe UI") +
   theme(
-  plot.title = element_text(size = 16, face = "bold"),
-  strip.text = element_text(size = 16, face = "bold"),
-    plot.subtitle = element_text(size = 12, color = "grey40"),
+    plot.title = element_text(size = 16, face = "bold"),
+    strip.text = element_text(size = 16, face = "bold"),
     axis.text = element_text(size = 16),
     axis.title = element_text(size = 18),
-    legend.position = "bottom",
-    legend.title = element_text(size = 12, face = "bold")
+    legend.position = "bottom"
   )
-} else {
-  p2 <- ggplot(data.frame(x = 1, y = 1, label = "Market correlation data not available")) +
-    geom_text(aes(x, y, label = label), size = 5) +
-    theme_void()
-}
-
-# Plot 3: Clean correlation matrix between models
-if(nrow(pairwise_correlations) > 0) {
-  # Create a clean correlation matrix
-  corr_clean <- pairwise_correlations %>%
-    select(tenor, model1, model2, correlation) %>%
-    # Create symmetric matrix
-    bind_rows(
-      pairwise_correlations %>% 
-        select(tenor, model1 = model2, model2 = model1, correlation)
-    ) %>%
-    # Add diagonal (self-correlation = 1)
-    bind_rows(
-      expand_grid(
-        tenor = unique(pairwise_correlations$tenor),
-        model1 = unique(c(pairwise_correlations$model1, pairwise_correlations$model2))
-      ) %>%
-      mutate(model2 = model1, correlation = 1.0)
-    ) %>%
-    distinct() %>%
-    arrange(tenor, model1, model2)
-  
-  p3 <- ggplot(corr_clean, aes(x = model1, y = model2, fill = correlation)) +
-    geom_tile(color = "white", size = 1) +
-    geom_text(aes(label = sprintf("%.2f", correlation)), 
-              color = "white", fontface = "bold", size = 4) +
-    facet_wrap(~factor(tenor, levels = c("3M", "2Y", "10Y")), nrow = 1) +
-    scale_fill_gradient2(low = "#d73027", mid = "#ffffbf", high = "#4575b4", 
-                        midpoint = 0.5, limits = c(0, 1),
-                        name = "Correlation") +
-    labs(
-      title = "Inter-Model Correlations by Tenor",
-      x = "Model",
-      y = "Model"
-    ) +
-    theme_minimal(base_size = 12) +
-    theme(
-      plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
-      axis.text.x = element_text(angle = 45, hjust = 1),
-      strip.text = element_text(face = "bold"),
-      legend.position = "bottom"
-    )
-} else {
-  p3 <- ggplot(data.frame(x = 1, y = 1, label = "Pairwise correlation data not available")) +
-    geom_text(aes(x, y, label = label), size = 5) +
-    theme_void()
-}
-
-# Print plots
-print(p1)
-if(exists("p2")) print(p2)
-print(p3)
-
-# Save plots
-ggsave("../output/cross_llm_results/model_stability_icc.png", 
-       p1, width = 10, height = 6, dpi = 300, bg = "white")
-
-if(exists("p2")) {
-  ggsave("../output/cross_llm_results/model_agreement_heatmap.pdf", 
-         p2, width = 12, height = 8, dpi = 300, bg = "white")
-}
-
-ggsave("../output/cross_llm_results/model_disagreement_timeseries.png", 
-       p3, width = 12, height = 6, dpi = 300, bg = "white")
-
 
 # =============================================================================
-# COMBINED ICC + ENSEMBLE SIDE-BY-SIDE BAR PLOT
+# ICC + Ensemble Side-by-Side Plot
 # =============================================================================
 
-# Step 1: Prepare combined data
-combined_plot_data <- bind_rows(
-  icc_by_tenor %>% select(tenor, value = icc) %>% mutate(metric = "ICC"),
-  ensemble_corr %>% select(tenor, value = spearman_corr) %>% mutate(metric = "Ensemble")
+# Prepare combined data
+plot_data <- bind_rows(
+  icc_by_tenor %>% select(tenor, value = icc) %>% mutate(metric_plot = "ICC"),
+  ensemble_corr %>% select(tenor, value = spearman_corr) %>% mutate(metric_plot = "Ensemble")
 ) %>%
   mutate(
     tenor = factor(tenor, levels = c("3M", "2Y", "10Y")),
-    metric = factor(metric, levels = c("ICC", "Ensemble"))
+    metric_plot = factor(metric_plot, levels = c("ICC", "Ensemble"))
   )
 
-# Step 2: Plot side-by-side bars
-p_combined <- ggplot(combined_plot_data, aes(x = tenor, y = value, fill = metric)) +
+# Define colors
+fill_colors <- c(
+  "ICC" = "#4575b4",        # blue
+  "Ensemble" = "#d73027"    # red
+)
+
+# Create side-by-side bar plot
+p_combined <- ggplot(plot_data, aes(x = tenor, y = value, fill = metric_plot)) +
   geom_col(position = position_dodge(width = 0.7), width = 0.6, alpha = 0.8) +
-  geom_text(aes(label = sprintf("%.3f", value)), 
+  geom_text(aes(label = sprintf("%.3f", value)),
             position = position_dodge(width = 0.7), vjust = -0.3, size = 5) +
-  scale_fill_manual(values = c("ICC" = "#4575b4", "Ensemble" = "#d73027")) +
+  scale_fill_manual(values = fill_colors) +
   labs(
-    title = "Model Agreement and Ensemble Predictive Power",
+    title = "",
     x = "Tenor",
-    y = "Value",
-    fill = ""
+    y = "ICC / Spearman Correlation",
+    fill = "Metric"
   ) +
   theme_minimal(base_size = 14) +
   theme(
@@ -1126,10 +1055,15 @@ p_combined <- ggplot(combined_plot_data, aes(x = tenor, y = value, fill = metric
     legend.position = "bottom"
   )
 
-# Step 3: Print plot
+
+
+
+# --- Print plots ---
+print(p1)
+print(p2)
 print(p_combined)
 
-# Step 4: Save plot
-ggsave("../output/cross_llm_results/model_agreement_ensemble_combined.png", 
-       p_combined, width = 10, height = 6, dpi = 300, bg = "white")
-
+# --- Save plots ---
+ggsave("../output/cross_llm_results/model_stability_icc.pdf", p1, width = 10, height = 6, dpi = 300, bg = "white")
+ggsave("../output/cross_llm_results/model_individual_correlation.pdf", p2, width = 12, height = 6, dpi = 300, bg = "white")
+ggsave("../output/cross_llm_results/model_agreement_ensemble_combined.pdf", p_combined, width = 10, height = 6, dpi = 300, bg = "white")
