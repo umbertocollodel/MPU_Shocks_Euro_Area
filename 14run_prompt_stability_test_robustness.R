@@ -532,8 +532,8 @@ color_palette <- c("3M" = "#91bfdb", "2Y" = "#4575b4", "10Y" = "#d73027")
 p1 <- ggplot(summary_variation, aes(x = reorder(variation_type, avg_icc), y = avg_icc, fill = variation_type)) +
   geom_col(width = 0.4, alpha = 0.8, show.legend = FALSE) +
   geom_text(aes(label = sprintf("%.3f", avg_icc)), 
-            hjust = -0.1, size = 4, fontface = "bold") +
-  geom_hline(yintercept = c(0.5, 0.7), linetype = "dashed", alpha = 0.6) +
+            hjust = -0.1, size = 5, fontface = "bold") +
+  geom_hline(yintercept = c(0.4,0.6, 0.75), linetype = "dashed", alpha = 0.6) +
   coord_flip() +
   scale_y_continuous(limits = c(0, max(summary_variation$avg_icc) * 1.1)) +
   scale_fill_brewer(palette = "Set2") +
@@ -555,9 +555,9 @@ p1 <- ggplot(summary_variation, aes(x = reorder(variation_type, avg_icc), y = av
 p2 <- ggplot(summary_tenor, aes(x = factor(tenor, levels = c("3M", "2Y", "10Y")), y = avg_icc, fill = tenor)) +
   geom_col(width = 0.4, alpha = 0.8, show.legend = FALSE) +
   geom_text(aes(label = sprintf("%.3f", avg_icc)), 
-            vjust = -0.5, size = 4, fontface = "bold") +
-  geom_hline(yintercept = c(0.5, 0.7), linetype = "dashed", alpha = 0.6) +
-  scale_y_continuous(limits = c(0, max(summary_tenor$avg_icc) * 1.1)) +
+            vjust = -0.5, size = 5, fontface = "bold") +
+  geom_hline(yintercept = c(0.4,0.6, 0.75), linetype = "dashed", alpha = 0.6) +
+  scale_y_continuous(limits = c(0, 0.8)) +
   scale_fill_manual(values = color_palette) +
   labs(
     title = "",
@@ -569,8 +569,8 @@ p2 <- ggplot(summary_tenor, aes(x = factor(tenor, levels = c("3M", "2Y", "10Y"))
   theme(
     plot.title = element_text(size = 16, face = "bold"),
     plot.subtitle = element_text(size = 12, color = "grey40"),
-    axis.text = element_text(size = 12),
-    axis.title = element_text(size = 14)
+    axis.text = element_text(size = 14),
+    axis.title = element_text(size = 16)
   )
 
 # Visualization 3: Grouped bar chart - Minor vs Medium variations by tenor
@@ -578,8 +578,8 @@ p3 <- ggplot(icc_results, aes(x = factor(tenor, levels = c("3M", "2Y", "10Y")), 
   geom_col(position = position_dodge(width = 0.8), width = 0.7, alpha = 0.8) +
   geom_text(aes(label = sprintf("%.3f", icc)), 
             position = position_dodge(width = 0.8), 
-            vjust = -0.3, size = 3.5, fontface = "bold") +
-  geom_hline(yintercept = c(0.5, 0.7), linetype = "dashed", alpha = 0.6, color = "grey50") +
+            vjust = -0.3, size = 5, fontface = "bold") +
+  geom_hline(yintercept = c(0.4,0.6, 0.75), linetype = "dashed", alpha = 0.6) +
   scale_y_continuous(limits = c(0, max(icc_results$icc) * 1.15)) +
   scale_fill_manual(values = c("Minor" = "#91bfdb", "Medium" = "#4575b4"), name = "Variation Type") +
   labs(
@@ -593,10 +593,10 @@ p3 <- ggplot(icc_results, aes(x = factor(tenor, levels = c("3M", "2Y", "10Y")), 
   theme(
     plot.title = element_text(size = 16, face = "bold"),
     plot.subtitle = element_text(size = 12, color = "grey40"),
-    axis.text = element_text(size = 12),
-    axis.title = element_text(size = 14),
+    axis.text = element_text(size = 14),
+    axis.title = element_text(size = 16),
     legend.position = "bottom",
-    legend.title = element_text(size = 12, face = "bold"),
+    legend.title = element_text(size = 14, face = "bold"),
     panel.grid.minor = element_blank(),
   )
 
