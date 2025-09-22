@@ -950,9 +950,9 @@ model_colors <- c("chatgpt" = "#10a37f", "claude" = "#d97706", "gemini" = "#4285
 
 # Define standard colors
 color_palette <- c("3M" = "#91bfdb", "2Y" = "#4575b4", "10Y" = "#d73027")
-model_colors <- c("chatgpt" = "#10a37f", "claude" = "#d97706", "gemini" = "#4285f4")
+model_colors <- c("chatgpt" = "#91bfdb", "claude" = "#4575b4", "gemini" = "#d73027")
 
-# Plot 1: Model disagreement scatter with 45-degree line
+# Plot 1: Model disagreement scatter with 45-degree line and dates as labels
 biggest_differences <- model_stability_data %>%
   select(conference_date, tenor, model_name, std_rate) %>%
   pivot_wider(names_from = model_name, values_from = std_rate) %>%
@@ -965,23 +965,29 @@ biggest_differences <- model_stability_data %>%
     avg_val = mean(c_across(where(is.numeric)), na.rm = TRUE)
   ) %>%
   ungroup() %>%
-  mutate(conference_date = as.Date(conference_date))
+  mutate(
+    conference_date = as.Date(conference_date),
+    date_label = format(conference_date, "%Y-%m")  # Format as YYYY-MM for readability
+  )
 
 p1 <- ggplot(biggest_differences, aes(x = avg_val, y = difference)) +
   geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "grey50", size = 0.8) +
-  geom_point(aes(color = factor(tenor, levels = c("3M", "2Y", "10Y"))), 
-             size = 2, alpha = 0.7) +
+  geom_text(aes(label = date_label, 
+                color = factor(tenor, levels = c("3M", "2Y", "10Y"))),
+            size = 3, alpha = 0.7, check_overlap = TRUE) +
   scale_color_manual(values = color_palette, name = "Tenor") +
   facet_wrap(~tenor) +
   labs(
     title = "Model Agreement vs Average Uncertainty",
     x = "Average Uncertainty Level",
-    y = "Disagreement Between Models"
+    y = "Disagreement Between Models",
+    caption = "Labels show conference dates (YYYY-MM)"
   ) +
   theme_minimal(base_size = 12) +
   theme(
     plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
-    legend.position = "bottom"
+    legend.position = "bottom",
+    plot.caption = element_text(size = 10, hjust = 0, color = "grey50")
   )
 
 # Plot 2: Model correlations with market data by tenor
@@ -992,20 +998,24 @@ if(exists("analysis") && !is.null(analysis$correlations$detailed)) {
   p2 <- ggplot(market_corr_data, aes(x = model_name, y = spearman_correlation, fill = model_name)) +
     geom_col(alpha = 0.8, width = 0.6) +
     geom_text(aes(label = sprintf("%.3f", spearman_correlation)), 
-              vjust = -0.3, size = 3) +
+              vjust = -0.3, size = 6) +
     facet_wrap(~tenor, nrow = 1) +
     scale_fill_manual(values = model_colors, guide = "none") +
     labs(
-      title = "Model Performance: Correlation with Market Data",
-      x = "Model",
+      title = "",
+      x = "",
       y = "Spearman Correlation"
     ) +
-    theme_minimal(base_size = 12) +
-    theme(
-      plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
-      axis.text.x = element_text(angle = 45, hjust = 1),
-      strip.text = element_text(face = "bold")
-    )
+  theme_minimal(base_family = "Segoe UI") +
+  theme(
+  plot.title = element_text(size = 16, face = "bold"),
+  strip.text = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12, color = "grey40"),
+    axis.text = element_text(size = 16),
+    axis.title = element_text(size = 18),
+    legend.position = "bottom",
+    legend.title = element_text(size = 12, face = "bold")
+  )
 } else {
   p2 <- ggplot(data.frame(x = 1, y = 1, label = "Market correlation data not available")) +
     geom_text(aes(x, y, label = label), size = 5) +
@@ -1069,7 +1079,7 @@ ggsave("../output/cross_llm_results/model_stability_icc.png",
        p1, width = 10, height = 6, dpi = 300, bg = "white")
 
 if(exists("p2")) {
-  ggsave("../output/cross_llm_results/model_agreement_heatmap.png", 
+  ggsave("../output/cross_llm_results/model_agreement_heatmap.pdf", 
          p2, width = 12, height = 8, dpi = 300, bg = "white")
 }
 
