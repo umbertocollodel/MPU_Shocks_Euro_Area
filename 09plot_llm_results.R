@@ -81,12 +81,14 @@ color_palette_tenors <- c("10Y" = "#d73027", "2Y" = "#4575b4", "3M" = "#91bfdb")
 #   ung()
 
 # Create the plot
-ggplot(std_df, aes(x = date, y = std_rate)) + # Removed color aesthetic from here, added to geom_line
+std_df |> 
+  mutate(tenor = factor(tenor, levels = c("3M", "2Y", "10Y"))) |> # Ensure consistent order
+  ggplot(aes(x = date, y = std_rate)) + # Removed color aesthetic from here, added to geom_line
   geom_hline(yintercept = 0, linetype = "dashed", color = "grey70", linewidth = 0.4) +
   geom_line(aes(color = tenor), linewidth = 0.8) + # Smaller linewidth for consistency
   # geom_line(aes(y = mean), size = 1.2, linetype = "dashed", color = "black") + # Removed to match second script
   geom_point(data = . %>% filter(highlight), aes(fill = tenor), shape = 21, size = 3, stroke = 1) + # Matched second script's point style
-  facet_wrap(~ tenor, nrow = 3, scales = "free_y") +
+  facet_wrap(~ tenor, nrow = 3) +
   scale_color_manual(values = color_palette_tenors, guide = "none") + # Set guide to "none" for consistency
   scale_fill_manual(values = color_palette_tenors, guide = "none") + # Use fill for highlighted points, no guide
   scale_x_date(date_breaks = "2 years", date_labels = "%Y") +
@@ -98,6 +100,7 @@ ggplot(std_df, aes(x = date, y = std_rate)) + # Removed color aesthetic from her
     # color = "OIS Tenor", # Removed as guide="none"
     caption = "Source: Author's calculations using OIS data."
   ) +
+  ylim(0,0.6) +
   theme_minimal(base_family = "Segoe UI") +
   theme(
     # legend.position = "top", # Removed as guide="none"
@@ -106,11 +109,12 @@ ggplot(std_df, aes(x = date, y = std_rate)) + # Removed color aesthetic from her
     plot.title = element_text(size = 20, face = "bold", margin = margin(b = 5)), # Matched font size
     plot.subtitle = element_text(size = 13, color = "grey30", margin = margin(b = 20)), # Matched margin
     plot.caption = element_text(hjust = 0, size = 9, color = "grey50"),
-    axis.text.x = element_text(angle = 270, hjust = 1, size = 10), # Matched size
-    axis.text.y = element_text(size = 10), # Matched size
+    axis.title = element_text(size=18), # Added margin for y-axis title
+    axis.text.x = element_text(angle = 90, hjust = 1, size = 16), # Matched size
+    axis.text.y = element_text(size = 16), # Matched size
     panel.grid.minor = element_blank(),
     panel.border = element_rect(colour = "grey80", fill = NA), # Added for consistency
-    strip.text = element_text(face = "bold", size = 12) # Matched size
+    strip.text = element_text(face = "bold", size = 14) # Matched size
   )
 
 ggsave(file.path(output_dir, "sd.pdf"),
@@ -212,7 +216,8 @@ direction_pct_df <- clean_df %>%
   ungroup() %>%
   filter(direction %in% c("Up","Down","Unchanged")) %>%
   mutate(date = as.Date(date)) |> # Ensure date is Date type for scale_x_discrete to work with labels
-  filter(!is.na(date)) # Remove rows with NA dates
+  filter(!is.na(date)) |># Remove rows with NA dates
+  mutate(tenor = factor(tenor, levels = c("3M", "2Y", "10Y"))) # Ensure consistent order
 
 # Get a subset of dates to show as breaks (e.g., every 12th unique date, format as year-month)
 date_breaks <- unique(direction_pct_df$date)[seq(1, length(unique(direction_pct_df$date)), by = 12)]
@@ -231,18 +236,20 @@ ggplot(direction_pct_df, aes(x = as.factor(date), y = percentage, fill = directi
     fill = "Predicted Direction" # Changed legend title
   ) +
   theme_minimal(base_family = "Segoe UI") +
-  theme(
+  theme(legend.title = element_text(size = 18),
+    legend.text = element_text(size = 16),
     legend.position = "top", # Consistent legend position
     plot.title.position = "plot",
     plot.title = element_text(size = 20, face = "bold", margin = margin(b = 5)),
     plot.subtitle = element_text(size = 13, color = "grey30", margin = margin(b = 20)),
     plot.caption = element_text(hjust = 0, size = 9, color = "grey50"), # Added back caption if needed
-    axis.text.x = element_text(angle = 90, vjust = 0.5, size = 9), # Match angle, vjust, size
-    axis.text.y = element_text(size = 10), # Match size
+    axis.title = element_text(size=18), # Added margin for y-axis title
+    axis.text.x = element_text(angle = 90, vjust = 0.5, size = 16), # Match angle, vjust, size
+    axis.text.y = element_text(size = 16), # Match size
     panel.grid.major.x = element_blank(), # Consistent with second script
     panel.grid.minor = element_blank(),
     panel.border = element_rect(colour = "grey80", fill = NA), # Added for consistency
-    strip.text = element_text(face = "bold", size = 12) # Match size
+    strip.text = element_text(face = "bold", size = 14) # Match size
   )
 
 # Save the plot
