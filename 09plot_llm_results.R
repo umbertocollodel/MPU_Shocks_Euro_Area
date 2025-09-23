@@ -335,21 +335,22 @@ cor_by_tenor <- combined_df %>%
 # New plot: Bar plot of mean correlation by tenor
 ggplot(cor_by_tenor, aes(x = tenor, y = mean_corr, fill = tenor)) +
   geom_col(width=0.4,show.legend = FALSE) + # Bar plot, no legend needed for fill
-  geom_text(aes(label = sprintf("%.2f", mean_corr)), vjust = -0.5, size = 3) + # Add value labels
+  geom_text(aes(label = sprintf("%.2f", mean_corr)), vjust = -0.5, size = 5) + # Add value labels
   scale_fill_manual(values = color_palette_corr) + # Use the same color palette
   labs(
     title = NULL,
     subtitle = NULL,
     x = "OIS Tenor",
     y = "Overall Correlation",
-    caption = "Source: Author's calculations."
+    caption = ""
   ) +
   theme_minimal(base_family = "Segoe UI") +
   theme(
     plot.title = element_text(size = 16, face = "bold"),
     plot.subtitle = element_text(size = 12, margin = margin(b = 10)),
-    axis.title.x = element_text(margin = margin(t = 10)),
-    axis.title.y = element_text(margin = margin(r = 10)),
+    axis.title.x = element_text(margin = margin(t = 10),size=16),
+    axis.title.y = element_text(margin = margin(r = 10),size=16),
+    axis.text = element_text(size = 14),
     plot.caption = element_text(hjust = 0, size = 9, color = "grey50"),
     panel.grid.major.x = element_blank(), # Remove major vertical grid lines
     panel.grid.minor.x = element_blank()  # Remove minor vertical grid lines
@@ -358,7 +359,7 @@ ggplot(cor_by_tenor, aes(x = tenor, y = mean_corr, fill = tenor)) +
 ggsave(file.path(output_dir, "mean_spearman_correlation_bar.pdf"),
        dpi = 320,
        width = 8,
-       height = 5,
+       height = 6,
        bg="white")
 
 
@@ -399,7 +400,8 @@ rolling_corr_df <- combined_df %>%
 
 
 # Create the plot
-ggplot(rolling_corr_df, aes(x = date, y = rolling_corr, color = tenor)) + # Removed +0.1 from y
+rolling_corr_df |> mutate(tenor = factor(tenor, levels = c("3M", "2Y", "10Y"))) |>
+ggplot(aes(x = date, y = rolling_corr, color = tenor)) + # Removed +0.1 from y
   # Add a clear zero-reference line first, so it's in the background
   geom_hline(yintercept = 0, linetype = "dashed", color = "grey50", linewidth = 0.5) +
   # Use a slightly thicker line for better visibility
@@ -419,7 +421,7 @@ ggplot(rolling_corr_df, aes(x = date, y = rolling_corr, color = tenor)) + # Remo
     x = NULL, # The date axis is self-explanatory
     y = "Rolling Spearman Correlation",
     color = "OIS Tenor", # Set a clear legend title
-    caption = "Source: Author's calculations using ECB transcripts and OIS data."
+    caption = ""
   ) +
 
   # Use a clean, modern theme as a base
@@ -428,21 +430,24 @@ ggplot(rolling_corr_df, aes(x = date, y = rolling_corr, color = tenor)) + # Remo
   # Further refine theme elements for a publication-quality finish
   theme(
     legend.position = "top",
-    legend.title = element_text(face = "bold", size = 10),
+    legend.title = element_text(face = "bold", size = 18),
+    legend.text = element_text(size = 16),
     plot.title.position = "plot",
     plot.title = element_text(size = 20, face = "bold", margin = margin(b = 5)),
     plot.subtitle = element_text(size = 13, color = "grey30", margin = margin(b = 20)),
     plot.caption = element_text(hjust = 0, size = 9, color = "grey50"),
-    axis.text = element_text(size = 10), # Matched size
+    axis.title.x = element_text(margin = margin(t = 10),size=18),
+    axis.title.y = element_text(margin = margin(r = 10),size=18),
+    axis.text = element_text(size = 16),
     panel.grid.minor = element_blank(), # Declutter by removing minor grid lines
     panel.border = element_rect(colour = "grey80", fill = NA), # Added for consistency
-    strip.text = element_text(face = "bold", size = 12) # Matched size
+    strip.text = element_text(face = "bold", size = 16) # Matched size
   )
 
 ggsave(file.path(output_dir, "rolling_spearman_correlation.pdf"),
        dpi = 320,
        width = 12, # Wider to match second script's correlation plot
-       height = 7, # Adjusted height
+       height = 8.5, # Adjusted height
        bg="white")
 
 #------------------------------------------------------------------------------
