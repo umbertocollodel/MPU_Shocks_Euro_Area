@@ -80,42 +80,82 @@ color_palette_tenors <- c("10Y" = "#d73027", "2Y" = "#4575b4", "3M" = "#91bfdb")
 #   mutate(mean = mean(std_rate, na.rm = TRUE)) %>%
 #   ung()
 
-# Create the plot
-std_df |> 
-  mutate(tenor = factor(tenor, levels = c("3M", "2Y", "10Y"))) |> # Ensure consistent order
-  ggplot(aes(x = date, y = std_rate)) + # Removed color aesthetic from here, added to geom_line
+
+# Load patchwork if not already loaded
+library(patchwork)
+
+# Main plot (your existing code with minor adjustments)
+main_plot <- std_df |>
+  mutate(tenor = factor(tenor, levels = c("3M", "2Y", "10Y"))) |>
+  ggplot(aes(x = date, y = std_rate)) +
   geom_hline(yintercept = 0, linetype = "dashed", color = "grey70", linewidth = 0.4) +
-  geom_line(aes(color = tenor), linewidth = 0.8) + # Smaller linewidth for consistency
-  # geom_line(aes(y = mean), size = 1.2, linetype = "dashed", color = "black") + # Removed to match second script
-  geom_point(data = . %>% filter(highlight), aes(fill = tenor), shape = 21, size = 3, stroke = 1) + # Matched second script's point style
+  geom_line(aes(color = tenor), linewidth = 0.8) +
+  geom_point(data = . %>% filter(highlight), aes(fill = tenor), shape = 21, size = 3, stroke = 1) +
   facet_wrap(~ tenor, nrow = 3) +
-  scale_color_manual(values = color_palette_tenors, guide = "none") + # Set guide to "none" for consistency
-  scale_fill_manual(values = color_palette_tenors, guide = "none") + # Use fill for highlighted points, no guide
+  scale_color_manual(values = color_palette_tenors, guide = "none") +
+  scale_fill_manual(values = color_palette_tenors, guide = "none") +
   scale_x_date(date_breaks = "2 years", date_labels = "%Y") +
   labs(
     title = NULL,
     subtitle = NULL,
     x = NULL,
-    y = "Standard Deviation of Predicted Rate", # Consistent y-axis label
-    # color = "OIS Tenor", # Removed as guide="none"
-    caption = "Source: Author's calculations using OIS data."
+    y = "Standard Deviation of Predicted Rate",
+    caption = NULL # Remove caption from main plot
   ) +
-  ylim(0,0.6) +
+  ylim(0, 0.6) +
   theme_minimal(base_family = "Segoe UI") +
   theme(
-    # legend.position = "top", # Removed as guide="none"
-    # legend.title = element_text(face = "bold", size = 10), # Removed as guide="none"
     plot.title.position = "plot",
-    plot.title = element_text(size = 20, face = "bold", margin = margin(b = 5)), # Matched font size
-    plot.subtitle = element_text(size = 13, color = "grey30", margin = margin(b = 20)), # Matched margin
-    plot.caption = element_text(hjust = 0, size = 9, color = "grey50"),
-    axis.title = element_text(size=18), # Added margin for y-axis title
-    axis.text.x = element_text(angle = 90, hjust = 1, size = 16), # Matched size
-    axis.text.y = element_text(size = 16), # Matched size
+    axis.title = element_text(size = 18),
+    axis.text.x = element_text(angle = 90, hjust = 1, size = 16),
+    axis.text.y = element_text(size = 16),
     panel.grid.minor = element_blank(),
-    panel.border = element_rect(colour = "grey80", fill = NA), # Added for consistency
-    strip.text = element_text(face = "bold", size = 14) # Matched size
+    panel.border = element_rect(colour = "grey80", fill = NA),
+    strip.text = element_text(face = "bold", size = 14)
   )
+
+# Zoom plot for 2022-2023
+zoom_plot <- std_df |>
+  filter(date >= as.Date("2022-01-01") & date <= as.Date("2024-01-01")) |>
+  mutate(tenor = factor(tenor, levels = c("3M", "2Y", "10Y"))) |>
+  ggplot(aes(x = date, y = std_rate)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey70", linewidth = 0.4) +
+  geom_line(aes(color = tenor), linewidth = 1.0) +
+  geom_point(data = . %>% filter(highlight), aes(fill = tenor), shape = 21, size = 2.5, stroke = 1) +
+  facet_wrap(~ tenor, nrow = 3) +
+  scale_color_manual(values = color_palette_tenors, guide = "none") +
+  scale_fill_manual(values = color_palette_tenors, guide = "none") +
+  scale_x_date(date_breaks = "6 months", date_labels = "%b\n%Y") +
+  labs(
+    title = "2022-2023\nDetail",
+    x = NULL,
+    y = NULL, # No y-axis label to avoid redundancy
+    caption = ""
+  ) +
+  coord_cartesian(ylim = c(0, max(std_df$std_rate[std_df$date >= as.Date("2022-01-01") & 
+                                                   std_df$date <= as.Date("2024-01-01")], na.rm = TRUE) * 1.1)) +
+  theme_minimal(base_family = "Segoe UI") +
+  theme(
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5, margin = margin(b = 10)),
+    plot.caption = element_text(hjust = 0, size = 9, color = "grey50"),
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 14),
+    axis.text.y = element_text(size = 16),
+    panel.grid.minor = element_blank(),
+    panel.border = element_rect(colour = "grey80", fill = NA),
+    strip.text = element_text(face = "bold", size = 12),
+    plot.margin = margin(5, 5, 5, 5, "pt")
+  )
+
+# Combine plots side-by-side
+combined_plot <- main_plot + zoom_plot + 
+  plot_layout(widths = c(2.5, 1)) + # Main plot gets 2.5 times the width of zoom plot
+  plot_annotation(
+    caption = "",
+    theme = theme(plot.caption = element_text(hjust = 0, size = 9, color = "grey50"))
+  )
+
+# Display the combined plot
+print(combined_plot)
 
 ggsave(file.path(output_dir, "sd.pdf"),
        dpi = 320, # Increased DPI for consistency
