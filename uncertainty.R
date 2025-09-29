@@ -26,7 +26,7 @@ calculate_leads <- function(df, var, leads){
 
 # Set parameters: 
 
-names_sheets=excel_sheets("raw_data/OIS.xls")
+names_sheets=excel_sheets("../raw_data/OIS.xls")
 
 tenors=names_sheets %>% 
   str_remove("_.*")
@@ -35,13 +35,13 @@ tenors=names_sheets %>%
 # Clean daily data for OIS:
 
 df_list <- names_sheets %>% 
-  map(~ read_excel("raw_data/OIS.xls", sheet = .x)) %>%
-  map(~.x %>% slice(-1)) %>% 
+  map(~ read_excel("../raw_data/daily_OIS_updated15Sept_2025..xls", sheet = .x)) %>%
   map(~.x %>% select(1:5)) %>% 
-  map(~ .x %>% mutate(Daily = as.numeric(Daily))) %>% 
-  map(~ .x %>% mutate(Daily = as.Date(Daily, origin = "1899-12-30"))) %>% 
-  map(~ .x %>% setNames(c("daily","first","high","low","last"))) %>% 
-  map(~ .x %>% mutate_at(2:ncol(.),as.numeric)) 
+  map(~ .x |> rename(Daily = Timestamp)) %>%
+  map(~ .x %>% mutate(Daily = as.Date(Daily))) %>% 
+  map(~ .x %>% setNames(c("daily","high","low","first","last"))) %>% 
+  map(~ .x %>% mutate_at(2:ncol(.),as.numeric)) |> 
+  map(~ .x %>% arrange(daily)) 
   
   
 # Pad the dataframe (otherwise govc_id are staggered): 
@@ -69,7 +69,7 @@ df_list <- df_list %>%
 # Retrieve Governing Council dates (updated until September 2024)
 
 
-dates=read_xlsx("raw_data/dates_govc.xlsx") %>% 
+dates=read_xlsx("../raw_data/dates_govc.xlsx") %>% 
   unite("date",day:year,sep="-",remove = T) %>% 
   mutate(date = as.Date(date,"%d-%m-%Y")) %>% 
   .$date
