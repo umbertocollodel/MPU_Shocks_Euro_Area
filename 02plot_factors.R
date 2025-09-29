@@ -253,7 +253,28 @@ df %>%
 
 # Figure: monetary and monetary uncertainty surprises over time (by tenor) ------
 
-df_comparison <- read_excel("../PEPP_effect/raw_data/00EA_MPD_update_january2024.xlsx",sheet = 4) %>%
+df_comparison <- read_excel("../raw_data/00EA_MPD_update_june2025.xlsx",sheet = 4) %>%
+  mutate(date = {
+    # Convert to character to unify everything
+    date_char <- as.character(date)
+    
+    # Now parse based on the character representation
+    map_chr(date_char, function(x) {
+      if (is.na(x)) return(NA_character_)
+      if (str_detect(x, "/")) {
+        # Format like "14/12/2023"
+        as.character(dmy(x))
+      } else if (str_detect(x, "^[0-9]{5}$")) {
+        # Excel serial number like "44812"
+        as.character(as.Date(as.numeric(x), origin = "1899-12-30"))
+      } else if (str_detect(x, "^[0-9]{4}-[0-9]{2}-[0-9]{2}")) {
+        # Already YYYY-MM-DD
+        x
+      } else {
+        NA_character_
+      }
+    }) %>% as.Date()
+  }) |> 
   select(date, OIS_3M,OIS_6M,OIS_1Y,OIS_2Y,OIS_5Y,OIS_10Y) %>% 
   setNames(c("date","3mnt","6mnt","1Y","2Y","5Y","10Y")) %>%
   pivot_longer(`3mnt`:`10Y`,names_to = "tenor",values_to = "monetary") %>% 
