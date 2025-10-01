@@ -78,59 +78,87 @@ dates=read_xlsx("../raw_data/dates_govc.xlsx") %>%
 # Calculate difference between min-max range pre-post govc: 
 
 df_list_clean <- df_list %>% 
-  map(~ .x %>%
-        # mark government change days
-        mutate(govc = ifelse(daily %in% dates, 1, 0)) %>%
-        # daily high-low gap
-        mutate(gap = high - low) %>%
+  map(~ {
+    # ============================================================================
+    # STEP 1: Basic setup - mark GovC days and calculate daily gap
+    # ============================================================================
+    df <- .x %>%
+      mutate(
+        govc = ifelse(daily %in% dates, 1, 0),      # Mark GovC announcement days
+        gap = high - low,                            # Daily high-low range (proxy for volatility)
+        sum_govc = cumsum(govc),                     # Cumulative count of GovC meetings
+        sum_govc = ifelse(govc == 1, sum_govc, 0)   # Keep count only on GovC days, else 0
+      ) %>%
+      calculate_lags(sum_govc, 1:7) %>%              # Create lag_1 through lag_7 of sum_govc
+      calculate_leads(sum_govc, 1:7) %>%             # Create lead_1 through lead_7 of sum_govc
+      mutate(govc_id = rowSums(select(., starts_with("sum_")), na.rm = TRUE))  
+      # govc_id groups days around same GovC meeting (all lags/leads have same ID)
+    
+    # ============================================================================
+    # STEP 2: Define all window specifications
+    # ============================================================================
+    # Key: window name (e.g., "3" = 3-day symmetric, "1_5" = 1 day before, 5 after)
+    # Value: list with 'pre' = days before GovC, 'post' = days after GovC
+    windows <- list(
+      "1"   = list(pre = 1, post = 1),   # 1-day symmetric
+      "2"   = list(pre = 2, post = 2),   # 2-day symmetric
+      "3"   = list(pre = 3, post = 3),   # 3-day symmetric (baseline)
+      "5"   = list(pre = 5, post = 5),   # 5-day symmetric
+      "7"   = list(pre = 7, post = 7),   # 7-day symmetric
+      "1_5" = list(pre = 1, post = 5),   # Asymmetric: short anticipation, long absorption
+      "2_4" = list(pre = 2, post = 4),   # Asymmetric: moderate anticipation, longer absorption
+      "4_2" = list(pre = 4, post = 2)    # Asymmetric: long anticipation, short absorption
+    )
+    
+    # ============================================================================
+    # STEP 3: Calculate MPU for each window specification
+    # ============================================================================
+    for (w in names(windows)) {
+      pre_days <- windows[[w]]$pre
+      post_days <- windows[[w]]$post
+      
+      df <- df %>%
+        # Create indicators for pre/post windows
+        # Reduce with `|` creates: lag(govc,1)==1 | lag(govc,2)==1 | ... | lag(govc,post_days)==1
+        # ifelse ensures we get numeric 1/0 instead of logical TRUE/FALSE
+        mutate(
+          # post_govc = 1 if any of the next 'post_days' has govc == 1
+          post_govc = ifelse(Reduce(`|`, map(1:post_days, ~lag(govc, .x) == 1)), 1, 0),
+          # pre_govc = 1 if any of the previous 'pre_days' has govc == 1  
+          pre_govc = ifelse(Reduce(`|`, map(1:pre_days, ~lead(govc, .x) == 1)), 1, 0)
+        ) %>%
         
-        # post_govc and pre_govc for 3-day window
-        mutate(post_govc = ifelse(lag(govc, 1) == 1 | lag(govc, 2) == 1 | lag(govc, 3) == 1, 1, 0),
-               pre_govc  = ifelse(lead(govc, 1) == 1 | lead(govc, 2) == 1 | lead(govc, 3) == 1, 1, 0)) %>%
-        
-        # cumulative govc count
-        mutate(sum_govc = cumsum(govc),
-               sum_govc = ifelse(govc == 1, sum_govc, 0)) %>%
-        
-        # calculate lags and leads for 3-day window
-        calculate_lags(sum_govc, 1:3) %>%
-        calculate_leads(sum_govc, 1:3) %>%
-        
-        # govc_id as sum of lag/lead indicators
-        mutate(govc_id = rowSums(select(., starts_with("sum_")), na.rm = TRUE)) %>%
-        
-        # pre/post means for 3-day window
+        # Calculate mean gap in the PRE window for this govc_id
         group_by(govc_id, pre_govc) %>%
         mutate(pre_mean = mean(gap, na.rm = TRUE)) %>%
+        
+        # Calculate mean gap in the POST window for this govc_id
         group_by(govc_id, post_govc) %>%
         mutate(post_mean = mean(gap, na.rm = TRUE)) %>%
         ungroup() %>%
-        mutate(correct_post_mean = lead(post_mean, 1),
-               correct_pre_mean  = lag(pre_mean, 1)) %>%
         
-        # ---- new: post means for shorter windows ----
-        # 1-day window
-        mutate(post_govc_1 = ifelse(lag(govc, 1) == 1, 1, 0)) %>%
-        group_by(govc_id, post_govc_1) %>%
-        mutate(post_mean_1 = mean(gap, na.rm = TRUE)) %>%
-        ungroup() %>%
-        mutate(correct_post_mean_1 = lead(post_mean_1, 1)) %>%
+        # Shift means to align with GovC day (day 0)
+        # lead(post_mean, 1) gets the post-window mean from the perspective of GovC day
+        # lag(pre_mean, 1) gets the pre-window mean from the perspective of GovC day
+        mutate(
+          !!paste0("correct_post_mean_", w) := lead(post_mean, 1),
+          !!paste0("correct_pre_mean_", w) := lag(pre_mean, 1),
+          # Calculate difference and convert to basis points (*100)
+          !!paste0("diff_", w) := (lead(post_mean, 1) - lag(pre_mean, 1)) * 100
+        ) %>%
         
-        # 2-day window
-        mutate(post_govc_2 = ifelse(lag(govc, 1) == 1 | lag(govc, 2) == 1, 1, 0)) %>%
-        group_by(govc_id, post_govc_2) %>%
-        mutate(post_mean_2 = mean(gap, na.rm = TRUE)) %>%
-        ungroup() %>%
-        mutate(correct_post_mean_2 = lead(post_mean_2, 1)) %>%
-        
-        # keep only relevant rows and variables
-        distinct(sum_govc, .keep_all = TRUE) %>%
-        filter(!is.na(gap)) %>%
-        select(govc_id, correct_pre_mean, correct_post_mean, correct_post_mean_1, correct_post_mean_2) %>%
-        
-        # difference in gap for main 3-day window
-        mutate(diff = (correct_post_mean - correct_pre_mean) * 100)
-      )
+        # Clean up temporary variables to avoid conflicts in next iteration
+        select(-post_govc, -pre_govc, -post_mean, -pre_mean)
+    }
+    
+    # ============================================================================
+    # STEP 4: Keep only GovC announcement days with complete data
+    # ============================================================================
+    df %>%
+      distinct(sum_govc, .keep_all = TRUE) %>%       # One row per GovC meeting
+      filter(!is.na(gap)) %>%                         # Remove any missing data
+      select(govc_id, starts_with("correct"), starts_with("diff_"))
+  })
 
 
 # Add back govc dates:
@@ -148,7 +176,7 @@ final_df_list <- df_list_clean %>%
 
 final_df_list[[2]] %>%
   slice(-1) %>% 
-  ggplot(aes(date,diff)) +
+  ggplot(aes(date,diff_1)) +
   geom_col() +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
@@ -157,12 +185,12 @@ final_df_list[[2]] %>%
 # Winsorize outliers and highlight "big" spikes: ---
 
 differences_df <-  final_df_list %>% 
-    map(~ .x %>% filter(!is.na(diff))) %>% 
-    map(~ .x %>% mutate(diff = DescTools::Winsorize(diff))) %>% 
-    map(~ .x %>% mutate(up_threshold = mean(diff,na.rm=T) + 1.5*sd(diff,na.rm=T))) %>% 
-    map(~ .x %>% mutate(low_threshold = mean(diff,na.rm=T) - 1.5*sd(diff,na.rm=T))) %>% 
-    map(~ .x %>% mutate(spike = case_when(diff >= up_threshold |
-                                          diff <= low_threshold~ 1,
+    map(~ .x %>% filter(!is.na(diff_3))) %>% 
+    map(~ .x %>% mutate(diff_3 = DescTools::Winsorize(diff_3))) %>% 
+    map(~ .x %>% mutate(up_threshold = mean(diff_3,na.rm=T) + 1.5*sd(diff_3,na.rm=T))) %>% 
+    map(~ .x %>% mutate(low_threshold = mean(diff_3,na.rm=T) - 1.5*sd(diff_3,na.rm=T))) %>% 
+    map(~ .x %>% mutate(spike = case_when(diff_3 >= up_threshold |
+                                          diff_3 <= low_threshold~ 1,
                         T ~ 0))) %>% 
   set_names(tenors) %>% 
   bind_rows(.id = "tenor")
@@ -173,7 +201,7 @@ differences_df <-  final_df_list %>%
 
 differences_df %>% 
   mutate(tenor = factor(tenor, levels = c("3mnt", "6mnt", "1Y", "2Y", "5Y", "10Y"))) %>%
-  ggplot(aes(date, diff)) +
+  ggplot(aes(date, diff_3)) +
   geom_col() +
   facet_wrap(~tenor, scales = "free_y") +
   #geom_vline(data = differences_df %>% filter(spike == 1 & diff >= 0), aes(xintercept = date), color = "red", size = 2, alpha = 0.3) +
