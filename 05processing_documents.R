@@ -1,10 +1,4 @@
-library(quanteda)
-library(quanteda.textstats)
-library(data.table)
-library(readtext)
-library(broom)
-
-
+######## Analyze the readability of ECB press conferences over time
 
 # Load data: ----
 

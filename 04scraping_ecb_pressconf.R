@@ -7,7 +7,12 @@ pacman::p_load(
   RSelenium,
   chromote,
   rvest,
-  crayon
+  crayon,
+  quanteda,
+  readtext,
+  broom,
+  quanteda.textstats,
+  data.table
 )
 # Set parameters
 
