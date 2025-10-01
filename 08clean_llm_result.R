@@ -41,24 +41,6 @@ clean_df=results %>%
   filter(tenor %in% c("3M","2Y","10Y"))
 
 
-# # Combine with governor name:
-# 
-# file_names=list.files("../intermediate_data/texts/introductory_statements/")
-# 
-# # Extract date and governor name
-# governor_df <- data.frame(
-#   date = str_extract(file_names, "\\d{4}-\\d{2}-\\d{2}"),
-#   governor = str_extract(file_names, "(?<=_)\\w+\\s\\w+")
-# ) %>% 
-#   mutate(date = as.Date(date),
-#          governor = ifelse(is.na(governor),"Jean-Claude Trichet",governor))
-# 
-# 
-# # Join the governor name into your df
-# clean_df <- clean_df %>%
-#   left_join(governor_df, by = "date")
-
-
 
 # Export: 
 
