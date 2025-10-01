@@ -1,254 +1,4 @@
-######## The script produces and saves all plots related to the factor 
-######## decomposition.
-
-
-
-# Figure: Monetary surprises over time: ----
-
-
-
-# Clean for time serie plotting
-
-time_serie_df <- df_surprises %>%
-  pivot_longer(matches("Path|Timing|QE"),names_to = "Factor") %>% 
-  mutate(Factor = factor(Factor, levels = c("Timing","Path","QE")))
-
-
-# Plot (there is a filter for time period):
-
-
-time_serie_df %>% 
-  filter(year(date) >= 2015) %>% 
-  ggplot(aes(date,value, fill=Factor)) +
-  geom_col(width = 17) +
-  labs(title="",
-       y="Sd",
-       x="",
-       fill="",
-       caption = "**Note**: The model decomposes movements in OIS (1m, 3m, 6m, 1y, 2y, 5y, 10y) into three policy factors:
-       downward-sloping (Timing), hump-shaped (Path) and upward-sloping (QE). It takes three principal components  
-       from the variation in yields range (high minus low) around GovC meetings, rotates and scales them.
-      **Source**: Authors' calculation, Thomson Reuters.  
-      **Latest observation**: 15 June 2023.") +  
-  theme_bw() +
-  theme(plot.caption = element_text(hjust=0)) +
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-  scale_fill_manual(values=c("#35BBCA","#0191B4","#D3DD18")) +
-  scale_x_date(date_breaks = "1 year",date_labels = "%Y") +
-  theme( axis.text = element_text( size = 14 ),
-         axis.text.x = element_text( size = 20 ),
-         axis.title = element_text( size = 16 ),
-         legend.position="bottom",
-         legend.text = element_text(size=14),
-         strip.text = element_text(size = 20)) +
-  theme(plot.caption = element_markdown(hjust = 0,size=12))
-
-# Export: 
-
-ggsave("output/figures/monetary_surprises_20_23.png",
-       width = 19,
-       height = 7,
-       dpi="retina")
-
-
-
-
-# Figure: Mean monetary uncertainty surprises  and monetary surprises over time (by factor) ----
-
-time_serie_df %>%
-  mutate(mean_surprise = mean(value),.by = Factor) %>% 
-  ggplot(aes(date,value, fill=Factor)) +
-  geom_col(width = 17) +
-  geom_hline(aes(yintercept=mean_surprise)) +
-  facet_wrap(~ Factor) +
-  labs(title="",
-       y="Sd",
-       x="",
-       fill="",
-       caption = "**Note**: The model decomposes movements in OIS (1m, 3m, 6m, 1y, 2y, 5y, 10y) into three policy factors:
-       downward-sloping (Timing), hump-shaped (Path) and upward-sloping (QE). It takes three principal components  
-       from the variation in yields range (high minus low) around GovC meetings, rotates and scales them. 
-       **Source**: Authors' calculation, Thomson Reuters.  
-       **Latest observation**: 15 June 2023.") +  
-  theme_bw() +
-  theme(plot.caption = element_text(hjust=0)) +
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-  scale_fill_manual(values=c("#35BBCA","#0191B4","#D3DD18")) +
-  theme( axis.text = element_text( size = 14 ),
-         axis.text.x = element_text( size = 20 ),
-         axis.title = element_text( size = 16 ),
-         legend.position="bottom",
-         legend.text = element_text(size=14),
-         strip.text = element_text(size = 20)) +
-  theme(plot.caption = element_markdown(hjust = 0,size=12))
-
-
-
-
-# Create a df for comparison btween monetary and monetary uncertainty surprises:
-
-
-
-df <- read_rds("../PEPP_effect/intermediate_data/plot_df.rds") %>%
-  filter(id == "Monetary Statement") %>% 
-  setNames(c("id","date","Factor","mon_surprise")) %>%
-  select(date,Factor,mon_surprise) %>% 
-  filter(Factor != "Transmission") %>% 
-  mutate(date = as.Date(date)) %>% 
-  merge(time_serie_df,by=c("date","Factor")) %>%
-  as_tibble() %>% 
-  pivot_longer(mon_surprise:value, names_to = "moment",values_to = "value") %>%
-  mutate(moment = case_when(moment == "mon_surprise" ~ "mon",
-                            moment == "value" ~ "uncertainty"))
-
-
-
-# df %>% 
-#   ggplot(aes(moment,value, fill=Factor)) +
-#   geom_col(width = 0.3,position = "dodge") +
-#   labs(title="",
-#        y="Standard Deviation",
-#        x="",
-#        fill="",
-#        caption = "**Note**: The model decomposes movements in OIS (1m, 3m, 6m, 1y, 2y, 5y, 10y) into three policy factors: downward-sloping (Timing), hump-shaped (Path) and upward-sloping (QE). It takes three principal components  
-# from the variation in yields around GovC meetings (Press Release and Press Conference), rotates and scales them. An additional model employs the same methodology for the variation of 10 years spreads (IT-DE, SP-DE   
-# and FR-DE) against German bunds around GovC meetings. The movements can be interpreted as similar to a 1 standard deviation movement in the reference asset for that factor (OIS 1m, OIS 1y, OIS 10y, IT-DE 10Y Spread).  
-# **Source**: Authors' calculation, Bloomberg, EA-MPD (Altavilla et al., 2019)  
-# **Latest observation**: 15 June 2023.") +  
-#   facet_wrap(~date,scales = "free_y") +
-#   theme_bw() +
-#   theme(plot.caption = element_text(hjust=0)) +
-#   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-#   scale_fill_manual(values=c("#35BBCA","#0191B4","#D3DD18","#FE7A15")) +
-#   theme( axis.text = element_text( size = 14 ),
-#          axis.text.x = element_text( size = 20 ),
-#          axis.title = element_text( size = 16 ),
-#          legend.position="bottom",
-#          legend.text = element_text(size=14),
-#          strip.text = element_text(size = 20)) +
-#   theme(plot.caption = element_markdown(hjust = 0,size=12))
-  
-  
-
-# Figure: correlation between monetary and monetary uncertainty surprises -----
-# (overall correlation)
-
-
-# Get dates of govc
-
-width=23
-
-dates_cor=time_serie_df %>% 
-  select(date) %>%
-  filter(date <= "2023-06-15") %>% 
-  unique() %>% 
-  slice(-c(1:width))
-
-# Plot:
-
-df %>% 
-  pivot_wider(names_from = moment, values_from = value) %>% 
-  select(mon,uncertainty) %>% 
-  mutate(mon = abs(mon)) %>% 
-  rollapply(width = 24*3,  # window size
-            FUN = function(x) cor(x),
-            by.column = FALSE) %>% 
-  as_tibble() %>% 
-  select(mon2) %>% 
-  rowid_to_column("date") %>%
-  mutate(date = rep(dates_cor %>% pull(date),each = 3) %>% head(-2)) %>%
-  mutate(label = case_when(date == "2017-10-26" ~ "Zero Lower Bound",
-                           date == " 2023-02-02" ~ "Tightening Cycle",
-                           date == "2021-07-22" ~ "Covid-19 Pandemic",
-                           T ~ NA)) %>% 
-  mutate(y_label = case_when(date == "2017-10-26" ~ -0.2,
-                           date == " 2023-02-02" ~ -0.3,
-                           date == "2021-07-22" ~ 0.3,
-                           T ~ NA)) %>% 
-  mutate(date_label = case_when(date == "2017-10-26" ~ date,
-                             date == " 2023-02-02" ~ date,
-                             date == "2021-07-22" ~ date,
-                             T ~ NA)) %>% 
-  mutate(yend_label = case_when(date == "2017-10-26" ~ mon2-0.02,
-                                date == " 2023-02-02" ~ mon2 -0.02,
-                                date == "2021-07-22" ~ mon2 +0.02,
-                                T ~ NA)) %>% 
-  ggplot(aes(date,mon2,group=1)) +
-  geom_line(size=1.5, col="orange") +
-  geom_smooth(method = "loess", span = 0.2, color = "red") +
-  geom_hline(yintercept = 0, size =1, linetype = "dashed") +
-  geom_segment(aes(x = date_label,y = y_label,xend = date_label, yend =yend_label),size=0.5) +
-  geom_text(aes(x = date_label,y = y_label,label = label),hjust = 1.1,vjust = 1.1,parse = FALSE) +
-  geom_point(aes(x = date_label,y = y_label),size=2,alpha=0.5) +
-  labs(title="Correlation - Monetary and monetary uncertainty surprises",
-       subtitle = expression(italic("2yrs rolling window")),
-       col="",
-       y="",
-       x="",
-       fill="",
-       caption = "**Note**: 
-             **Source**: Authors' calculation   
-             **Latest observation**: 15 June 2023.") +
-  ylim(-0.4,0.4) +
-  theme_bw() +
-  theme(plot.caption = element_text(hjust=0)) +
-  theme(title = element_text(size=20)) +
-  theme(axis.text.x = element_text(vjust = 0.5, hjust=0.5)) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  theme(axis.text = element_text( size = 14 ),
-        axis.text.x = element_text( size = 20 ),
-        axis.title = element_text( size = 16, face = "bold" ),
-        legend.text = element_text(size=14),
-        # The new stuff
-        strip.text = element_text(size = 20)) +
-  theme(plot.caption = element_markdown(hjust = 0,size=12))
-
-
-
-
-
-# Figure: rolling correlation by factor
-
-df %>% 
-  pivot_wider(names_from = moment, values_from = value) %>% 
-  split(.$Factor) %>%
-  discard(~ nrow(.x) == 0) %>% 
-  map(~ .x %>% select(mon,uncertainty)) %>% 
-  map(~ .x %>% mutate_all(~ (.x - mean(.x))/sd(.x))) %>%
-  map(~ .x %>% mutate(mon = abs(mon))) %>% 
-  map(~ .x %>% rollapply(width = 24,  # window size
-    FUN = function(x) cor(x),
-    by.column = FALSE)
-  ) %>% 
-  map(~ .x %>% as_tibble() %>% select(mon2)) %>% 
-  map(~.x %>% cbind(dates_cor)) %>% 
-  bind_rows(.id = "Factor") %>%
-  mutate(Factor = factor(Factor,levels = c("Timing","Path","QE"))) %>% 
-  ggplot(aes(date,mon2,group=1)) +
-        geom_line(size=1.5, col="orange") +
-        geom_hline(yintercept = 0, size =1, linetype = "dashed") +
-        facet_wrap(~ Factor, scales = "free") +
-        labs(title="Rolling correlation - Monetary and uncertainty surprises",
-             subtitle = expression(italic("2yrs")),
-             col="",
-             y="",
-             x="",
-             fill="",
-             caption = "**Note**: 
-             **Source**: Authors' calculation   
-             **Latest observation**: 15 June 2023.") +  
-        theme_bw() +
-        theme(plot.caption = element_text(hjust=0)) +
-        theme(title = element_text(size=20)) +
-        theme(axis.text.x = element_text(vjust = 0.5, hjust=0.5)) +
-        theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-        theme(axis.text = element_text( size = 14 ),
-               axis.text.x = element_text( size = 20 ),
-               axis.title = element_text( size = 16, face = "bold" ),
-               legend.text = element_text(size=14),
-               # The new stuff
-               strip.text = element_text(size = 20)) +
-        theme(plot.caption = element_markdown(hjust = 0,size=12))
+########### Description: script to plot monetary policy surprises and monetary policy uncertainty, figures and tables
 
 
 # Figure: monetary and monetary uncertainty surprises over time (by tenor) ------
@@ -309,83 +59,58 @@ df_comparison %>%
   
 # Export:
 
-ggsave("../output/figures/comparison_surprises.png",
-       width = 6,
-       height = 3.5,
-       dpi="retina")
+ggsave("../output/figures/comparison_surprises.pdf",
+       dpi = 320,
+       width = 12, # Wider to match second script's direction plot
+       height = 9, # Adjusted height
+       bg="white")
   
   
-# Figure: correlation comparison ----
+# Figure: correlation betwen MP and MPU ----
 
 df_comparison %>%
   split(.$tenor) %>% 
-  map(~ .x %>% pivot_wider(names_from = type,values_from = value)) %>%
+  map(~ .x %>% pivot_wider(names_from = type, values_from = value)) %>%
   map(~ .x[,3:4]) %>% 
   map(~ .x %>% mutate(Monetary_abs = abs(Monetary))) %>% 
-  map(~ rcorr(as.matrix(.x))) %>% 
-  map(~ round(.x$P,2)) 
-  
-  
-  
-
-  df_comparison %>%
-    split(.$tenor) %>% 
-    map(~ .x %>% pivot_wider(names_from = type,values_from = value)) %>%
-    map(~ .x[,3:4]) %>% 
-    map(~ .x %>% mutate(Monetary_abs = abs(Monetary))) %>% 
-    map(~ .x %>% correlate()) %>%
-    map(~ .x %>% select(term, `Monetary Uncertainty`) %>%  filter(term %in% c("Monetary", "Monetary_abs"))) %>% 
-    bind_rows(.id = "tenor") %>% 
-    mutate(term = case_when(term == "Monetary_abs" ~ "|Monetary|",
-                            T ~ term)) %>% 
-    mutate(term = factor(term, levels = c("Monetary","|Monetary|"))) %>% 
-    mutate(tenor = factor(tenor,levels = c("3mnt","6mnt","1Y","2Y","5Y","10Y"))) %>% 
-    mutate(significant = 
-             case_when(term == "|Monetary|" & tenor %in% c("6mnt","2Y","10Y") ~ "**",
-                       term == "Monetary" & tenor %in% c("2Y") ~ "*",
-                       term == "|Monetary|" & tenor %in% c("5Y") ~ "***",
-                       T ~ "")
-    ) %>% 
-    ggplot(aes(tenor,`Monetary Uncertainty`)) +
-    geom_col(width = 0.3, fill = "#F8766D",alpha=0.8) +
-    geom_text(aes(y=`Monetary Uncertainty`+0.1,label = paste0(round(`Monetary Uncertainty`,2),significant)),size=4.5) +
-    ylim(-1,1) +
-    facet_wrap(~ term) +
-  labs(title="",
-       col="",
-       y="",
-       x="",
-       fill="",
-       caption = "") +
+  map(~ .x %>% correlate()) %>%
+  map(~ .x %>% select(term, `Monetary Uncertainty`) %>% filter(term %in% c("Monetary", "Monetary_abs"))) %>% 
+  bind_rows(.id = "tenor") %>% 
+  mutate(term = case_when(
+    term == "Monetary_abs" ~ "Size of MP Surprise",
+    TRUE ~ "Direction of MP Surprise"
+  )) %>% 
+  mutate(term = factor(term, levels = c("Direction of MP Surprise", "Size of MP Surprise"))) %>% 
+  mutate(tenor = factor(tenor, levels = c("3mnt","6mnt","1Y","2Y","5Y","10Y"))) %>% 
+  mutate(significant = 
+           case_when(term == "Size of MP Surprise" & tenor %in% c("6mnt","2Y","10Y") ~ "**",
+                     term == "Direction of MP Surprise" & tenor %in% c("2Y") ~ "*",
+                     term == "Size of MP Surprise" & tenor %in% c("5Y") ~ "***",
+                     TRUE ~ "")
+  ) %>% 
+  ggplot(aes(tenor, `Monetary Uncertainty`)) +
+  geom_col(width = 0.3, fill = "#F8766D", alpha = 0.8) +
+  geom_text(aes(y = `Monetary Uncertainty` + 0.1, label = paste0(round(`Monetary Uncertainty`, 2), significant)), size = 6) +
+  ylim(-1, 1) +
+  facet_wrap(~ term) +
+  labs(title = "", y = "", x = "", caption = "") +
   theme_bw() +
-  theme(text=element_text(family="Segoe UI Light")) +
-  theme(plot.caption = element_text(hjust=0)) +
-  theme(axis.text.x = element_text(vjust = 0.5, hjust=0.5)) +
-  theme( axis.text = element_text( size = 14 ),
-         axis.text.x = element_text( size = 20 ),
-         axis.title = element_text( size = 16, face = "bold" ),
-         legend.text = element_text(size=14),
-         # The new stuff
-         strip.text = element_text(size = 20)) +
-  theme(legend.position = "bottom") +
-  theme(
-    plot.title = element_text(
-      size = 20,            # Set font size
-      face = "bold", # Make the title bold and italic
-      color = "black",
-      family = "Segoe UI Light")) +
-  theme(plot.caption = element_text(hjust = 0,size=12))
-    
+  theme(text = element_text(family = "Segoe UI Light"),
+        axis.text.x = element_text(vjust = 0.5, hjust = 0.5, angle = 90),
+        axis.text = element_text(size = 18),
+        axis.title = element_text(size = 20),
+        legend.text = element_text(size = 14),
+        strip.text = element_text(size = 20))
 # Export:
 
-ggsave("../output/figures/correlation_surprises.png",
+ggsave("../output/figures/correlation_surprises.pdf",
        dpi = 320,
        width = 12, # Wider to match second script's direction plot
        height = 9, # Adjusted height
        bg="white")
 
 
-# Figure: 10 year mpu over time: ----
+# Figure: 10 year MPU over time: ----
 
 
 differences_df %>% 
@@ -394,7 +119,7 @@ differences_df %>%
   geom_col() +
   labs(title="",
        col="",
-       y="Basis Points",
+       y="Bps",
        x="",
        fill="",
        caption = "") +
@@ -427,9 +152,8 @@ ggsave("../output/figures/mpu.pdf",
        height = 9, # Adjusted height
        bg="white")
 
-# Figure: Mpu over time (all tenors): ----
-library(dplyr)
-library(ggplot2)
+# Figure: post-conference volatility for 3m, 2Y and 10Y: (LLM paper target var) -------
+
 
 # Remove outliers using IQR method per tenor
 filtered_df <- differences_df %>%
@@ -466,22 +190,22 @@ ggplot(filtered_df, aes(date, correct_post_mean_3, col = tenor)) +
   ) +
   scale_x_date(date_breaks = "2 years", date_labels = "%Y")
 
-ggsave("output/figures/mpu_all.png",
+ggsave("../output/figures/mpu_all.png",
        width = 5,
        height = 2.5,
        dpi="retina")
 
 
-#Table: top 5 increases/decreases -----
+ #Table: top 5 increases/decreases MPU -----
 
 
 differences_df %>% 
   filter(tenor == "10Y") %>%
-  arrange(-diff) %>% 
+  arrange(-diff_3) %>% 
   slice(c(1:5)) %>% 
-  select(date,diff) %>% 
+  select(date,diff_3) %>% 
   mutate(date = as.character(date)) %>% 
-  mutate(diff = round(diff,2)) %>% 
+  mutate(diff_3 = round(diff_3,2)) %>% 
   mutate(`Decision` = c(
     "ECB decided to keep interest rates unchanged.",
     "ECB announced a series of measures including a cut in the deposit rate by 10 basis points to -0.30% and an extension of the asset purchase programme (APP)",
@@ -498,15 +222,15 @@ differences_df %>%
   setNames(c("GovC Date","MPU Surprise","Decision","Description")) %>% 
   stargazer(summary = FALSE,
             rownames = FALSE,
-            out = "output/tables/top_5_mpu.tex")
+            out = "../output/tables/top_5_mpu.tex")
 
 differences_df %>% 
   filter(tenor == "10Y") %>%
-  arrange(diff) %>% 
+  arrange(diff_3) %>% 
   slice(c(1:5)) %>% 
-  select(date,diff) %>%
+  select(date,diff_3) %>%
   mutate(date = as.character(date)) %>% 
-  mutate(diff = round(diff,2)) %>% 
+  mutate(diff_3 = round(diff_3,2)) %>% 
     mutate(`Decision` = c(
       "ECB increased the three key interest rates by 50 basis points. This decision was aimed at ensuring the timely return of inflation to the 2% medium-term target.",
       "ECB kept interest rates unchanged but signaled a shift towards less accommodative monetary policy. President Mario Draghi mentioned that the urgency for further actions had diminished.",
@@ -524,14 +248,14 @@ differences_df %>%
   setNames(c("GovC Date","MPU Surprise","Decision","Description")) %>% 
   stargazer(summary = FALSE,
             rownames=F,
-            out = "output/tables/bottom_5_mpu.tex")
+            out = "../output/tables/bottom_5_mpu.tex")
 
 
-# Table: share of increaseas and decreases (%) by tenor
+# Table: share of increaseas and decreases (%) by tenor ------
 
 differences_df %>%
   group_by(tenor) %>% 
-  summarise(positive = sum(diff >0 ),negative = sum(diff < 0)) %>%
+  summarise(positive = sum(diff_3 >0 ),negative = sum(diff_3 < 0)) %>%
   mutate(total = positive + negative, 
          share_positive = round(positive/(positive + negative)*100,1)) %>%
   mutate(tenor = factor(tenor, levels = c("3mnt", "6mnt", "1Y", "2Y", "5Y", "10Y"))) %>%
@@ -541,7 +265,7 @@ differences_df %>%
   mutate(Tenor = as.character(Tenor)) %>% 
   stargazer(summary = FALSE,
             rownames=F,
-            out = "output/tables/share_increases.tex")
+            out = "../output/tables/share_increases.tex")
 
 
 
