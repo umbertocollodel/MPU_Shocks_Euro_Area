@@ -273,10 +273,10 @@ ggsave("../output/figures/correlation_alternative_windows.png",
 # Export dataset: -----
 
 
-dir.create("intermediate_data")
+dir.create("../intermediate_data")
 
 differences_df %>% 
-  select(tenor,date, correct_pre_mean, correct_post_mean,diff, correct_post_mean_1,
+  select(tenor,date, correct_pre_mean_3, correct_post_mean_3,diff_1,diff_2,diff_3, correct_post_mean_1,
     correct_post_mean_2,spike) %>% 
   saveRDS("../intermediate_data/range_difference_df.rds")
   
