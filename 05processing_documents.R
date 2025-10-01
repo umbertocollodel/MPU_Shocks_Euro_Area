@@ -2,8 +2,8 @@
 
 # Load data: ----
 
-ecb_pressconf_final <- list.files("intermediate_data/texts/") %>% 
-  map_chr(~ paste0("intermediate_data/texts/",.x)) %>% 
+ecb_pressconf_final <- list.files("../intermediate_data/texts/") %>% 
+  map_chr(~ paste0("../intermediate_data/texts/",.x)) %>% 
   map(~ readtext(.x))
 
 n_meetings = nrow(ecb_pressconf_final[[length(ecb_pressconf_final)]]) # take number of docs in q&a folder 
@@ -40,34 +40,33 @@ readability_df %>%
   cbind(nw_vector) %>% 
   filter(part == "Whole text") %>% 
   mutate(year_mon = format(date, "%Y-%m")) %>% 
-  left_join(main_events,by=c("year_mon")) %>% 
+  #left_join(main_events,by=c("year_mon")) %>% 
   mutate(governor = factor(governor, levels=c("Willem F. Duisenberg","Jean-Claude Trichet","Mario Draghi","Christine Lagarde"))) %>% 
   ggplot(aes(date,Flesch.Kincaid,col=governor)) +
   geom_point(aes(size=nw_vector), alpha = 0.5) +
   geom_smooth(method = "lm") +
-  geom_vline(aes(xintercept=Date)) +
   scale_size(range = c(1, 8)) +
   labs(col="",
        size="Number of words",
        x="",
        y="Flesch Kincaid Complexity Score") +
   theme_bw() +
-  theme(text=element_text(family="Segoe UI Light")) +
-  theme(plot.caption = element_text(hjust=0)) +
-  theme(axis.text.x = element_text(vjust = 0.5, hjust=0.5)) +
-  theme( axis.text = element_text( size = 14 ),
-         axis.text.x = element_text( size = 20 ),
-         axis.title = element_text( size = 16, face = "bold" ),
-         legend.text = element_text(size=14),
-         # The new stuff
-         strip.text = element_text(size = 20)) +
-  theme(legend.position = "bottom") +
-  theme(plot.caption = element_text(hjust = 0,size=12))
+  theme(
+    text = element_text(family = "Segoe UI Light"),
+    axis.text = element_text(size = 18),
+    axis.text.x = element_text(vjust = 0.5, hjust = 0.5),
+    axis.title = element_text(size = 20),
+    legend.text = element_text(size = 16),
+    legend.title = element_text(size = 18)
+  ) +
+  theme(legend.position = "bottom")
 
-ggsave("output/figures/readability_speeches.png",
-       width = 6,
-       height = 3.5,
-       dpi="retina")
+ggsave("../output/figures/readability_speeches.png",
+  dpi = 320,
+  width = 12,
+  height = 9,
+  bg = "white"
+)
 
 # Plot different parts of the press conferences: ----
 
@@ -96,7 +95,7 @@ readability_df %>%
   theme(legend.position = "bottom") +
   theme(plot.caption = element_text(hjust = 0,size=12))
 
-ggsave("output/figures/readability_speeches_parts.png",
+ggsave("../output/figures/readability_speeches_parts.png",
        width = 6,
        height = 3.5,
        dpi="retina")
@@ -135,76 +134,10 @@ complexity_df$`Whole text` %>%
          axis.title = element_text( size = 16, face = "bold" ),
          legend.text = element_text(size=14),
          # The new stuff
-         strip.text = element_text(size = 20)) +
-  theme(plot.caption = element_markdown(hjust = 0,size=12))
+         strip.text = element_text(size = 20))
 
 
 
-# Regress formally ----
-
-
-formulas=c("diff ~ complex_dummy",
-           "diff ~ abs(monetary) + complex_dummy",
-  "diff ~ abs(monetary) + complex_dummy + abs(monetary)*complex_dummy")
-
-complexity_reg_df <- read_excel("../PEPP_effect/raw_data/00EA_MPD_update_january2024.xlsx",sheet = 4) %>%
-  select(date, OIS_3M,OIS_6M,OIS_1Y,OIS_2Y,OIS_5Y,OIS_10Y) %>% 
-  setNames(c("date","3mnt","6mnt","1Y","2Y","5Y","10Y")) %>%
-  pivot_longer(`3mnt`:`10Y`,names_to = "tenor",values_to = "monetary") %>% 
-  inner_join(differences_df %>% select(date,tenor,diff)) %>% 
-  mutate(date = as.Date(date)) %>% 
-  merge(complexity_df %>% bind_rows(.id = "part")) %>% 
-  as_tibble() %>% 
-  split(.$tenor) %>% 
-  #map(~ .x %>% mutate(complex_dummy = ifelse(communication_type == "complex", 1, 0)))
-  
-  
-
-# Regression shit that does not work: ------- 
-  
-complexity_reg_df %>%
-  map(~ .x %>% 
-         mutate(diff = scale(diff),
-         monetary = scale(monetary))) %>% 
-  map(~ .x %>% split(.x$part)) %>% 
-  list_flatten() %>%
-  map(~ .x %>% mutate(sign = case_when(diff > 0 ~ "positive",
-                                       T ~ "negative"))) %>% 
-  map(~ .x %>% split(.x$sign)) %>% 
-  list_flatten() %>% 
-  map( function(x) {
-    map(formulas, ~ lm(.x, data = x) %>% summary() %>% tidy())
-  }) %>% 
-  list_flatten() %>% 
-  bind_rows(.id = "name") %>% 
-  mutate(significance = case_when(
-    p.value < 0.001 ~ "***",
-    p.value < 0.01 ~ "**",
-    p.value < 0.05 ~ "*",
-    TRUE ~ ""
-  )) %>% 
-  mutate(tenor = sapply(strsplit(as.character(name), "_"), `[`, 1)) %>% 
-  split(.$tenor) %>% 
-  map(~
-ggplot(.x,aes(x = estimate, y = name, fill = term)) +
-  geom_bar(stat = "identity", position = position_dodge()) +
-  geom_text(aes(label = significance), position = position_dodge(width = 0.9), hjust = -0.3) +
-  labs(title = "Multiple Regression Analysis Results", x = "Estimate", y = "Name") +
-  theme_minimal()
-)
-
-
-
-#Plot: correlate MP and MPU with complexity ------
-
-complexity_reg_df %>% 
-  map(~ .x %>% filter(part == "Whole text")) %>% 
-  map(~ .x %>% 
-        ggplot(aes(x = Flesch.Kincaid, y = abs(monetary))) +
-  geom_point(color = 'blue') +
-    geom_smooth(method = 'lm', color = 'red', se = FALSE) +
-  labs(title = 'Scatter Plot of Flesch-Kincaid vs Monetary', x = 'Flesch-Kincaid', y = 'Monetary') +
-  theme_minimal())
   
 
   
