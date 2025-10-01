@@ -182,19 +182,24 @@ final_df_list[[2]] %>%
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
 
 
-# Winsorize outliers and highlight "big" spikes: ---
+# Winsorize outliers and highlight "big" spike in baseline MPU index (3-days pre-post): ---
 
-differences_df <-  final_df_list %>% 
-    map(~ .x %>% filter(!is.na(diff_3))) %>% 
-    map(~ .x %>% mutate(diff_3 = DescTools::Winsorize(diff_3))) %>% 
-    map(~ .x %>% mutate(up_threshold = mean(diff_3,na.rm=T) + 1.5*sd(diff_3,na.rm=T))) %>% 
-    map(~ .x %>% mutate(low_threshold = mean(diff_3,na.rm=T) - 1.5*sd(diff_3,na.rm=T))) %>% 
-    map(~ .x %>% mutate(spike = case_when(diff_3 >= up_threshold |
-                                          diff_3 <= low_threshold~ 1,
-                        T ~ 0))) %>% 
+# Winsorize all diff variables before analysis
+differences_df <- final_df_list %>% 
+  map(~ .x %>% filter(!is.na(diff_3))) %>% 
+  # Remove rows with ANY NA in diff columns before winsorizing
+  map(~ .x %>% filter(if_all(starts_with("diff_"), ~!is.na(.x)))) %>%
+  # Winsorize all diff variables
+  map(~ .x %>% mutate(across(starts_with("diff_"), 
+                              ~DescTools::Winsorize(.x)))) %>%
+  # Calculate thresholds and spikes based on winsorized diff_3
+  map(~ .x %>% mutate(
+    up_threshold = mean(diff_3, na.rm = TRUE) + 1.5 * sd(diff_3, na.rm = TRUE),
+    low_threshold = mean(diff_3, na.rm = TRUE) - 1.5 * sd(diff_3, na.rm = TRUE),
+    spike = if_else(diff_3 >= up_threshold | diff_3 <= low_threshold, 1, 0)
+  )) %>% 
   set_names(tenors) %>% 
   bind_rows(.id = "tenor")
-  
 
 
 
@@ -215,7 +220,47 @@ differences_df %>%
 #https://www.nytimes.com/2017/06/08/business/economy/europe-ecb-rates.html
 #https://www.ecb.europa.eu/press/press_conference/monetary-policy-statement/2023/html/ecb.is230316~6c10b087b5.en.html
   
+# Plot: correlation alternative MPU measures: -----
 
+# Filter to only symmetric short windows and calculate correlations
+baseline_cor_plot <- differences_df %>% 
+  split(.$tenor) %>%
+  map_dfr(~ {
+    cors <- .x %>% 
+      select(diff_1, diff_2, diff_3, diff_5) %>%  # Only keep symmetric windows
+      cor(use = "complete.obs") %>%
+      as.data.frame() %>%
+      rownames_to_column("window") %>%
+      select(window, baseline = diff_3) %>%
+      filter(window != "diff_3") %>%
+      mutate(window = str_remove(window, "diff_"),
+             tenor = unique(.x$tenor))
+  }) %>%
+  # Improvement 1: Logical ordering
+  mutate(window = factor(window, levels = c("1", "2", "5"))) |> 
+  mutate(tenor = factor(tenor, levels = c("3mnt", "6mnt", "1Y", "2Y", "5Y", "10Y")))
+
+# Improvement 3: Facet by tenor instead of dodging
+ggplot(baseline_cor_plot, aes(x = window, y = baseline, fill = baseline)) +
+  geom_col(width=0.8) +
+  facet_wrap(~tenor, nrow = 2) +
+  # Improvement 2: Reference line at 0.7
+  geom_hline(yintercept = 0.7, linetype = "dashed", color = "gray30", linewidth = 0.8) +
+  # Color gradient: red (low) to green (high)
+scale_fill_gradient2(low = "#1a9850", mid = "#fee08b", high = "#d73027", 
+                     midpoint = 0.5, limits = c(0, 1),
+                     name = "Correlation")+
+  theme_minimal() +
+  labs(title = "Correlation with baseline 3-day window",
+       subtitle = "Dashed line indicates 0.7 threshold for robustness",
+       x = "Alternative Window (days)", 
+       y = "Correlation with 3-day baseline",
+       caption = "Source: ECB, Eurostat, author calculations") +
+  theme(
+    panel.grid.major.x = element_blank(),
+    strip.text = element_text(face = "bold", size = 10),
+    axis.text.x = element_text(size = 9)
+  )
 
 
 # Export dataset: -----
