@@ -1,9 +1,14 @@
-library(webshot)
-library(RSelenium)
-library(chromote)
-library(rvest)
-library(crayon)
+# Install pacman if not already installed
+if (!require("pacman")) install.packages("pacman")
 
+# Load web scraping and automation packages
+pacman::p_load(
+  webshot,
+  RSelenium,
+  chromote,
+  rvest,
+  crayon
+)
 # Set parameters
 
 years=seq(1998,2025,by=1)
@@ -113,10 +118,10 @@ rm(ecb_pressconf_text_clean,ecb_links_press_conferences)
 # Check if the files already exist, if not save
 
 ecb_pressconf_final %>% 
-  iwalk(~ if (file.exists(paste0("intermediate_data/texts/",.y,".txt"))) {
+  iwalk(~ if (file.exists(paste0("../intermediate_data/texts/",.y,".txt"))) {
   cat(crayon::red(paste0("File ",.y,"already exists. Skipping save.\n")))
   } else {
-  cat(.x, file = paste0("intermediate_data/texts/",.y,".txt"))
+  cat(.x, file = paste0("../intermediate_data/texts/",.y,".txt"))
     cat(crayon::green(paste0("File ",.y," saved.\n")))
   })
   
@@ -146,10 +151,10 @@ ecb_introductory_pressconf <- ecb_pressconf_text %>%
 
 # Export texts
 
-dir.create("intermediate_data/texts/introductory_statements")
+dir.create("../intermediate_data/texts/introductory_statements")
 
 ecb_introductory_pressconf %>% 
-  iwalk(~ cat(.x, file = paste0("intermediate_data/texts/introductory_statements/",.y,".txt")))
+  iwalk(~ cat(.x, file = paste0("../intermediate_data/texts/introductory_statements/",.y,".txt")))
 
 
 
@@ -165,10 +170,10 @@ ecb_qa_pressconf <- ecb_pressconf_text %>%
 
 # Export texts
 
-dir.create("intermediate_data/texts/Q&A")
+dir.create("../intermediate_data/texts/Q&A")
 
 ecb_qa_pressconf %>% 
-  iwalk(~ cat(.x, file = paste0("intermediate_data/texts/Q&A/",.y,".txt")))
+  iwalk(~ cat(.x, file = paste0("../intermediate_data/texts/Q&A/",.y,".txt")))
 
 
 
