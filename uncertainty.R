@@ -1,17 +1,32 @@
-####### Script to produce an uncertainty of monetary policy factor
+####### Script to produce an MPU index based on OIS rates around ECB Governing Council meetings:
 
-library(padr)
-library(DescTools)
-library(readxl)
-library(tidyverse)
-library(zoo)
-library(corrr)
-library(stargazer)
-library(Hmisc)
-library(broom)
+# Prepare environment: ----- 
 
+# Install pacman if not already installed
+if (!require("pacman")) install.packages("pacman")
 
-### Custom functions: ---------
+# Load all packages at once
+pacman::p_load(
+  padr,
+  DescTools,
+  readxl,
+  tidyverse,
+  zoo,
+  corrr,
+  stargazer,
+  Hmisc,
+  broom
+)
+
+# Enable Segoe UI font (ensure it's installed on your system)
+# Check if "Segoe UI" font is available, if not, add it
+if (!("Segoe UI" %in% font_families())) {
+  # Adjust this path if 'segoeui.ttf' is not in the specified location
+  font_add("Segoe UI", regular = "C:/Users/collodelu/OneDrive - centralbankmalta.org/Desktop/Projects/Uncertainty_surprises/code/segoeui.ttf")
+}
+showtext_auto()
+
+#### Custom functions: ---------
 
 calculate_lags <- function(df, var, lags){
   map_lag <- lags %>% map(~partial(lag, n = .x))
@@ -32,7 +47,7 @@ tenors=names_sheets %>%
   str_remove("_.*")
 
 
-# Clean daily data for OIS:
+##### Clean daily data for OIS: -----
 
 df_list <- names_sheets %>% 
   map(~ read_excel("../raw_data/daily_OIS_updated15Sept_2025..xls", sheet = .x)) %>%
@@ -75,7 +90,7 @@ dates=read_xlsx("../raw_data/dates_govc.xlsx") %>%
   .$date
   
 
-# Calculate difference between min-max range pre-post govc: 
+###### Calculate difference between min-max range pre-post govc: ---------
 
 df_list_clean <- df_list %>% 
   map(~ {
@@ -270,7 +285,7 @@ ggsave("../output/figures/correlation_alternative_windows.pdf",
        bg="white")
 
 
-# Export dataset: -----
+# Export intermediate dataset: -----
 
 
 dir.create("../intermediate_data")
