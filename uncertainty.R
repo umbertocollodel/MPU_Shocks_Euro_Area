@@ -217,9 +217,6 @@ differences_df %>%
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
 
 
-#https://www.nytimes.com/2017/06/08/business/economy/europe-ecb-rates.html
-#https://www.ecb.europa.eu/press/press_conference/monetary-policy-statement/2023/html/ecb.is230316~6c10b087b5.en.html
-  
 # Plot: correlation alternative MPU measures: -----
 
 # Filter to only symmetric short windows and calculate correlations
@@ -249,18 +246,28 @@ ggplot(baseline_cor_plot, aes(x = window, y = baseline, fill = baseline)) +
   # Color gradient: red (low) to green (high)
 scale_fill_gradient2(low = "#1a9850", mid = "#fee08b", high = "#d73027", 
                      midpoint = 0.5, limits = c(0, 1),
-                     name = "Correlation")+
-  theme_minimal() +
-  labs(title = "Correlation with baseline 3-day window",
-       subtitle = "Dashed line indicates 0.7 threshold for robustness",
-       x = "Alternative Window (days)", 
-       y = "Correlation with 3-day baseline",
-       caption = "Source: ECB, Eurostat, author calculations") +
-  theme(
-    panel.grid.major.x = element_blank(),
-    strip.text = element_text(face = "bold", size = 10),
-    axis.text.x = element_text(size = 9)
-  )
+                     name = "")+
+  labs(title = "",
+       subtitle = "",
+       x = "Alternative Window (days pre-post GovC)", 
+       y = "Correlation with 3-days baseline",
+       caption = "") +
+  theme_bw() +
+  theme(text=element_text(family="Segoe UI Light")) +
+  theme(axis.text.x = element_text(vjust = 0.5, hjust=0.5)) +
+  theme( axis.text = element_text( size = 16 ),
+         axis.title = element_text( size = 18),
+         legend.text = element_text(size=16),
+         # The new stuff
+         strip.text = element_text(size = 16)) 
+
+# Export figure:
+
+ggsave("../output/figures/correlation_alternative_windows.png",
+       dpi = 320,
+       width = 12, # Wider to match second script's direction plot
+       height = 9, # Adjusted height
+       bg="white")
 
 
 # Export dataset: -----
