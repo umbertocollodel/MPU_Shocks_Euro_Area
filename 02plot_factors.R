@@ -278,11 +278,11 @@ df_comparison <- read_excel("../raw_data/00EA_MPD_update_june2025.xlsx",sheet = 
   select(date, OIS_3M,OIS_6M,OIS_1Y,OIS_2Y,OIS_5Y,OIS_10Y) %>% 
   setNames(c("date","3mnt","6mnt","1Y","2Y","5Y","10Y")) %>%
   pivot_longer(`3mnt`:`10Y`,names_to = "tenor",values_to = "monetary") %>% 
-  inner_join(differences_df %>% select(date,tenor,diff)) %>% 
-  pivot_longer(monetary:diff,names_to = "type",values_to = "value") %>% 
+  inner_join(differences_df %>% select(date,tenor,diff_3)) %>% 
+  pivot_longer(monetary:diff_3,names_to = "type",values_to = "value") %>% 
   mutate(tenor = factor(tenor,levels=c("3mnt","6mnt","1Y","2Y","5Y","10Y"))) %>%
   mutate(type = case_when(type == "monetary" ~ "Monetary",
-                          type == "diff" ~ "Monetary Uncertainty"))
+                          type == "diff_3" ~ "Monetary Uncertainty"))
 
 # Plot:
 
@@ -299,27 +299,17 @@ df_comparison %>%
        caption = "") +
   theme_bw() +
   theme(text=element_text(family="Segoe UI Light")) +
-  theme(plot.caption = element_text(hjust=0)) +
-  theme(axis.text.x = element_text(vjust = 0.5, hjust=0.5)) +
-  theme( axis.text = element_text( size = 14 ),
-         axis.text.x = element_text( size = 20 ),
-         axis.title = element_text( size = 16, face = "bold" ),
-         legend.text = element_text(size=14),
+  theme(axis.text.x = element_text(vjust = 0.5, hjust=0.5,angle =90)) +
+  theme( axis.text = element_text( size = 18 ),
+         axis.title = element_text( size = 20),
+         legend.text = element_text(size=16),
          # The new stuff
-         strip.text = element_text(size = 20)) +
-  theme(legend.position = "bottom") +
-  theme(
-    plot.title = element_text(
-      size = 20,            # Set font size
-      face = "bold", # Make the title bold and italic
-      color = "black",
-      family = "Segoe UI Light")) +
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-  theme(plot.caption = element_text(hjust = 0,size=12))
+         strip.text = element_text(size = 18)) +
+  theme(legend.position = "bottom")
   
 # Export:
 
-ggsave("output/figures/comparison_surprises.png",
+ggsave("../output/figures/comparison_surprises.png",
        width = 6,
        height = 3.5,
        dpi="retina")
@@ -388,17 +378,19 @@ df_comparison %>%
     
 # Export:
 
-ggsave("output/figures/correlation_surprises.png",
-       width = 4,
-       height = 2,
-       dpi="retina")
+ggsave("../output/figures/correlation_surprises.png",
+       dpi = 320,
+       width = 12, # Wider to match second script's direction plot
+       height = 9, # Adjusted height
+       bg="white")
+
 
 # Figure: 10 year mpu over time: ----
 
 
 differences_df %>% 
   filter(tenor == "10Y") %>% 
-  ggplot(aes(date,diff)) +
+  ggplot(aes(date,diff_3)) +
   geom_col() +
   labs(title="",
        col="",
@@ -412,7 +404,7 @@ differences_df %>%
   theme(axis.text.x = element_text(vjust = 0.5, hjust=0.5)) +
   theme( axis.text = element_text( size = 14 ),
          axis.text.x = element_text( size = 20 ),
-         axis.title = element_text( size = 16, face = "bold" ),
+         axis.title = element_text( size = 16),
          legend.text = element_text(size=14),
          # The new stuff
          strip.text = element_text(size = 20)) +
@@ -429,10 +421,11 @@ differences_df %>%
 
 # Export:
 
-ggsave("output/figures/mpu.png",
-       width = 5,
-       height = 2.5,
-       dpi="retina")
+ggsave("../output/figures/mpu.pdf",
+       dpi = 320,
+       width = 12, # Wider to match second script's direction plot
+       height = 9, # Adjusted height
+       bg="white")
 
 # Figure: Mpu over time (all tenors): ----
 library(dplyr)
@@ -442,13 +435,13 @@ library(ggplot2)
 filtered_df <- differences_df %>%
   filter(tenor %in% c("3mnt", "2Y", "10Y")) %>%
   group_by(tenor) %>%
-  filter(correct_post_mean < quantile(correct_post_mean, 0.9)) %>%
+  filter(correct_post_mean_3 < quantile(correct_post_mean_3, 0.9)) %>%
   ungroup() %>%
   mutate(tenor = factor(tenor, levels = c("3mnt", "2Y", "10Y")))
 
 
 # Plot
-ggplot(filtered_df, aes(date, correct_post_mean, col = tenor)) +
+ggplot(filtered_df, aes(date, correct_post_mean_3, col = tenor)) +
   geom_col() +
   labs(title = "",
        col = "",

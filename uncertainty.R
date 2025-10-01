@@ -255,15 +255,15 @@ scale_fill_gradient2(low = "#1a9850", mid = "#fee08b", high = "#d73027",
   theme_bw() +
   theme(text=element_text(family="Segoe UI Light")) +
   theme(axis.text.x = element_text(vjust = 0.5, hjust=0.5)) +
-  theme( axis.text = element_text( size = 16 ),
-         axis.title = element_text( size = 18),
+  theme( axis.text = element_text( size = 18),
+         axis.title = element_text( size = 20),
          legend.text = element_text(size=16),
          # The new stuff
-         strip.text = element_text(size = 16)) 
+         strip.text = element_text(size = 18)) 
 
 # Export figure:
 
-ggsave("../output/figures/correlation_alternative_windows.png",
+ggsave("../output/figures/correlation_alternative_windows.pdf",
        dpi = 320,
        width = 12, # Wider to match second script's direction plot
        height = 9, # Adjusted height
