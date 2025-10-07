@@ -110,7 +110,7 @@ ggsave("../output/figures/correlation_surprises.pdf",
        bg="white")
 
 
-# Figure: 10 year MPU over time: ----
+# Figure: 10 year MPU over time: -----
 
 
 differences_df %>% 
@@ -151,6 +151,71 @@ ggsave("../output/figures/mpu.pdf",
        width = 12, # Wider to match second script's direction plot
        height = 9, # Adjusted height
        bg="white")
+
+# Figure: Monetary Policy Uncertainty (MPU) over time, by tenor -------
+
+differences_df %>% 
+  mutate(tenor = factor(tenor, levels = c("3mnt", "6mnt", "1Y", "2Y", "5Y", "10Y"))) %>%
+  ggplot(aes(x = date, y = diff_3)) +
+  geom_col(fill = "#2E75B6") +   # nice muted blue
+  facet_wrap(~ tenor, scales = "free_y", ncol = 2) +
+  labs(
+    title = "",
+    y = "Bps",
+    x = "",
+    caption = ""
+  ) +
+  scale_x_date(date_breaks = "3 years", date_labels = "%Y") +
+  theme_bw() +
+  theme(
+    text = element_text(family = "Segoe UI Light"),
+    axis.text.x = element_text(size = 16, angle = 90, vjust = 0.5),
+    axis.text.y = element_text(size = 16),
+    axis.title = element_text(size = 18),
+    strip.text = element_text(size = 18, face = "bold"),
+    plot.title = element_text(size = 22, face = "bold", hjust = 0.5),
+    legend.position = "none",
+    plot.caption = element_text(hjust = 0, size = 12),
+    panel.spacing = unit(1, "lines")
+  )
+
+# Export to PDF
+ggsave(
+  "../output/figures/mpu_all_tenors.pdf",
+  dpi = 320,
+  width = 14,    # wider for multi-panel layout
+  height = 10,
+  bg = "white"
+)
+
+# Table: correlation matrix of MPU across tenors -------
+# Compute correlation matrix of MPU across tenors
+correlation_table <- differences_df %>%
+  select(date, tenor, diff_3) %>%
+  pivot_wider(names_from = tenor, values_from = diff_3) %>%
+  select(-date) %>%
+  cor(use = "pairwise.complete.obs")
+
+# Round for readability
+correlation_table_rounded <- round(correlation_table, 2)
+
+# Convert to LaTeX with nice formatting
+latex_table <- xtable(
+  correlation_table_rounded,
+  caption = "Correlation Matrix of Monetary Policy Uncertainty (MPU) across Tenors",
+  label = "tab:mpu_correlation",
+  align = c("l", rep("c", ncol(correlation_table_rounded)))
+)
+
+# Add booktabs style and save to file
+print(
+  latex_table,
+  type = "latex",
+  file = "../output/tables/mpu_correlation.tex",
+  include.rownames = TRUE,
+  booktabs = TRUE,
+  caption.placement = "top"
+)
 
 # Figure: post-conference volatility for 3m, 2Y and 10Y: (LLM paper target var) -------
 
