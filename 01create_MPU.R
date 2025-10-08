@@ -206,7 +206,7 @@ differences_df <- final_df_list %>%
   map(~ .x %>% filter(if_all(starts_with("diff_"), ~!is.na(.x)))) %>%
   # Winsorize all diff variables
   map(~ .x %>% mutate(across(starts_with("diff_"), 
-                              ~DescTools::Winsorize(.x)))) %>%
+                              ~DescTools::Winsorize(.x,val = quantile(.x,probs= c(0.01,0.99)))))) %>%
   # Calculate thresholds and spikes based on winsorized diff_3
   map(~ .x %>% mutate(
     up_threshold = mean(diff_3, na.rm = TRUE) + 1.5 * sd(diff_3, na.rm = TRUE),
