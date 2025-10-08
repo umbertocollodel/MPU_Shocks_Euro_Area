@@ -189,7 +189,7 @@ ggsave(
 )
 
 # Table: correlation matrix of MPU across tenors -------
-# Compute correlation matrix of MPU across tenors
+# Compute correlation matrix of MPU across tenors 
 correlation_table <- differences_df %>%
   select(date, tenor, diff_3) %>%
   pivot_wider(names_from = tenor, values_from = diff_3) %>%
@@ -331,6 +331,29 @@ differences_df %>%
   stargazer(summary = FALSE,
             rownames=F,
             out = "../output/tables/share_increases.tex")
+
+# Table: summary statistics of MPU by tenor -------
+
+differences_df %>%
+  group_by(tenor) %>%
+  summarise(
+    N = n(),
+    Mean = round(mean(diff_3, na.rm = TRUE), 2),
+    SD = round(sd(diff_3, na.rm = TRUE), 2),
+    Min = round(min(diff_3, na.rm = TRUE), 2),
+    `1st Qu.` = round(quantile(diff_3, 0.25, na.rm = TRUE), 2),
+    Median = round(median(diff_3, na.rm = TRUE), 2),
+    `3rd Qu.` = round(quantile(diff_3, 0.75, na.rm = TRUE), 2),
+    Max = round(max(diff_3, na.rm = TRUE), 2)
+  ) %>%
+  mutate(tenor = factor(tenor, levels = c("3mnt", "6mnt", "1Y", "2Y", "5Y", "10Y"))) %>%
+  .[order(.$tenor),] %>%
+  select(tenor, N, Mean, Median, SD) %>%
+  setNames(c("Tenor", "N.obs.", "Mean", "Median","SD")) %>%
+  mutate(Tenor = as.character(Tenor)) %>%
+  stargazer(summary = FALSE,
+            rownames = FALSE,
+            out = "../output/tables/summary_statistics_mpu.tex")
 
 
 
