@@ -1,0 +1,46 @@
+# =============================================================================
+# Environment Variables for Uncertainty_surprises Project
+# =============================================================================
+#
+# SETUP INSTRUCTIONS:
+# 1. Copy this file and rename it to ".Renviron" (without .example)
+# 2. Fill in your actual API keys below
+# 3. NEVER commit the .Renviron file to git (already in .gitignore)
+#
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Google Gemini API Key (Required for LLM Paper - Scripts 07-17)
+# -----------------------------------------------------------------------------
+# Obtain from: https://makersuite.google.com/app/apikey
+# Used by: 07running_llm_docs.R and robustness testing scripts
+# Cost: ~$20-50 per full pipeline run
+#
+GEMINI_API_KEY=your_gemini_api_key_here
+
+# -----------------------------------------------------------------------------
+# OpenAI API Key (Optional - Required only for Script 16)
+# -----------------------------------------------------------------------------
+# Obtain from: https://platform.openai.com/api-keys
+# Used by: 16run_counterfactual_exercise.R (ChatGPT edits press conferences)
+# Cost: ~$10-20 for counterfactual experiments
+#
+# OPENAI_API_KEY=your_openai_api_key_here
+
+# -----------------------------------------------------------------------------
+# Other API Keys (Add as needed)
+# -----------------------------------------------------------------------------
+# If you add other LLM models for robustness testing (script 15), add their
+# API keys here following the same pattern
+#
+# ANTHROPIC_API_KEY=your_anthropic_api_key_here
+# COHERE_API_KEY=your_cohere_api_key_here
+
+# =============================================================================
+# SECURITY REMINDER
+# =============================================================================
+# - Keep this file (.Renviron) private and NEVER share it
+# - If you accidentally expose your keys, revoke them immediately
+# - Monitor your API usage dashboards regularly
+# - Set spending limits on your API accounts to avoid unexpected charges
+# =============================================================================

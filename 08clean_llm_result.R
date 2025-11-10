@@ -2,20 +2,20 @@
 
 # Names columns:
 
-names_col=c("date","id","tenor","direction","rate","reason")
+names_col=c("date","id","tenor","direction","rate","confidence")
 
 # Re-create a name vector in case messed up some conferences in API request:
 
-names_correct=list.files(path = "../intermediate_data/gemini_result/",
+names_correct=list.files(path = "../intermediate_data/gemini_result/prompt_naive/",
            full.names = T) %>% 
-  str_subset("\\d") %>% 
+  str_subset("\\d{4}-\\d{2}-\\d{2}") %>% 
   str_remove("\\.txt") %>% 
   str_extract("\\d{4}-\\d{2}-\\d{2}")
 
 # From character string to tibble:
 
-results <- list.files(path = "../intermediate_data/gemini_result/",
-                      pattern = "batch",
+results <- list.files(path = "../intermediate_data/gemini_result/prompt_naive/",
+                      pattern = "\\d{4}-\\d{2}-\\d{2}",
                     full.names = T) %>% 
   map(~ readRDS(.x)) %>% 
   map(~ tryCatch(.x %>% 
@@ -36,38 +36,18 @@ clean_df=results %>%
   map(~ .x %>% slice(-1)) %>% 
   map(~ .x %>% mutate(date=as.character(date))) %>%
   map(~ .x %>% mutate_at(vars(contains("rate")),as.numeric)) %>% 
+  map(~ .x %>% mutate_at(vars(contains("confidence")),as.numeric)) %>% 
   bind_rows() %>% 
   filter(tenor %in% c("3M","2Y","10Y"))
-
-
-# # Combine with governor name:
-# 
-# file_names=list.files("../intermediate_data/texts/introductory_statements/")
-# 
-# # Extract date and governor name
-# governor_df <- data.frame(
-#   date = str_extract(file_names, "\\d{4}-\\d{2}-\\d{2}"),
-#   governor = str_extract(file_names, "(?<=_)\\w+\\s\\w+")
-# ) %>% 
-#   mutate(date = as.Date(date),
-#          governor = ifelse(is.na(governor),"Jean-Claude Trichet",governor))
-# 
-# 
-# # Join the governor name into your df
-# clean_df <- clean_df %>%
-#   left_join(governor_df, by = "date")
 
 
 
 # Export: 
 
 writexl::write_xlsx(clean_df,
-                    paste0("../intermediate_data/llm_assessment_",
-                           name_prompt_request,
-                           "_",
-                           batch_size,
-                           "batch_"
-                           ,Sys.Date(),
+                    paste0("../intermediate_data/aggregate_gemini_result/prompt_naive/",
+                           "2.5flash_",
+                           Sys.Date(),
                            ".xlsx")
 )
 
