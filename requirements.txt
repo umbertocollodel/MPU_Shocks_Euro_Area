@@ -1,42 +1,9 @@
-# =============================================================================
-# Python Dependencies for Uncertainty_surprises Project
-# =============================================================================
-#
-# Installation:
-#   pip install -r requirements.txt
-#
-# To generate/update this file with your exact versions:
-#   pip freeze > requirements.txt
-#
-# =============================================================================
+# Python Requirements for LLM-as-Judge Model
+# Install with: pip install -r requirements.txt
 
-# Core data manipulation
-pandas>=1.5.0
-numpy>=1.23.0
-
-# JSON handling (built-in to Python 3, but listed for reference)
-# json - built-in module
-
-# Date/time handling (built-in)
-# datetime - built-in module
-
-# Type hints (built-in in Python 3.8+)
-# typing - built-in module
-
-# Parallel processing (built-in)
-# concurrent.futures - built-in module
-
-# LLM API clients (add specific versions if using these)
-# Note: The project uses these but they're imported conditionally
-# Uncomment and specify versions as needed:
-#
-# openai>=1.0.0          # For OpenAI GPT models
-# anthropic>=0.18.0      # For Claude models
-# google-generativeai    # For Gemini models
-
-# =============================================================================
-# Development Dependencies (Optional)
-# =============================================================================
-# jupyter>=1.0.0         # For interactive notebooks
-# ipython>=8.0.0         # Enhanced Python shell
-# pytest>=7.0.0          # Testing framework
+numpy>=1.24.0
+pandas>=2.0.0
+scipy>=1.10.0
+pyreadr>=0.4.7
+litellm>=1.30.0
+tqdm>=4.65.0
