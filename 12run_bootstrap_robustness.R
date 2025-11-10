@@ -1,5 +1,10 @@
-# ============================================================================ 
+# ============================================================================
 # BOOTSTRAP AND MULTIPLE CORRELATION ANALYSIS FOR LLM RESULTS
+# ============================================================================
+#
+# IMPORTANT: Run this script from the 'code/' directory
+# The script uses relative paths (../intermediate_data/, ../output/)
+#
 # ============================================================================
 
 # Load required libraries
@@ -12,8 +17,12 @@ pacman::p_load(
   boot
 )
 
-# Set working directory (modify as needed)
-setwd("~/../Desktop/Projects/Uncertainty_surprises/code/")
+# Verify we're in the correct directory
+if (!file.exists("../raw_data") || !file.exists("../intermediate_data")) {
+  stop("Please run this script from the 'code/' directory.\n",
+       "Current directory: ", getwd(), "\n",
+       "Expected to find ../raw_data/ and ../intermediate_data/ directories.")
+}
 
 # --------------------------------------------------------------------------
 # 1) LOAD LLM DATA

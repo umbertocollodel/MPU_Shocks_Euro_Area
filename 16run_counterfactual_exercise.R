@@ -2,6 +2,9 @@
 # EXPERIMENT A ANALYSIS: ChatGPT edits → Gemini evaluates
 # ============================================================================
 # Analysis of disagreement reduction from counterfactual editing experiment
+#
+# IMPORTANT: Run this script from the 'code/' directory
+# ============================================================================
 
 # Load libraries ----
 if (!require("pacman")) install.packages("pacman")
@@ -11,7 +14,11 @@ pacman::p_load(
 )
 
 # Configuration ----
-setwd("~/../Desktop/Projects/Uncertainty_surprises/code/")
+# Verify we're in the correct directory
+if (!file.exists("../intermediate_data/counterfactual_cross_llm")) {
+  stop("Please run this script from the 'code/' directory.\n",
+       "Current directory: ", getwd())
+}
 
 # Enable Segoe UI font
 if (!("Segoe UI" %in% font_families())) {

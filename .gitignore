@@ -1,0 +1,68 @@
+# =============================================================================
+# .gitignore for Uncertainty_surprises Project
+# =============================================================================
+
+# R specific files
+.Rhistory
+.RData
+.Rproj.user/
+.Renviron          # Contains API keys - NEVER commit!
+.Rprofile
+
+# Python specific
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# Environment files
+.env
+
+# R package management
+renv/library/
+renv/staging/
+renv/python/
+renv/.gitignore
+
+# RStudio files
+*.Rproj
+
+# IDE and editor files
+.vscode/
+.idea/
+.claude/           # Claude Code IDE settings
+*.sublime-project
+*.sublime-workspace
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs and temporary files
+*.log
+failed_requests.log
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# Data files (uncomment if you want to exclude data from git)
+# ../raw_data/*.xls
+# ../raw_data/*.xlsx
+# ../intermediate_data/
+
+# Output files (uncomment if you want to exclude outputs from git)
+# ../output/
+
+# Optimization and experiment history files
+optimization_history*.json

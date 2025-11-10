@@ -1,6 +1,9 @@
 # ============================================================================
 # OUT-OF-SAMPLE EXPERIMENT: RE-RUN LLM FOR POST-JAN 2025 CONFERENCES
 # ============================================================================
+#
+# IMPORTANT: Run this script from the 'code/' directory
+# ============================================================================
 
 library(tidyverse)
 library(readxl)
@@ -8,7 +11,11 @@ library(writexl)
 library(lubridate)
 library(gemini.R)
 
-setwd("~/../Desktop/Projects/Uncertainty_surprises/code/")
+# Verify we're in the correct directory
+if (!file.exists("../intermediate_data/texts")) {
+  stop("Please run this script from the 'code/' directory.\n",
+       "Current directory: ", getwd())
+}
 
 # Set API key
 setAPI(Sys.getenv("GEMINI_API_KEY"))

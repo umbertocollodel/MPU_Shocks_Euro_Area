@@ -1,10 +1,13 @@
 # ==============================================================================
 # SCRIPT: Prompt Robustness Analysis - Minor and Medium Variations
 # ==============================================================================
-# This script tests the reliability of LLM outputs across different prompt 
+# This script tests the reliability of LLM outputs across different prompt
 # formulations, following the measurement reliability framework for LLM research.
 # We implement 10 minor and 5 medium variations of the naive prompt to assess
 # signal vs noise in our monetary policy uncertainty measurements.
+#
+# IMPORTANT: Run this script from the 'code/' directory
+# ==============================================================================
 
 # Load necessary libraries and set parameters: -----
 if (!require("pacman")) install.packages("pacman")
@@ -28,8 +31,11 @@ pacman::p_load(
   RColorBrewer
 )
 
-# Set working directory and API key: ----
-setwd("~/../Desktop/Projects/Uncertainty_surprises/code/")
+# Verify working directory and set API key: ----
+if (!file.exists("../intermediate_data/texts")) {
+  stop("Please run this script from the 'code/' directory.\n",
+       "Current directory: ", getwd())
+}
 setAPI(Sys.getenv("GEMINI_API_KEY"))
 
 # Configuration parameters: ----

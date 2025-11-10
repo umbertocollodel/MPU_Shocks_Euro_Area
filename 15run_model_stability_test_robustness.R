@@ -1,17 +1,24 @@
 # Cross-LLM Robustness Testing - Updated with Claude Integration
 # ================================================================
 # Each step is completely separate for easier debugging
+#
+# IMPORTANT: Run this script from the 'code/' directory
+# ================================================================
 
 # Load libraries ----
 if (!require("pacman")) install.packages("pacman")
 
 pacman::p_load(
-  openai, httr2, crayon, stringr, purrr, readr, writexl, readxl, 
+  openai, httr2, crayon, stringr, purrr, readr, writexl, readxl,
   tidyverse, future, furrr, psych, glue, RColorBrewer, showtext
 )
 
 # Configuration ----
-setwd("~/../Desktop/Projects/Uncertainty_surprises/code/")
+# Verify we're in the correct directory
+if (!file.exists("../intermediate_data")) {
+  stop("Please run this script from the 'code/' directory.\n",
+       "Current directory: ", getwd())
+}
 
 # API keys from .Renviron - Make sure to add ANTHROPIC_API_KEY to your .Renviron file
 Sys.setenv(OPENAI_API_KEY = Sys.getenv("OPENAI_API_KEY"))

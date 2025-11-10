@@ -18,8 +18,13 @@ library(zoo)       # For rolling functions
 # Enable Segoe UI font (ensure it's installed on your system)
 # Check if "Segoe UI" font is available, if not, add it
 if (!("Segoe UI" %in% font_families())) {
-  # Adjust this path if 'segoeui.ttf' is not in the specified location
-  font_add("Segoe UI", regular = "C:/Users/collodelu/OneDrive - centralbankmalta.org/Desktop/Projects/Uncertainty_surprises/code/segoeui.ttf")
+  # Try to load from local directory (relative path)
+  font_path <- file.path(getwd(), "segoeui.ttf")
+  if (file.exists(font_path)) {
+    font_add("Segoe UI", regular = font_path)
+  } else {
+    warning("Segoe UI font file not found. Using default font. Place 'segoeui.ttf' in the code/ directory if needed.")
+  }
 }
 showtext_auto()
 

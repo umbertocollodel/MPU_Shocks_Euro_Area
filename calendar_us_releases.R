@@ -1,8 +1,19 @@
 library(readxl)
 library(dplyr)
 
-# Set base path
-base_path <- "C:/Users/collodelu/Downloads/"
+# Set base path - use relative path from project root
+# Place US release data files in ../raw_data/us_releases/
+base_path <- "../raw_data/us_releases/"
+
+# Check if directory exists, if not provide helpful error message
+if (!dir.exists(base_path)) {
+  stop(paste0("Directory not found: ", base_path,
+              "\nPlease create the directory and place US release data files there:\n",
+              "  - release_dates_50.xlsx (Employment Situation)\n",
+              "  - release_dates_10.xlsx (CPI)\n",
+              "  - release_dates_53.xlsx (GDP)\n",
+              "  - release_dates_9.xlsx (Retail Sales)"))
+}
 
 # Read each file (sheet 2)
 es <- read_excel(paste0(base_path, "release_dates_50.xlsx"), sheet = 2)
