@@ -1,0 +1,136 @@
+#===============================================================================
+# MODEL CONFIGURATION FILE
+#===============================================================================
+# Project: Interpreting the Interpreter - ECB Communication Analysis
+# Author: Umberto Collodel
+# Institution: Central Bank of Malta
+#
+# This configuration file defines all model variants and their parameters.
+#
+# Usage in R:
+#   config <- yaml::read_yaml("config/model_config.yaml")
+#   model_name <- config$active_model
+#   model_config <- config$models[[model_name]]
+#
+# Usage via command line:
+#   Rscript src/run_model.R --model naive
+#   Rscript src/run_model.R --model historical_surprise
+#   python src/llm_api/llm_optimizer.py
+#===============================================================================
+
+# Active model selection (change this to switch models)
+active_model: "naive"  # Options: naive, historical_surprise, llm_as_judge
+
+
+#===============================================================================
+# MODEL DEFINITIONS
+#===============================================================================
+
+models:
+
+  # ---------------------------------------------------------------------------
+  # Naive Model (Baseline)
+  # ---------------------------------------------------------------------------
+  # Simple prompt without any historical context or pre-conference rates.
+  # Each conference is processed independently.
+  naive:
+    description: "Baseline model without historical context"
+    language: "R"
+    prompt_name: "prompt_naive"
+    gemini_model: "2.5-flash"
+    use_history: false
+    use_pre_conference_rates: false
+    temperature: 1
+    seed: 120
+    max_output_tokens: 1000000
+    top_k: 40
+    top_p: 0.95
+    parallel_workers: 5
+    max_retry_attempts: 5
+    output_dir: "../intermediate_data/gemini_result/prompt_naive"
+
+
+  # ---------------------------------------------------------------------------
+  # Historical Surprise Model
+  # ---------------------------------------------------------------------------
+  # Includes standard deviations from previous 3 ECB press conferences
+  # to provide context about recent market volatility patterns.
+  historical_surprise:
+    description: "Model with historical volatility context"
+    language: "R"
+    prompt_name: "prompt_history_surprises"
+    gemini_model: "2.5-flash"
+    use_history: true
+    history_window: 3  # Number of previous conferences to include
+    history_data_path: "../intermediate_data/range_difference_df.rds"
+    use_pre_conference_rates: false
+    temperature: 1
+    seed: 120
+    max_output_tokens: 1000000
+    top_k: 40
+    top_p: 0.95
+    parallel_workers: 5
+    max_retry_attempts: 5
+    output_dir: "../intermediate_data/gemini_result/prompt_history_surprises"
+
+
+  # ---------------------------------------------------------------------------
+  # LLM-as-Judge Model (Meta-Learning)
+  # ---------------------------------------------------------------------------
+  # Uses a two-LLM system where:
+  #   - Analyst LLM generates predictions
+  #   - Judge LLM critiques and refines the prompt iteratively
+  # Optimizes for correlation between predicted and actual market volatility.
+  llm_as_judge:
+    description: "Meta-learning model with iterative prompt optimization"
+    language: "python"
+    prompt_name: "prompt_history_surprises"  # Starting prompt
+    analyst_model: "gemini/gemini-2.5-flash"
+    judge_model: "gemini/gemini-2.5-pro"
+    use_history: true
+    history_window: 3
+    history_data_path: "../intermediate_data/range_difference_df.rds"
+    max_optimization_iterations: 10
+    training_percentage: 0.75  # 75% for optimization, 25% for validation
+    temperature: 0.7
+    target_tenors: ['3MNT', '2Y', '10Y']
+    transcript_dir: "../intermediate_data/texts"
+    output_dir: "../intermediate_data/aggregate_gemini_result/judge_llm"
+    optimization_history_dir: "../intermediate_data/optimization_history"
+
+
+#===============================================================================
+# SHARED PARAMETERS
+#===============================================================================
+
+shared:
+  # API Configuration
+  api_key_env_var: "GEMINI_API_KEY"
+  api_timeout_seconds: 120
+
+  # Data Paths
+  texts_dir: "../intermediate_data/texts"
+  results_base_dir: "../intermediate_data/gemini_result"
+
+  # Logging
+  log_file: "failed_requests.log"
+  verbose: true
+
+
+#===============================================================================
+# EXPERIMENT TRACKING
+#===============================================================================
+
+experiments:
+  # Add custom experiment configurations here if needed
+  # Example:
+  # custom_experiment_name:
+  #   base_model: "naive"
+  #   modifications:
+  #     temperature: 0.5
+  #     seed: 999
+
+
+#===============================================================================
+# END OF CONFIGURATION
+#===============================================================================

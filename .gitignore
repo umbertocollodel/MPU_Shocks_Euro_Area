@@ -1,0 +1,48 @@
+# R and RStudio
+.RData
+.Rhistory
+.Rproj.user/
+*.Rproj
+
+# Environment variables (IMPORTANT: Never commit API keys!)
+.Renviron
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+.claude/
+
+# Logs
+*.log
+failed_requests.log
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project-specific
+optimization_history_*.json
+prompt_variations_table.tex
+*.tex
+
+# Data (keep structure, not actual data files)
+# Uncomment if you want to exclude large data files:
+# ../intermediate_data/
+# ../raw_data/
