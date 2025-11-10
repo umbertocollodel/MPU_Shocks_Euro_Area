@@ -194,6 +194,7 @@ dir.create("../output/figures/oos_jan2025", showWarnings = FALSE, recursive = TR
 # Plot disagreement time series
 p_disagreement <- test_disagreement %>%
   mutate(tenor = factor(tenor, levels = c("3M", "2Y", "10Y"))) %>%
+  mutate(date = as.Date(date)) |> 
   ggplot(aes(x = date, y = llm_std, color = tenor)) +
   geom_line(linewidth = 0.9) +
   geom_point(size = 2.5) +
@@ -238,3 +239,59 @@ summary_stats <- test_disagreement %>%
 
 cat("\n=== SUMMARY STATISTICS BY TENOR ===\n")
 print(summary_stats, width = Inf)
+
+
+# Load market volatility data
+market_vol <- read_rds("../intermediate_data/range_difference_df.rds") %>%
+  mutate(
+    tenor = case_when(tenor == "3mnt" ~ "3M", TRUE ~ tenor),
+    date = as.Date(date)
+  ) %>%
+  filter(date >= as.Date("2025-01-01")) %>%
+  select(date, tenor, market_std = correct_post_mean_3)
+
+# Merge with LLM disagreement
+comparison <- test_disagreement %>%
+  inner_join(market_vol, by = c("date", "tenor"))
+
+# Correlations by tenor
+correlations <- comparison %>%
+  group_by(tenor) %>%
+  summarise(
+    pearson = cor(llm_std, market_std, use = "complete.obs"),
+    spearman = cor(llm_std, market_std, method = "spearman", use = "complete.obs"),
+    n = n()
+  )
+
+print(correlations)
+
+p_combined <- ggplot(comparison, aes(x = llm_std, y = market_std)) +
+  geom_smooth(method = "lm", se = FALSE, alpha = 0.2, color = "black", linewidth = 0.8) +
+  geom_point(aes(color = tenor), size = 3, alpha = 0.8) +
+  geom_text(aes(label = format(date, "%b")), hjust = -0.3, size = 4.5, family = "Segoe UI") +
+  scale_color_manual(values = color_palette_tenors, name = "Tenor") +
+  labs(
+    title = "",
+    x = "LLM Disagreement (pp)",
+    y = "Realized Market Volatility (pp)"
+  ) +
+  theme_minimal(base_family = "Segoe UI") +
+  theme(
+    plot.title = element_text(face = "bold", size = 18),
+    plot.subtitle = element_text(size = 16),
+    axis.title = element_text(size = 18),
+    axis.text = element_text(size = 16),
+    legend.position = c(0.87, 0.25),
+    legend.title = element_text(size = 16, face = "bold"),
+    legend.text = element_text(size = 14),
+    panel.border = element_rect(colour = "grey80", fill = NA),
+    panel.grid.minor = element_blank()
+  )
+
+ggsave("../output/figures/oos_jan2025/pooled_scatter.pdf",
+       p_combined,
+       dpi = 320, # Increased DPI for consistency
+       width = 10,
+       height = 8, # Adjusted height for better facet spacing
+       bg = "white")
+
