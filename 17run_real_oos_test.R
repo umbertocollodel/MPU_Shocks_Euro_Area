@@ -184,10 +184,14 @@ cat("\nDisagreement metrics saved.\n")
 
 library(showtext)
 
-# Load font
+# Load font - cross-platform compatible
 if (!("Segoe UI" %in% font_families())) {
-  if (file.exists("C:/Windows/Fonts/segoeui.ttf")) {
-    font_add("Segoe UI", regular = "C:/Windows/Fonts/segoeui.ttf")
+  # Try to load from local directory (relative path)
+  font_path <- file.path(getwd(), "segoeui.ttf")
+  if (file.exists(font_path)) {
+    font_add("Segoe UI", regular = font_path)
+  } else {
+    warning("Segoe UI font file not found. Using default font. Place 'segoeui.ttf' in the code/ directory if needed.")
   }
 }
 showtext_auto()
