@@ -13,7 +13,7 @@
 # Google Gemini API Key (Required for LLM Paper - Scripts 07-17)
 # -----------------------------------------------------------------------------
 # Obtain from: https://makersuite.google.com/app/apikey
-# Used by: 07running_llm_docs.R and robustness testing scripts
+# Used by: 07run_all_models_sequential.R and robustness testing scripts
 # Cost: ~$20-50 per full pipeline run
 #
 GEMINI_API_KEY=your_gemini_api_key_here

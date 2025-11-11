@@ -115,7 +115,6 @@ code/
 │   │   └── llm_optimizer.py   # Python meta-learning
 │   └── run_model.R            # Main entry point
 ├── 07run_all_models_sequential.R  # Run all models sequentially
-├── 07running_llm_docs.R       # Legacy entry point (backward compatible)
 ├── requirements.txt           # Python dependencies
 └── .Renviron                  # API keys (create this!)
 ```
@@ -151,20 +150,15 @@ models:
 
 ## Running Models
 
-### Method 1: Using the Legacy Script (Easiest)
+### Method 1: Run All Models Sequentially (Easiest)
 
-1. Open `07running_llm_docs.R`
-2. Edit line 34 to select your model:
-
-```r
-MODEL_TO_RUN <- "naive"  # Or "historical_surprise" or "llm_as_judge"
-```
-
-3. Run in R:
+Run all three model variants in sequence:
 
 ```r
-source("07running_llm_docs.R")
+source("07run_all_models_sequential.R")
 ```
+
+This will run naive → historical_surprise → llm_as_judge models sequentially (10-20 hours total).
 
 ### Method 2: Using the Unified Runner
 
@@ -433,9 +427,6 @@ Then run:
 - `src/llm_api/gemini_api.R` - R API functions
 - `src/llm_api/llm_optimizer.py` - Python meta-learning
 - `07run_all_models_sequential.R` - Convenience script to run all models sequentially
-
-### Legacy Files (Backward Compatible)
-- `07running_llm_docs.R` - Original entry point (now a wrapper)
 
 ### Analysis Scripts
 - `08clean_llm_result.R` - Parse LLM outputs

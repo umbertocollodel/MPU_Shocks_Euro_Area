@@ -26,7 +26,7 @@ code/
 │   │   ├── gemini_api.R ✓
 │   │   └── llm_optimizer.py ✓
 │   └── run_model.R ✓
-├── 07running_llm_docs.R ✓
+├── 07run_all_models_sequential.R ✓
 ├── requirements.txt ✓
 ├── REPLICATION_GUIDE.md ✓
 └── .Renviron (YOU MUST CREATE THIS!)
@@ -181,10 +181,10 @@ which python3
 ## Quick Start Command Summary
 
 ```r
-# OPTION 1: Legacy script (easiest)
-source("07running_llm_docs.R")  # Edit MODEL_TO_RUN first
+# OPTION 1: Run all models sequentially (easiest)
+source("07run_all_models_sequential.R")  # Runs all three models
 
-# OPTION 2: Direct command
+# OPTION 2: Direct command (run individual model)
 source("src/run_model.R")
 run_model(model_name = "naive")
 
