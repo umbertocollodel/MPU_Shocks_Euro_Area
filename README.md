@@ -23,7 +23,7 @@ pip install -r requirements.txt
 ### 2. Run Models (10-20 hours total)
 ```r
 # Run all three model variants sequentially
-source("run_all_models_sequential.R")
+source("07run_all_models_sequential.R")
 ```
 
 **OR** run individual models:
@@ -77,7 +77,7 @@ code/
 │       ├── gemini_api.R         # R API functions
 │       └── llm_optimizer.py     # Python meta-learning
 │
-├── run_all_models_sequential.R # Run all models (easiest)
+├── 07run_all_models_sequential.R # Run all models (easiest)
 │
 ├── Analysis pipeline:
 │   ├── 01create_MPU.R           # Monetary Policy Uncertainty index
@@ -171,7 +171,7 @@ source("04scraping_ecb_pressconf.R")  # 30-60 min
 source("05calculate_complexity_documents.R")  # 5 min
 
 # Stage 3: Run all LLM models (10-20 hours)
-source("run_all_models_sequential.R")
+source("07run_all_models_sequential.R")
 
 # Stage 4: Main analysis (10 minutes)
 source("08clean_llm_result.R")
@@ -196,7 +196,7 @@ source("17run_real_oos_test.R")
 
 ```r
 source("01create_MPU.R")           # 3 min
-source("run_all_models_sequential.R")  # 10-20 hours
+source("07run_all_models_sequential.R")  # 10-20 hours
 source("08clean_llm_result.R")     # 3 min
 source("010compare_llm_ois.R")     # 5 min ⭐ MAIN RESULT
 ```

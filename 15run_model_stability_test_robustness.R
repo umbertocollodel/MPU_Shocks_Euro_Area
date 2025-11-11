@@ -262,7 +262,7 @@ call_and_save_llm_response <- function(model_name, conference_date, conference_t
 # Batch function to call all models for all conferences
 call_all_llm_responses <- function(transcript_data, models = c("chatgpt", "claude"), limit_conferences = NULL) {
   # Load prompt
-  source("create_prompts.R")
+  source("config/prompts.R")
   analyst_prompt <- prompt_naive
   
   # Optionally limit conferences

@@ -114,6 +114,7 @@ code/
 │   │   ├── gemini_api.R       # R API functions
 │   │   └── llm_optimizer.py   # Python meta-learning
 │   └── run_model.R            # Main entry point
+├── 07run_all_models_sequential.R  # Run all models sequentially
 ├── 07running_llm_docs.R       # Legacy entry point (backward compatible)
 ├── requirements.txt           # Python dependencies
 └── .Renviron                  # API keys (create this!)
@@ -431,10 +432,10 @@ Then run:
 - `src/run_model.R` - Main unified runner
 - `src/llm_api/gemini_api.R` - R API functions
 - `src/llm_api/llm_optimizer.py` - Python meta-learning
+- `07run_all_models_sequential.R` - Convenience script to run all models sequentially
 
 ### Legacy Files (Backward Compatible)
 - `07running_llm_docs.R` - Original entry point (now a wrapper)
-- `create_prompts.R` - Old prompt file (superseded by config/prompts.R)
 
 ### Analysis Scripts
 - `08clean_llm_result.R` - Parse LLM outputs

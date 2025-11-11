@@ -50,7 +50,7 @@ dir.create(OUTPUT_DIR, recursive = TRUE, showWarnings = FALSE)
 dir.create(FIGURES_DIR, recursive = TRUE, showWarnings = FALSE)
 
 # Define the base naive prompt: ----
-source("create_prompts.R")
+source("config/prompts.R")
 base_prompt <- prompt_naive
 
 # Enhanced Gemini function with better error handling: ----

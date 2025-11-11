@@ -10,7 +10,7 @@
 #   Each model completes fully before the next one starts.
 #
 # Usage:
-#   source("run_all_models_sequential.R")
+#   source("07run_all_models_sequential.R")
 #
 # Total estimated time: 10-20 hours
 #===============================================================================
