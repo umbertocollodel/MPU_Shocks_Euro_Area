@@ -1,5 +1,7 @@
-library(readxl)
-library(dplyr)
+# Description: Process US economic release dates and analyze overlaps with ECB meetings
+
+
+# Clean and combine all different US economic release date files: -------
 
 # Set base path - use relative path from project root
 # Place US release data files in ../raw_data/us_releases/
@@ -41,13 +43,10 @@ calendar <- bind_rows(es, cpi, gdp, rs) %>%
   bind_rows()
 
 # Save
-writexl::write_xlsx(calendar, paste0("../raw_data/us_economic_releases.xlsx"))
+writexl::write_xlsx(calendar, paste0("../intermediate_data/us_economic_releases.xlsx"))
 
 
-library(readxl)
-library(dplyr)
-library(ggplot2)
-library(lubridate)
+# Analyze overlaps with ECB meetings: -------
 
 # Read ECB dates
 ecb <- read_excel("../raw_data/dates_govc.xlsx")
