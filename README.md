@@ -103,6 +103,9 @@ code/
 │   ├── 16run_counterfactual_exercise.R
 │   └── 17run_real_oos_test.R
 │
+├── Additional analysis:
+│   └── 18regression_ois_on_synthetic_measures.R  # Interaction analysis
+│
 └── Documentation:
     ├── README.md                 # This file
     ├── REPLICATION_GUIDE.md      # Full instructions
