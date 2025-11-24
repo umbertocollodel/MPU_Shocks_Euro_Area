@@ -26,9 +26,26 @@ readability_df <- ecb_pressconf_final %>%
 
 # Number of words: -----
 
-nw_vector <- ecb_pressconf_final %>% 
+nw_vector <- ecb_pressconf_final %>%
   map(~ corpus(.x)) %>%
-  map(~ ntoken(.x)) %>% 
+  map(~ ntoken(.x)) %>%
+  unlist() %>%
+  unname()
+
+# Hedging words count: -----
+
+# Define hedging word dictionary (common in economic/financial communication)
+hedging_words <- c("may", "might", "could", "would", "should", "possibly",
+                   "probably", "likely", "unlikely", "appear", "seem",
+                   "suggest", "potential", "uncertainty", "uncertain",
+                   "risk", "risks")
+
+hedging_vector <- ecb_pressconf_final %>%
+  map(~ corpus(.x)) %>%
+  map(~ tokens(.x, remove_punct = TRUE, remove_symbols = TRUE) %>%
+      tokens_tolower() %>%
+      tokens_select(pattern = hedging_words, selection = "keep") %>%
+      lengths()) %>%
   unlist() %>%
   unname()
 
@@ -143,28 +160,40 @@ complexity_df$`Whole text` %>%
 # Load market-based disagreement data
 range_df <- read_rds("../intermediate_data/range_difference_df.rds") %>%
   mutate(tenor = case_when(tenor == "3mnt" ~ "3M", TRUE ~ tenor)) %>%
-  select(tenor, date, market_volatility = correct_post_mean_3) |> 
-  filter(tenor %in% c("3M", "2Y", "10Y")) |> 
+  select(tenor, date, market_volatility = correct_post_mean_3) |>
+  filter(tenor %in% c("3M", "2Y", "10Y"))
 
-# Merge with Flesch-Kincaid scores (whole text only)
+# Merge with Flesch-Kincaid scores, word count, and hedging words (whole text only)
+# Extract whole text indices
+whole_text_idx <- which(readability_df$part == "Whole text")
+
 complexity_volatility_by_tenor <- readability_df %>%
   filter(part == "Whole text") %>%
   select(date, Flesch.Kincaid) %>%
+  mutate(word_count = nw_vector[whole_text_idx],
+         hedging_count = hedging_vector[whole_text_idx]) %>%
   inner_join(range_df, by = "date") %>%
   drop_na() %>%
   mutate(tenor = factor(tenor, levels = c("3M", "2Y", "10Y")))
 
-# Calculate correlations by tenor
+# Calculate correlations by tenor for all three variables
 cor_by_tenor <- complexity_volatility_by_tenor %>%
   group_by(tenor) %>%
   summarise(
-    pearson = cor(Flesch.Kincaid, market_volatility, method = "pearson"),
-    spearman = cor(Flesch.Kincaid, market_volatility, method = "spearman"),
+    # FK Complexity
+    fk_spearman = cor(Flesch.Kincaid, market_volatility, method = "spearman"),
+    fk_pval = cor.test(Flesch.Kincaid, market_volatility, method = "spearman")$p.value,
+    # Word count
+    wc_spearman = cor(word_count, market_volatility, method = "spearman"),
+    wc_pval = cor.test(word_count, market_volatility, method = "spearman")$p.value,
+    # Hedging count
+    hedge_spearman = cor(hedging_count, market_volatility, method = "spearman"),
+    hedge_pval = cor.test(hedging_count, market_volatility, method = "spearman")$p.value,
     n = n(),
     .groups = "drop"
   )
 
-cat("\n=== Correlation: FK Complexity vs Market-Based Disagreement by Tenor ===\n")
+cat("\n=== Spearman Correlations: Text Variables vs Market-Based Disagreement by Tenor ===\n")
 print(cor_by_tenor)
 
 # Identify and handle outliers
@@ -187,18 +216,25 @@ outlier_summary <- complexity_volatility_filtered %>%
 
 print(outlier_summary)
 
-# Recalculate correlations without outliers
+# Recalculate correlations without outliers for all three variables
 cor_by_tenor_robust <- complexity_volatility_filtered %>%
   filter(!is_outlier) %>%
   group_by(tenor) %>%
   summarise(
-    pearson = cor(Flesch.Kincaid, market_volatility, method = "pearson"),
-    spearman = cor(Flesch.Kincaid, market_volatility, method = "spearman"),
+    # FK Complexity
+    fk_spearman = cor(Flesch.Kincaid, market_volatility, method = "spearman"),
+    fk_pval = cor.test(Flesch.Kincaid, market_volatility, method = "spearman")$p.value,
+    # Word count
+    wc_spearman = cor(word_count, market_volatility, method = "spearman"),
+    wc_pval = cor.test(word_count, market_volatility, method = "spearman")$p.value,
+    # Hedging count
+    hedge_spearman = cor(hedging_count, market_volatility, method = "spearman"),
+    hedge_pval = cor.test(hedging_count, market_volatility, method = "spearman")$p.value,
     n = n(),
     .groups = "drop"
   )
 
-cat("\n=== Robust Correlations (outliers removed) ===\n")
+cat("\n=== Robust Spearman Correlations (outliers removed) ===\n")
 print(cor_by_tenor_robust)
 
 # Create scatter plot by tenor - with outliers removed
@@ -243,11 +279,57 @@ ggsave("../output/figures/complexity_vs_market_disagreement_by_tenor.pdf",
        dpi = 320,
        width = 12,
        height = 5,
-       bg = "white") 
-  
+       bg = "white")
 
+# =============================================================================
+# Generate LaTeX correlation table using stargazer
+# =============================================================================
 
-  
-  
-  
+# Function to add significance stars
+add_stars <- function(pval) {
+  case_when(
+    pval < 0.01 ~ "***",
+    pval < 0.05 ~ "**",
+    pval < 0.10 ~ "*",
+    TRUE ~ ""
+  )
+}
+
+# Prepare table data using robust correlations (outliers removed)
+# Reshape data: rows = variables, columns = tenors
+cor_table <- cor_by_tenor_robust %>%
+  select(tenor, fk_spearman, fk_pval, wc_spearman, wc_pval,
+         hedge_spearman, hedge_pval) %>%
+  pivot_longer(cols = -tenor,
+               names_to = c("variable", ".value"),
+               names_pattern = "(.+)_(spearman|pval)") %>%
+  mutate(variable = case_when(
+    variable == "fk" ~ "FK Complexity",
+    variable == "wc" ~ "Word Count",
+    variable == "hedge" ~ "Hedging Words"
+  )) %>%
+  mutate(cor_with_sig = paste0(sprintf("%.3f", spearman), add_stars(pval))) %>%
+  select(variable, tenor, cor_with_sig) %>%
+  pivot_wider(names_from = tenor, values_from = cor_with_sig) %>%
+  as.data.frame()
+
+# Set row names for stargazer
+rownames(cor_table) <- cor_table$variable
+cor_table <- cor_table %>% select(-variable)
+
+# Generate LaTeX table with stargazer
+stargazer(cor_table,
+          type = "latex",
+          summary = FALSE,
+          rownames = TRUE,
+          title = "Spearman Correlations: Text Variables and Market-Based Disagreement by Tenor",
+          label = "tab:complexity_correlations",
+          notes = c("*** p$<$0.01, ** p$<$0.05, * p$<$0.10",
+                    "Correlations calculated using Spearman rank correlation.",
+                    "Outliers (above 99th percentile) removed from analysis."),
+          notes.align = "l",
+          out = "../output/tables/complexity_correlations.tex")
+
+cat("\n=== LaTeX table saved to ../output/tables/complexity_correlations.tex ===\n")
+
   
