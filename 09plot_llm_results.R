@@ -14,6 +14,7 @@ library(tidyverse) # For data manipulation and plotting
 library(readxl)    # For reading Excel files
 library(showtext)  # For custom fonts
 library(zoo)       # For rolling functions
+library(boot)      # For bootstrap confidence intervals
 
 # Enable Segoe UI font (ensure it's installed on your system)
 # Check if "Segoe UI" font is available, if not, add it
@@ -329,19 +330,85 @@ color_palette_corr <- c("10Y" = "#d73027", "2Y" = "#4575b4", "3M" = "#91bfdb")
 ## 7a. Overall by tenor
 #------------------------------------------------------------------------------
 
+# Bootstrap helper function for Spearman correlation
+bootstrap_spearman <- function(data, indices) {
+  sample_data <- data[indices, ]
+  return(cor(sample_data[["std_rate"]], sample_data[["correct_post_mean"]],
+             method = "spearman", use = "complete.obs"))
+}
+
+# Function to compute bootstrap CI for a single tenor
+compute_bootstrap_ci_tenor <- function(tenor_data, n_bootstrap = 1500) {
+  if (nrow(tenor_data) < 10) {
+    return(data.frame(
+      correlation = NA,
+      ci_lower = NA,
+      ci_upper = NA,
+      n_obs = nrow(tenor_data)
+    ))
+  }
+
+  # Calculate point estimate
+  original_corr <- cor(tenor_data[["std_rate"]], tenor_data[["correct_post_mean"]],
+                       method = "spearman", use = "complete.obs")
+
+  # Bootstrap with set.seed for reproducibility
+  boot_result <- boot(
+    data = tenor_data,
+    statistic = bootstrap_spearman,
+    R = n_bootstrap,
+    sim = "ordinary",
+    stype = "i"
+  )
+
+  # Extract 95% CI using percentile method
+  ci <- boot.ci(boot_result, type = "perc", conf = 0.88)
+
+  return(data.frame(
+    correlation = original_corr,
+    ci_lower = ci$percent[4],
+    ci_upper = ci$percent[5],
+    n_obs = nrow(tenor_data)
+  ))
+}
+
+# Set seed for reproducibility
+set.seed(42)
+
 cor_by_tenor <- combined_df %>%
   group_by(tenor) %>%
   summarise(
     mean_corr = cor(std_rate, correct_post_mean, method = "spearman", use = "pairwise.complete.obs"),
     .groups = "drop"
-  ) |> 
+  ) |>
   mutate(tenor = factor(tenor, levels = c("3M", "2Y", "10Y"))) # Ensure tenor order is consistent
+
+# Calculate bootstrap 95% CI for each tenor
+ci_by_tenor <- combined_df %>%
+  group_by(tenor) %>%
+  nest() %>%
+  mutate(ci_results = map(data, ~compute_bootstrap_ci_tenor(.x, n_bootstrap = 1500))) %>%
+  unnest(ci_results) %>%
+  select(tenor, ci_lower, ci_upper, n_obs) %>%
+  ungroup()
+
+# Merge CI results with correlation summary
+cor_by_tenor <- cor_by_tenor %>%
+  left_join(ci_by_tenor, by = "tenor") |> 
+  mutate(tenor = factor(tenor, levels = c("3M", "2Y", "10Y"))) # Ensure consistent order
 
 
 # New plot: Bar plot of mean correlation by tenor
 ggplot(cor_by_tenor, aes(x = tenor, y = mean_corr, fill = tenor)) +
-  geom_col(width=0.4,show.legend = FALSE) + # Bar plot, no legend needed for fill
-  geom_text(aes(label = sprintf("%.2f", mean_corr)), vjust = -0.5, size = 5) + # Add value labels
+  geom_col(width = 0.4, show.legend = FALSE) + # Bar plot, no legend needed for fill
+  geom_errorbar(
+    aes(ymin = ci_lower, ymax = ci_upper),
+    width = 0.15,
+    color = "grey10",
+    size = 1,
+    show.legend = FALSE
+  ) +
+  geom_text(aes(label = sprintf("%.2f", mean_corr)), vjust = -6, size = 5) + # Add value labels
   scale_fill_manual(values = color_palette_corr) + # Use the same color palette
   labs(
     title = NULL,
@@ -350,12 +417,13 @@ ggplot(cor_by_tenor, aes(x = tenor, y = mean_corr, fill = tenor)) +
     y = "Overall Correlation",
     caption = ""
   ) +
+  expand_limits(y = c(-0.05, max(cor_by_tenor$ci_upper, na.rm = TRUE) + 0.1)) +
   theme_minimal(base_family = "Segoe UI") +
   theme(
     plot.title = element_text(size = 16, face = "bold"),
     plot.subtitle = element_text(size = 12, margin = margin(b = 10)),
-    axis.title.x = element_text(margin = margin(t = 10),size=16),
-    axis.title.y = element_text(margin = margin(r = 10),size=16),
+    axis.title.x = element_text(margin = margin(t = 10), size = 16),
+    axis.title.y = element_text(margin = margin(r = 10), size = 16),
     axis.text = element_text(size = 14),
     plot.caption = element_text(hjust = 0, size = 9, color = "grey50"),
     panel.grid.major.x = element_blank(), # Remove major vertical grid lines
