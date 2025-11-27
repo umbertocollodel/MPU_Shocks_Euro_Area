@@ -15,7 +15,9 @@ pacman::p_load(
   corrr,
   stargazer,
   Hmisc,
-  broom
+  broom,
+  showtext,
+  sysfonts
 )
 
 # Enable Segoe UI font (ensure it's installed on your system)

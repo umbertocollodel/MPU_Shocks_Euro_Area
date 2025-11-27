@@ -312,7 +312,8 @@ ggsave(file.path(output_dir, "direction_percentage_heatmap.pdf"), # Renamed for 
 #  Load and prepare the data
 range_df <- read_rds("../intermediate_data/range_difference_df.rds") %>%
   mutate(tenor = case_when(tenor == "3mnt" ~ "3M", TRUE ~ tenor)) %>%
-  select(tenor, date, correct_post_mean)
+  select(tenor, date, correct_post_mean_1) |> 
+  rename(correct_post_mean = correct_post_mean_1)
 
 # Assuming std_df is already loaded and contains: date, tenor, std_rate
 
