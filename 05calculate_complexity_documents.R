@@ -50,6 +50,71 @@ hedging_vector <- ecb_pressconf_final %>%
   unname()
 
 
+# =====================================================================
+# Loughran-McDonald Uncertainty Density: -----
+# =====================================================================
+
+# Load Loughran-McDonald lexicon from textdata package
+lm_lexicon <- textdata::lexicon_loughran_mcdonald(type = "Uncertainty")
+uncertainty_words <- tolower(lm_lexicon$word)
+
+# Count uncertainty words
+uncertainty_vector <- ecb_pressconf_final %>%
+  map(~ corpus(.x)) %>%
+  map(~ tokens(.x, remove_punct = TRUE, remove_symbols = TRUE) %>%
+      tokens_tolower() %>%
+      tokens_select(pattern = uncertainty_words, selection = "keep") %>%
+      lengths()) %>%
+  unlist() %>%
+  unname()
+
+# Calculate density (normalized by word count)
+uncertainty_density_vector <- uncertainty_vector / nw_vector
+
+
+# =====================================================================
+# Hawkish-Dovish Score: -----
+# =====================================================================
+
+# Define monetary policy word lists
+hawkish_words <- c(
+  "tightening", "tighten", "tight", "raise", "raised", "raising",
+  "hikes", "hike", "hiking", "higher", "increase", "increased",
+  "restrict", "restrictive", "inflation", "inflationary", "price",
+  "vigilance", "vigilant", "monitor", "concerned", "risk",
+  "caution", "cautious", "resolve", "firmly", "determined"
+)
+
+dovish_words <- c(
+  "easing", "ease", "lower", "lowered", "cut", "cuts", "reduce",
+  "accommodative", "accommodation", "flexible", "supportive",
+  "growth", "employment", "strengthen", "improve", "recovery",
+  "confidence", "benign", "moderate", "gradual", "patient"
+)
+
+# Calculate counts
+hawkish_vector <- ecb_pressconf_final %>%
+  map(~ corpus(.x)) %>%
+  map(~ tokens(.x, remove_punct = TRUE, remove_symbols = TRUE) %>%
+      tokens_tolower() %>%
+      tokens_select(pattern = hawkish_words, selection = "keep") %>%
+      lengths()) %>%
+  unlist() %>%
+  unname()
+
+dovish_vector <- ecb_pressconf_final %>%
+  map(~ corpus(.x)) %>%
+  map(~ tokens(.x, remove_punct = TRUE, remove_symbols = TRUE) %>%
+      tokens_tolower() %>%
+      tokens_select(pattern = dovish_words, selection = "keep") %>%
+      lengths()) %>%
+  unlist() %>%
+  unname()
+
+# Net score (hawkish - dovish)
+hawkish_dovish_score_vector <- hawkish_vector - dovish_vector
+
+
 # Plot complete text: ----
 
 
@@ -171,7 +236,9 @@ complexity_volatility_by_tenor <- readability_df %>%
   filter(part == "Whole text") %>%
   select(date, Flesch.Kincaid) %>%
   mutate(word_count = nw_vector[whole_text_idx],
-         hedging_count = hedging_vector[whole_text_idx]) %>%
+         hedging_count = hedging_vector[whole_text_idx],
+         uncertainty_density = uncertainty_density_vector[whole_text_idx],
+         hawkish_dovish_score = hawkish_dovish_score_vector[whole_text_idx]) %>%
   inner_join(range_df, by = "date") %>%
   drop_na() %>%
   mutate(tenor = factor(tenor, levels = c("3M", "2Y", "10Y")))
@@ -189,6 +256,12 @@ cor_by_tenor <- complexity_volatility_by_tenor %>%
     # Hedging count
     hedge_spearman = cor(hedging_count, market_volatility, method = "spearman"),
     hedge_pval = cor.test(hedging_count, market_volatility, method = "spearman")$p.value,
+    # Uncertainty density
+    unc_spearman = cor(uncertainty_density, market_volatility, method = "spearman"),
+    unc_pval = cor.test(uncertainty_density, market_volatility, method = "spearman")$p.value,
+    # Hawkish-Dovish score
+    hd_spearman = cor(hawkish_dovish_score, market_volatility, method = "spearman"),
+    hd_pval = cor.test(hawkish_dovish_score, market_volatility, method = "spearman")$p.value,
     n = n(),
     .groups = "drop"
   )
