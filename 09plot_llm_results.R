@@ -49,6 +49,78 @@ clean_df <- read_xlsx(paste0("../intermediate_data/aggregate_gemini_result/promp
 
 
 #------------------------------------------------------------------------------
+## 2. Figure 1: Post ECB Governing Council OIS Volatility
+#------------------------------------------------------------------------------
+
+# Load and prepare market-based OIS volatility data
+ois_quarterly_df <- read_rds("../intermediate_data/range_difference_df.rds") %>%
+  mutate(
+    # Standardize tenor names (3mnt -> 3M)
+    tenor = case_when(tenor == "3mnt" ~ "3M", TRUE ~ tenor),
+    # Ensure date is Date type
+    date = as.Date(date),
+    # Create quarter identifier
+    year = year(date),
+    quarter = quarter(date),
+    quarter_label = paste0(year, "-Q", quarter)
+  ) %>%
+  # Filter for target tenors only
+  filter(tenor %in% c("3M", "2Y", "10Y")) %>%
+  select(tenor, date, quarter_label, year, quarter, correct_post_mean_1) %>%
+  # Remove missing values
+  drop_na(correct_post_mean_1)
+
+# Aggregate to quarterly averages
+ois_quarterly_df <- ois_quarterly_df %>%
+  group_by(quarter_label, tenor, year, quarter) %>%
+  summarise(
+    volatility = mean(correct_post_mean_1, na.rm = TRUE),
+    n_meetings = n(),
+    .groups = "drop"
+  ) %>%
+  # Create quarter start date for x-axis
+  mutate(
+    quarter_date = as.Date(paste0(year, "-", (quarter - 1) * 3 + 1, "-01")),
+    tenor = factor(tenor, levels = c("3M", "2Y", "10Y"))
+  )
+
+# Define colors matching screenshot (blue for 3M/2Y, red for 10Y)
+color_palette_fig1 <- c("3M" = "#4575b4", "2Y" = "#4575b4", "10Y" = "#d73027")
+
+# Create three-panel faceted plot (horizontal layout matching screenshot)
+ggplot(ois_quarterly_df, aes(x = quarter_date, y = volatility)) +
+  geom_line(aes(color = tenor), linewidth = 0.8) +
+  facet_wrap(~ tenor, nrow = 1) +
+  scale_color_manual(values = color_palette_fig1, guide = "none") +
+  scale_x_date(date_breaks = "3 years", date_labels = "%Y") +
+  scale_y_continuous(labels = scales::number_format(accuracy = 0.01)) +
+  labs(
+    title = "",
+    x = NULL,
+    y = NULL,
+    caption = ""
+  ) +
+  theme_minimal(base_family = "Segoe UI") +
+  theme(
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+    plot.caption = element_text(hjust = 0, size = 9, color = "grey30", lineheight = 1.2),
+    axis.text.x = element_text(angle = 270, hjust = 1, size = 16),
+    axis.text.y = element_text(size = 16),
+    panel.grid.minor = element_blank(),
+    panel.border = element_rect(colour = "grey80", fill = NA),
+    strip.text = element_text(face = "bold", size = 14),
+    plot.margin = margin(10, 10, 10, 10)
+  )
+
+# Save plot
+ggsave(file.path(output_dir, "figure1_ois_volatility.pdf"),
+       dpi = 320,
+       width = 12,
+       height = 6,
+       bg = "white")
+
+
+#------------------------------------------------------------------------------
 ## 3. Figure: standard deviation over time for each tenor (Updated Aesthetics)
 #------------------------------------------------------------------------------
 
