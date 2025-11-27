@@ -104,7 +104,7 @@ ggplot(ois_quarterly_df, aes(x = quarter_date, y = volatility)) +
   theme(
     plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
     plot.caption = element_text(hjust = 0, size = 9, color = "grey30", lineheight = 1.2),
-    axis.text.x = element_text(angle = 270, hjust = 1, size = 16),
+    axis.text.x = element_text(angle = 90, hjust = 1, size = 16),
     axis.text.y = element_text(size = 16),
     panel.grid.minor = element_blank(),
     panel.border = element_rect(colour = "grey80", fill = NA),

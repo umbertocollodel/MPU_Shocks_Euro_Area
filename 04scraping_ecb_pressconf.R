@@ -12,7 +12,8 @@ pacman::p_load(
   readtext,
   broom,
   quanteda.textstats,
-  data.table
+  data.table,
+  textdata
 )
 # Set parameters
 

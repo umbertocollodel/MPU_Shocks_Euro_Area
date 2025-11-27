@@ -55,7 +55,7 @@ hedging_vector <- ecb_pressconf_final %>%
 # =====================================================================
 
 # Load Loughran-McDonald lexicon from textdata package
-lm_lexicon <- textdata::lexicon_loughran_mcdonald(type = "Uncertainty")
+lm_lexicon <- textdata::lexicon_loughran() |> filter(sentiment == "uncertainty")
 uncertainty_words <- tolower(lm_lexicon$word)
 
 # Count uncertainty words
@@ -69,7 +69,7 @@ uncertainty_vector <- ecb_pressconf_final %>%
   unname()
 
 # Calculate density (normalized by word count)
-uncertainty_density_vector <- uncertainty_vector / nw_vector
+uncertainty_density_vector <- uncertainty_vector / nw_vector *100
 
 
 # =====================================================================
@@ -112,7 +112,7 @@ dovish_vector <- ecb_pressconf_final %>%
   unname()
 
 # Net score (hawkish - dovish)
-hawkish_dovish_score_vector <- hawkish_vector - dovish_vector
+hawkish_dovish_score_vector <- (hawkish_vector - dovish_vector)/nw_vector *100
 
 
 # Plot complete text: ----
@@ -225,7 +225,7 @@ complexity_df$`Whole text` %>%
 # Load market-based disagreement data
 range_df <- read_rds("../intermediate_data/range_difference_df.rds") %>%
   mutate(tenor = case_when(tenor == "3mnt" ~ "3M", TRUE ~ tenor)) %>%
-  select(tenor, date, market_volatility = correct_post_mean_3) |>
+  select(tenor, date, market_volatility = correct_post_mean_1) |>
   filter(tenor %in% c("3M", "2Y", "10Y"))
 
 # Merge with Flesch-Kincaid scores, word count, and hedging words (whole text only)
@@ -303,6 +303,12 @@ cor_by_tenor_robust <- complexity_volatility_filtered %>%
     # Hedging count
     hedge_spearman = cor(hedging_count, market_volatility, method = "spearman"),
     hedge_pval = cor.test(hedging_count, market_volatility, method = "spearman")$p.value,
+    # Uncertainty density
+    unc_spearman = cor(uncertainty_density, market_volatility, method = "spearman"),
+    unc_pval = cor.test(uncertainty_density, market_volatility, method = "spearman")$p.value,
+    # Hawkish-Dovish score
+    hd_spearman = cor(hawkish_dovish_score, market_volatility, method = "spearman"),
+    hd_pval = cor.test(hawkish_dovish_score, market_volatility, method = "spearman")$p.value,
     n = n(),
     .groups = "drop"
   )
@@ -372,14 +378,16 @@ add_stars <- function(pval) {
 # Reshape data: rows = variables, columns = tenors
 cor_table <- cor_by_tenor_robust %>%
   select(tenor, fk_spearman, fk_pval, wc_spearman, wc_pval,
-         hedge_spearman, hedge_pval) %>%
+         hedge_spearman, hedge_pval, unc_spearman, unc_pval, hd_spearman, hd_pval) %>%
   pivot_longer(cols = -tenor,
                names_to = c("variable", ".value"),
                names_pattern = "(.+)_(spearman|pval)") %>%
   mutate(variable = case_when(
     variable == "fk" ~ "FK Complexity",
     variable == "wc" ~ "Word Count",
-    variable == "hedge" ~ "Hedging Words"
+    variable == "hedge" ~ "Hedging Words",
+    variable == "unc" ~ "LM Uncertainty",
+    variable == "hd" ~ "Net Hawkish-Dovish Score"
   )) %>%
   mutate(cor_with_sig = paste0(sprintf("%.3f", spearman), add_stars(pval))) %>%
   select(variable, tenor, cor_with_sig) %>%
