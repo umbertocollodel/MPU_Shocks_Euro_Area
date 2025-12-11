@@ -44,7 +44,7 @@
 #'
 #' @export
 new_openrouter <- function(prompt,
-                           model = "qwen/qwen3-235b-a22b-instruct",
+                           model = "qwen/qwen3-235b-a22b-2507",
                            temperature = 1,
                            max_tokens = 100000,
                            top_p = 0.95,
@@ -52,7 +52,6 @@ new_openrouter <- function(prompt,
 
   # API endpoint
   url <- "https://openrouter.ai/api/v1/chat/completions"
-  api_key <- "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"
 
 
   # Verify API key is set
@@ -76,6 +75,8 @@ new_openrouter <- function(prompt,
   req <- httr2::request(url) |>
     httr2::req_headers(
       "Authorization" = paste("Bearer", api_key),
+      "HTTP-Referer" = "http://localhost",     # required
+      "X-Title" = "ECB-analysis",              # required (any name is fine)
       "Content-Type" = "application/json"
     ) |>
     httr2::req_body_json(request_body) |>
