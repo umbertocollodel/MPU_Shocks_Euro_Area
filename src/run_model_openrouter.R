@@ -121,13 +121,13 @@ if (file.exists(config$log_file)) {
 
 # Configure parallel processing ------------------------------------------------
 n_workers <- config$parallel_workers
-plan(sequential)
+plan(multisession, workers = n_workers)
 
 cat(crayon::blue(paste0("Starting parallel processing with ", n_workers, " workers...\n")))
 cat(crayon::blue(paste0("Processing ", length(dates_ecb_presconf), " conferences\n\n")))
 
 # Execute parallel processing --------------------------------------------------
-results_parallel <- map2(
+results_parallel <- future_map2(
   dates_ecb_presconf,
   ecb_pressconf,
   ~ process_single_conference_openrouter(
@@ -140,7 +140,9 @@ results_parallel <- map2(
     seed = config$seed,
     temperature = config$temperature,
     max_attempts = config$max_retry_attempts
-  ))
+  ),
+  .options = furrr_options(seed = TRUE)
+)
 
 # Close parallel workers
 plan(sequential)
