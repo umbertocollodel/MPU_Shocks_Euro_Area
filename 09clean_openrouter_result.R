@@ -79,11 +79,10 @@ parse_llm_response <- function(response, conf_date) {
       return(NULL)
     }
 
-    # Extract markdown table from response
-    # The table should have | delimiters
+    # Split into lines
     lines <- strsplit(response, "\n")[[1]]
 
-    # Find table lines (contain | character)
+    # Keep only lines containing | (table rows)
     table_lines <- lines[grepl("\\|", lines)]
 
     if (length(table_lines) < 3) {
@@ -91,55 +90,51 @@ parse_llm_response <- function(response, conf_date) {
       return(NULL)
     }
 
-    # Remove separator line (contains only |, -, and spaces)
-    table_lines <- table_lines[!grepl("^[\\|\\s\\-:]+$", table_lines)]
+    # FIXED: Remove separator lines (contain only |, -, :, spaces)
+    # Use perl=TRUE for proper regex, put hyphen at end of character class
+    separator_pattern <- "^[|: -]+$"
+    table_lines <- table_lines[!grepl(separator_pattern, table_lines, perl = TRUE)]
 
-    # Reconstruct table as text
-    table_text <- paste(table_lines, collapse = "\n")
+    # Alternative: keep only lines that contain actual data (dates)
+    data_lines <- table_lines[grepl("\\d{4}-\\d{2}-\\d{2}", table_lines)]
 
-    # Parse using read_delim
-    parsed <- readr::read_delim(
-      I(table_text),
-      delim = "|",
-      trim_ws = TRUE,
-      show_col_types = FALSE
-    )
-
-    # Remove first and last columns (empty from table borders)
-    if (ncol(parsed) > 2) {
-      parsed <- parsed %>%
-        select(-1, -ncol(.))
-    }
-
-    # Check if we have valid data
-    if (nrow(parsed) < 2 || ncol(parsed) < 6) {
-      cat("  Warning: Insufficient data in table for", conf_date, "\n")
+    if (length(data_lines) == 0) {
+      cat("  Warning: No data rows found for", conf_date, "\n")
       return(NULL)
     }
 
-    # Set column names
-    parsed <- parsed %>%
-      setNames(names_col)
+    # Parse each data line directly
+    parsed_list <- lapply(data_lines, function(line) {
+      # Split by | and clean
+      parts <- strsplit(line, "\\|")[[1]]
+      parts <- trimws(parts)
+      parts <- parts[parts != ""]  # Remove empty elements
 
-    # Remove header row if it contains column names
-    if (any(grepl("Date|Trader|Tenor|Direction|Rate|Confidence",
-                  parsed$date[1], ignore.case = TRUE))) {
-      parsed <- parsed %>% slice(-1)
+      if (length(parts) >= 6) {
+        data.frame(
+          date = parts[1],
+          id = parts[2],
+          tenor = parts[3],
+          direction = parts[4],
+          rate = suppressWarnings(as.numeric(gsub("[^0-9.-]", "", parts[5]))),
+          confidence = suppressWarnings(as.numeric(gsub("[^0-9.-]", "", parts[6]))),
+          stringsAsFactors = FALSE
+        )
+      } else {
+        NULL
+      }
+    })
+
+    # Combine all rows
+    parsed <- bind_rows(parsed_list)
+
+    if (nrow(parsed) == 0) {
+      cat("  Warning: No valid rows parsed for", conf_date, "\n")
+      return(NULL)
     }
 
-    # Clean and convert data types
-    parsed <- parsed %>%
-      mutate(
-        date = as.character(date),
-        id = as.character(id),
-        tenor = as.character(tenor),
-        direction = as.character(direction),
-        rate = suppressWarnings(as.numeric(gsub("[^0-9.-]", "", rate))),
-        confidence = suppressWarnings(as.numeric(gsub("[^0-9.-]", "", confidence)))
-      )
-
     cat("  Parsed", nrow(parsed), "rows for", conf_date, "\n")
-    return(parsed)
+    return(as_tibble(parsed))
 
   }, error = function(e) {
     cat("  Error parsing", conf_date, ":", e$message, "\n")
@@ -205,7 +200,3 @@ writexl::write_xlsx(clean_df, output_file)
 cat("\n", strrep("=", 60), "\n")
 cat("Results exported to:", output_file, "\n")
 cat(strrep("=", 60), "\n\n")
-
-#===============================================================================
-# END OF SCRIPT
-#===============================================================================
