@@ -356,12 +356,255 @@ differences_df %>%
             out = "../output/tables/summary_statistics_mpu.tex")
 
 
+# Section: CESIEUR vs MPU Analysis -------
+
+# Install and load RefinitivR if not available
+if (!require("RefinitivR", quietly = TRUE)) {
+  if (!require("devtools", quietly = TRUE)) {
+    install.packages("devtools")
+  }
+  devtools::install_github("GreenGrassBlueOcean/RefinitivR")
+}
+library(Refinitiv)
+
+# Create custom helper functions
+
+connect_to_workspace <- function(api_key) {
+  message("Connecting to LSEG Workspace...")
+  message("Note: LSEG Workspace desktop app must be running and logged in.")
+
+  tryCatch({
+    eikon <- EikonConnect(
+      Eikonapplication_id = api_key,
+      PythonModule = "JSON"
+    )
+    message("Successfully connected to LSEG Workspace!")
+    return(eikon)
+  }, error = function(e) {
+    stop(paste(
+      "Failed to connect to LSEG Workspace.",
+      "Ensure Workspace is running and you have a valid API key.",
+      "Error:", e$message
+    ))
+  })
+}
+
+try_download_ric <- function(ric, eikon_obj) {
+  raw_data <- tryCatch({
+    rd_GetHistoricalPricing(
+      universe = ric,
+      interval = "P1D",
+      count = 15000L,
+      RDObject = eikon_obj
+    )
+  }, error = function(e) {
+    return(NULL)
+  })
+
+  # Check if data is valid (not NULL, has rows, and doesn't contain error messages)
+  if (is.null(raw_data) || nrow(raw_data) == 0) {
+    return(NULL)
+  }
+
+  # Check for error response in data
+  col_names <- tolower(names(raw_data))
+  if (any(grepl("error|code|message", col_names))) {
+    # Check if it's actually an error response
+    if (nrow(raw_data) <= 2 && any(grepl("not found|error", tolower(as.character(raw_data)), ignore.case = TRUE))) {
+      return(NULL)
+    }
+  }
+
+  return(raw_data)
+}
 
 
+# Download CESIEUR data from Refinitiv
+# .CESIEUR is the Citi Economic Surprise Index for Eurozone
 
+# First establish connection to LSEG Workspace
+# NOTE: Set your API key here (get it from Workspace: App Key Generator)
+api_key <- Sys.getenv("REFINITIV_API_KEY")  # Or set directly: "your-api-key-here"
 
+eikon <- connect_to_workspace(api_key)
 
+# Download CESIEUR using the connection
+cesieur_raw <- try_download_ric(".CESIEUR", eikon)
 
+if (is.null(cesieur_raw)) {
+  warning("Failed to download .CESIEUR - trying alternative RIC: EURCESI=CI")
+  cesieur_raw <- try_download_ric("EURCESI=CI", eikon)
+}
+
+if (is.null(cesieur_raw)) {
+  stop("Could not download CESIEUR data. Please check your Refinitiv connection and RIC code.")
+}
+
+# Clean and prepare CESIEUR data
+# Column names may vary: CLOSE, TRDPRC_1, VALUE, etc.
+cesieur_df <- cesieur_raw %>%
+  mutate(date = as.Date(Date)) %>%
+  {
+    # Find the value column (could be CLOSE, TRDPRC_1, VALUE, etc.)
+    value_col <- intersect(names(.), c("CLOSE", "TRDPRC_1", "VALUE", "close", "value"))
+    if (length(value_col) == 0) {
+      # If no standard column found, use second column (first is usually Date)
+      value_col <- names(.)[2]
+    }
+    select(., date, cesieur = all_of(value_col[1]))
+  } %>%
+  filter(!is.na(cesieur)) %>%
+  mutate(cesieur = as.numeric(cesieur)) %>%
+  arrange(date)
+
+cat("\n=== CESIEUR Data Downloaded ===\n")
+cat("Observations:", nrow(cesieur_df), "\n")
+cat("Date range:", as.character(min(cesieur_df$date)), "to",
+    as.character(max(cesieur_df$date)), "\n")
+
+# Align CESIEUR to ECB Governing Council dates
+# Get unique ECB dates from MPU data
+ecb_dates <- differences_df %>%
+  distinct(date) %>%
+  arrange(date)
+
+# Merge CESIEUR with ECB dates (exact date matching)
+cesieur_aligned <- ecb_dates %>%
+  left_join(cesieur_df, by = "date") %>%
+  filter(!is.na(cesieur))
+
+# Create combined dataset: MPU (diff_3) + CESIEUR for all tenors
+mpu_cesieur_df <- differences_df %>%
+  select(date, tenor, diff_3) %>%
+  inner_join(cesieur_aligned %>% select(date, cesieur), by = "date") %>%
+  mutate(tenor = factor(tenor, levels = c("3mnt", "6mnt", "1Y", "2Y", "5Y", "10Y")))
+
+cat("\n=== MPU-CESIEUR Merged Dataset ===\n")
+cat("Total observations:", nrow(mpu_cesieur_df), "\n")
+cat("Date range:", as.character(min(mpu_cesieur_df$date)), "to",
+    as.character(max(mpu_cesieur_df$date)), "\n")
+cat("Observations per tenor:\n")
+print(table(mpu_cesieur_df$tenor))
+
+# Calculate correlations between CESIEUR and MPU (diff_3) by tenor
+cor_cesieur_mpu <- mpu_cesieur_df %>%
+  split(.$tenor) %>%
+  map_dfr(~ {
+    pearson_test <- cor.test(.x$diff_3, .x$cesieur, method = "pearson")
+
+    tibble(
+      tenor = unique(.x$tenor),
+      n_obs = nrow(.x),
+      pearson = pearson_test$estimate,
+      pearson_pval = pearson_test$p.value
+    )
+  }) %>%
+  mutate(tenor = factor(tenor, levels = c("3mnt", "6mnt", "1Y", "2Y", "5Y", "10Y")))
+
+# Add significance stars
+cor_cesieur_mpu <- cor_cesieur_mpu %>%
+  mutate(
+    pearson_sig = case_when(
+      pearson_pval < 0.01 ~ "***",
+      pearson_pval < 0.05 ~ "**",
+      pearson_pval < 0.10 ~ "*",
+      TRUE ~ ""
+    )
+  )
+
+cat("\n=== Correlation: CESIEUR vs MPU (diff_3) by Tenor ===\n")
+print(cor_cesieur_mpu)
+
+# Figure: Scatter plot of MPU vs CESIEUR by tenor ------
+
+# Create labels for correlation annotation
+cor_labels <- cor_cesieur_mpu %>%
+  mutate(label = paste0("r = ", round(pearson, 2), pearson_sig))
+
+mpu_cesieur_df %>%
+  ggplot(aes(x = cesieur, y = diff_3)) +
+  geom_point(size = 2.5, alpha = 0.5, color = "#4575b4") +
+  geom_smooth(method = "lm", se = TRUE, color = "#d73027", fill = "#d73027",
+              alpha = 0.15, linewidth = 1) +
+  geom_text(data = cor_labels,
+            aes(x = Inf, y = Inf, label = label),
+            hjust = 1.1, vjust = 1.5, size = 5,
+            color = "grey30", family = "Segoe UI Light",
+            inherit.aes = FALSE) +
+  facet_wrap(~ tenor, scales = "free", nrow = 2) +
+  labs(
+    title = "",
+    x = "Citi Economic Surprise Index (EUR)",
+    y = "MPU Surprise (Bps)",
+    caption = ""
+  ) +
+  theme_bw() +
+  theme(text = element_text(family = "Segoe UI Light")) +
+  theme(axis.text.x = element_text(vjust = 0.5, hjust = 0.5, size = 16)) +
+  theme(axis.text.y = element_text(size = 16),
+        axis.title = element_text(size = 18),
+        legend.text = element_text(size = 14),
+        strip.text = element_text(size = 18, face = "bold"),
+        panel.border = element_rect(colour = "grey80", fill = NA))
+
+# Export scatter plot
+ggsave("../output/figures/cesieur_vs_mpu_scatter.pdf",
+       dpi = 320,
+       width = 14,
+       height = 10,
+       bg = "white")
+
+# Figure: Time series overlay - MPU and CESIEUR over time ------
+
+# Standardize both variables for overlay (z-score scaling)
+mpu_cesieur_scaled <- mpu_cesieur_df %>%
+  group_by(tenor) %>%
+  mutate(
+    mpu_std = (diff_3 - mean(diff_3, na.rm = TRUE)) / sd(diff_3, na.rm = TRUE),
+    cesieur_std = (cesieur - mean(cesieur, na.rm = TRUE)) / sd(cesieur, na.rm = TRUE)
+  ) %>%
+  ungroup() %>%
+  pivot_longer(cols = c(mpu_std, cesieur_std),
+               names_to = "measure",
+               values_to = "value") %>%
+  mutate(measure = case_when(
+    measure == "mpu_std" ~ "MPU (standardized)",
+    measure == "cesieur_std" ~ "CESIEUR (standardized)"
+  ))
+
+# Plot with standardized values
+mpu_cesieur_scaled %>%
+  ggplot(aes(x = date, y = value, color = measure)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey50", linewidth = 0.5) +
+  geom_line(linewidth = 0.8, alpha = 0.9) +
+  facet_wrap(~ tenor, scales = "free_y", ncol = 2) +
+  scale_color_manual(
+    values = c("MPU (standardized)" = "#d73027", "CESIEUR (standardized)" = "#4575b4"),
+    name = ""
+  ) +
+  scale_x_date(date_breaks = "3 years", date_labels = "%Y") +
+  labs(
+    title = "",
+    x = "",
+    y = "Standardized Value (Z-score)",
+    caption = ""
+  ) +
+  theme_bw() +
+  theme(text = element_text(family = "Segoe UI Light")) +
+  theme(axis.text.x = element_text(vjust = 0.5, hjust = 0.5, angle = 90, size = 16)) +
+  theme(axis.text.y = element_text(size = 16),
+        axis.title = element_text(size = 18),
+        legend.text = element_text(size = 16),
+        legend.position = "bottom",
+        strip.text = element_text(size = 18, face = "bold"),
+        panel.spacing = unit(1, "lines"))
+
+# Export time series overlay
+ggsave("../output/figures/cesieur_mpu_timeseries_overlay.pdf",
+       dpi = 320,
+       width = 14,
+       height = 12,
+       bg = "white")
 
 
 
