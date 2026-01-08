@@ -554,4 +554,40 @@ ggsave("../output/figures/CESIUSD_vs_mpu_scatter.pdf",
        height = 10,
        bg = "white")
 
+# Pure monetary shock and information shock: correlation betwen MP, MPU and IS: ------
+
+
+a <- read_xlsx("../../../information_shock_merge.xlsx") %>%
+  select(MP_pm, CBI_pm, matches("^uncert_spread")) %>%
+  mutate(across(contains("pm"), as.numeric)) %>%
+  mutate(MP_pm_abs = abs(MP_pm),
+         CBI_pm_abs = abs(CBI_pm))
+
+corr_df <- a %>%
+  correlate() %>%
+  stretch() %>%                     # convert correlation matrix to long form
+  filter(x %in% c("MP_pm", "CBI_pm","MP_pm_abs","CBI_pm_abs"),
+         str_detect(y, "^uncert_spread"))
+
+ggplot(corr_df, aes(x = y, y = r, color = x)) +
+  geom_point(size = 3) +
+  coord_flip() +
+  labs(
+    x = "Uncertainty Spread Measure",
+    y = "Correlation",
+    color = "PM Measure",
+    title = "Correlations of PM Measures with Uncertainty Spreads"
+  ) +
+  theme_minimal()
+
+avg_corr <- corr_df %>%
+  group_by(x) %>%              # x = PM measure
+  summarise(
+    avg_corr = mean(r, na.rm = TRUE),
+    n = n()
+  )
+
+avg_corr
+
+
 
