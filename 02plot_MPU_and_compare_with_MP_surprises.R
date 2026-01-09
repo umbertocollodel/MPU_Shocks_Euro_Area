@@ -557,7 +557,7 @@ ggsave("../output/figures/CESIUSD_vs_mpu_scatter.pdf",
 # Figure: correlation betwen MPU shocks and pure MP shocks: ------
 
 
-df_pure_mp <- read_xlsx("../../../information_shock_merge.xlsx") %>%
+df_pure_mp <- read_xlsx("../raw_data/information_shock_merge.xlsx") %>%
   select(MP_median, CBI_median,pc1_hf, matches("^uncert_spread")) %>%
   mutate(across(contains("pm"), as.numeric)) %>%
   mutate(MP_median_abs = abs(MP_median),
