@@ -554,40 +554,61 @@ ggsave("../output/figures/CESIUSD_vs_mpu_scatter.pdf",
        height = 10,
        bg = "white")
 
-# Pure monetary shock and information shock: correlation betwen MP, MPU and IS: ------
+# Figure: correlation betwen MPU shocks and pure MP shocks: ------
 
 
-a <- read_xlsx("../../../information_shock_merge.xlsx") %>%
-  select(MP_pm, CBI_pm, matches("^uncert_spread")) %>%
+df_pure_mp <- read_xlsx("../../../information_shock_merge.xlsx") %>%
+  select(MP_median, CBI_median,pc1_hf, matches("^uncert_spread")) %>%
   mutate(across(contains("pm"), as.numeric)) %>%
-  mutate(MP_pm_abs = abs(MP_pm),
-         CBI_pm_abs = abs(CBI_pm))
-
-corr_df <- a %>%
-  correlate() %>%
-  stretch() %>%                     # convert correlation matrix to long form
-  filter(x %in% c("MP_pm", "CBI_pm","MP_pm_abs","CBI_pm_abs"),
-         str_detect(y, "^uncert_spread"))
-
-ggplot(corr_df, aes(x = y, y = r, color = x)) +
-  geom_point(size = 3) +
-  coord_flip() +
-  labs(
-    x = "Uncertainty Spread Measure",
-    y = "Correlation",
-    color = "PM Measure",
-    title = "Correlations of PM Measures with Uncertainty Spreads"
-  ) +
-  theme_minimal()
-
-avg_corr <- corr_df %>%
-  group_by(x) %>%              # x = PM measure
-  summarise(
-    avg_corr = mean(r, na.rm = TRUE),
-    n = n()
+  mutate(MP_median_abs = abs(MP_median),
+         CBI_median_abs = abs(CBI_median)) |> 
+  pivot_longer(
+    cols = starts_with("uncert_spread"),
+    names_to = "maturity",
+    values_to = "uncertainty"
+  ) %>% # Reshape data to long format
+  mutate(
+    # Clean maturity labels
+    maturity = str_remove(maturity, "uncert_spread_") %>%
+               str_remove("_bid") %>%
+               str_replace("mnt", "-Month") %>%
+               str_replace("yr", "-Year") %>%
+               str_to_title()
+  ) |> 
+  mutate(
+    maturity = factor(maturity, 
+                     levels = c("3-Month", "6-Month", "1-Year", 
+                               "2-Year", "5-Year", "10-Year"))
   )
 
-avg_corr
+# Create plot
+ggplot(data_long, aes(x = MP_median, y = uncertainty*100)) +
+  geom_point(alpha = 0.4, size = 1.2, color = "#2C3E50") +
+  geom_smooth(method = "lm", se = TRUE, 
+              color = "#E74C3C", fill = "#E74C3C", 
+              alpha = 0.15, linewidth = 0.7) +
+  facet_wrap(~ maturity, scales = "free", ncol = 3) +
+  labs(
+    x = "Cleaned Monetary Policy Surprises",
+    y = "Monetary Policy Uncertainty Surprises"
+  ) +
+  theme_minimal() +
+  theme(
+    text = element_text(family = "Segoe UI Light"),
+    axis.text.x = element_text(size = 18),
+    axis.text.y = element_text(size = 18),
+    axis.title = element_text(size = 20),
+    strip.text = element_text(size = 20, face = "bold"),
+    plot.title = element_text(size = 22, face = "bold", hjust = 0.5),
+    legend.position = "none",
+    plot.caption = element_text(hjust = 0, size = 12),
+    panel.spacing = unit(1, "lines")
+  )
 
-
-
+# Save for LaTeX
+ggsave("../output/figures/correlation_uncertainty_cleaned_mp_surprises.pdf", 
+  dpi = 320,
+  width = 14,    # wider for multi-panel layout
+  height = 10,
+  bg = "white"
+)
