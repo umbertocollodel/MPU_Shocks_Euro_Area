@@ -104,7 +104,8 @@ liquidity_df <- liquidity_df %>%
 
 mpu_liq_df <- liquidity_df %>%
   inner_join(differences_df %>% select(date, tenor, diff_3), by = c("date", "tenor")) %>%
-  filter(!is.na(liq_measure), !is.na(diff_3))
+  filter(!is.na(liq_measure), !is.na(diff_3)) %>%
+  mutate(liq_measure = liq_measure*100) #convert to bps the bid-ask spread change
 
 # Correlations by tenor: -----
 
