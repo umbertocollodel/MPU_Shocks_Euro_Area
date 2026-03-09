@@ -1,5 +1,19 @@
 ########### Description: script to plot monetary policy surprises and monetary policy uncertainty, figures and tables
 
+# Prepare environment: -----
+
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(readxl, tidyverse, lubridate, corrr, stargazer, xtable, showtext, sysfonts)
+
+if (!("Segoe UI" %in% font_families())) {
+  font_path <- file.path(getwd(), "segoeui.ttf")
+  if (file.exists(font_path)) font_add("Segoe UI", regular = font_path)
+}
+showtext_auto()
+
+if (!exists("differences_df")) {
+  differences_df <- readRDS("../intermediate_data/range_difference_df.rds")
+}
 
 # Figure: monetary and monetary uncertainty surprises over time (by tenor) ------
 
@@ -68,26 +82,30 @@ ggsave("../output/figures/comparison_surprises.pdf",
   
 # Figure: correlation betwen MP and MPU ----
 
+# Compute correlations and p-values dynamically via cor.test()
 df_comparison %>%
-  split(.$tenor) %>% 
-  map(~ .x %>% pivot_wider(names_from = type, values_from = value)) %>%
-  map(~ .x[,3:4]) %>% 
-  map(~ .x %>% mutate(Monetary_abs = abs(Monetary))) %>% 
-  map(~ .x %>% correlate()) %>%
-  map(~ .x %>% select(term, `Monetary Uncertainty`) %>% filter(term %in% c("Monetary", "Monetary_abs"))) %>% 
-  bind_rows(.id = "tenor") %>% 
-  mutate(term = case_when(
-    term == "Monetary_abs" ~ "Size of MP Surprise",
-    TRUE ~ "Direction of MP Surprise"
-  )) %>% 
-  mutate(term = factor(term, levels = c("Direction of MP Surprise", "Size of MP Surprise"))) %>% 
-  mutate(tenor = factor(tenor, levels = c("3mnt","6mnt","1Y","2Y","5Y","10Y"))) %>% 
-  mutate(significant = 
-           case_when(term == "Size of MP Surprise" & tenor %in% c("6mnt","2Y","10Y") ~ "**",
-                     term == "Direction of MP Surprise" & tenor %in% c("2Y") ~ "*",
-                     term == "Size of MP Surprise" & tenor %in% c("5Y") ~ "***",
-                     TRUE ~ "")
-  ) %>% 
+  split(.$tenor) %>%
+  map_dfr(~ {
+    df_w <- .x %>%
+      pivot_wider(names_from = type, values_from = value) %>%
+      filter(!is.na(Monetary), !is.na(`Monetary Uncertainty`))
+    test_dir  <- cor.test(df_w$Monetary,     df_w$`Monetary Uncertainty`)
+    test_size <- cor.test(abs(df_w$Monetary), df_w$`Monetary Uncertainty`)
+    tibble(
+      tenor                  = unique(.x$tenor),
+      term                   = c("Direction of MP Surprise", "Size of MP Surprise"),
+      `Monetary Uncertainty` = c(test_dir$estimate, test_size$estimate),
+      p.value                = c(test_dir$p.value,  test_size$p.value)
+    )
+  }) %>%
+  mutate(
+    significant = case_when(p.value < 0.01 ~ "***",
+                            p.value < 0.05 ~ "**",
+                            p.value < 0.10 ~ "*",
+                            TRUE ~ ""),
+    term  = factor(term, levels = c("Direction of MP Surprise", "Size of MP Surprise")),
+    tenor = factor(tenor, levels = c("3mnt","6mnt","1Y","2Y","5Y","10Y"))
+  ) %>%
   ggplot(aes(tenor, `Monetary Uncertainty`)) +
   geom_col(width = 0.3, fill = "#F8766D", alpha = 0.8) +
   geom_text(aes(y = `Monetary Uncertainty` + 0.1, label = paste0(round(`Monetary Uncertainty`, 2), significant)), size = 6) +
@@ -582,7 +600,7 @@ df_pure_mp <- read_xlsx("../raw_data/information_shock_merge.xlsx") %>%
   )
 
 # Create plot
-ggplot(data_long, aes(x = MP_median, y = uncertainty*100)) +
+ggplot(df_pure_mp, aes(x = MP_median, y = uncertainty*100)) +
   geom_point(alpha = 0.4, size = 1.2, color = "#2C3E50") +
   geom_smooth(method = "lm", se = TRUE, 
               color = "#E74C3C", fill = "#E74C3C", 

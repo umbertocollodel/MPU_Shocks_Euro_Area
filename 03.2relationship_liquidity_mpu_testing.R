@@ -66,7 +66,6 @@ spread_df <- ask_long %>%
   filter(!is.na(bid_close)) %>%
   mutate(spread = ask_close - bid_close)
 
-cat("spread_df rows:", nrow(spread_df), "\n")
 
 # ==============================================================================
 # Liquidity measure: avg(spread, 3 days post) - avg(spread, 3 days pre) GovC
@@ -75,8 +74,8 @@ cat("spread_df rows:", nrow(spread_df), "\n")
 liquidity_df <- map_dfr(tenors, function(tenor_name) {
   df <- spread_df %>% filter(tenor == tenor_name)
   map_dfr(dates, function(d) {
-    pre  <- df %>% filter(daily %in% seq(d - 3, d - 1, by = "day")) %>% pull(spread)
-    post <- df %>% filter(daily %in% seq(d + 1, d + 3, by = "day")) %>% pull(spread)
+    pre  <- df %>% arrange(desc(daily)) %>% filter(daily < d) %>% slice(1:3) %>% pull(spread)
+    post <- df %>% arrange(daily)      %>% filter(daily > d) %>% slice(1:3) %>% pull(spread)
 
     if (length(pre) == 0 || length(post) == 0) return(NULL)
     if (all(is.na(pre)) || all(is.na(post))) return(NULL)

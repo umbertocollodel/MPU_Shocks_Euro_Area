@@ -62,7 +62,7 @@ df_list <- names_sheets %>%
   map(~ .x |> rename(Daily = Timestamp)) %>%
   map(~ .x %>% mutate(Daily = as.Date(Daily))) %>% 
   map(~ .x %>% setNames(c("daily","high","low","first","last"))) %>% 
-  map(~ .x %>% mutate_at(2:ncol(.),as.numeric)) |> 
+  map(~ .x %>% mutate(across(-daily, as.numeric))) |>
   map(~ .x %>% arrange(daily)) 
   
   
@@ -295,7 +295,7 @@ ggsave("../output/figures/correlation_alternative_windows.pdf",
 # Export intermediate dataset: -----
 
 
-dir.create("../intermediate_data")
+dir.create("../intermediate_data", showWarnings = FALSE)
 
 differences_df %>% 
   select(tenor,date, correct_pre_mean_3, correct_post_mean_3,diff_1,diff_2,diff_3, correct_post_mean_1,

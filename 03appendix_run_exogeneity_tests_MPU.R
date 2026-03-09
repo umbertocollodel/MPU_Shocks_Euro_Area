@@ -4,6 +4,19 @@
 # Purpose: Check if current MPU surprises predict future ones (exogeneity test)
 # If coefficients are insignificant, surprises are truly unpredictable/exogenous
 
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(tidyverse, broom, showtext, sysfonts)
+
+if (!("Segoe UI" %in% font_families())) {
+  font_path <- file.path(getwd(), "segoeui.ttf")
+  if (file.exists(font_path)) font_add("Segoe UI", regular = font_path)
+}
+showtext_auto()
+
+if (!exists("differences_df")) {
+  differences_df <- readRDS("../intermediate_data/range_difference_df.rds")
+}
+
 # Run AR(3) regression for each tenor
 regression_results <- differences_df %>% 
   split(.$tenor) %>% 

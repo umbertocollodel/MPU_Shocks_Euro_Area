@@ -46,8 +46,8 @@ ois_daily <- names_sheets %>%
 mp_daily_df <- ois_daily %>%
   imap_dfr(function(df, tenor_name) {
     map_dfr(dates, function(d) {
-      pre  <- df %>% filter(daily %in% seq(d - 3, d - 1, by = "day")) %>% pull(last)
-      post <- df %>% filter(daily %in% seq(d + 1, d + 3, by = "day")) %>% pull(last)
+      pre  <- df %>% arrange(desc(daily)) %>% filter(daily < d) %>% slice(1:3) %>% pull(last)
+      post <- df %>% arrange(daily)      %>% filter(daily > d) %>% slice(1:3) %>% pull(last)
 
       if (all(is.na(pre)) || all(is.na(post))) return(NULL)
 
