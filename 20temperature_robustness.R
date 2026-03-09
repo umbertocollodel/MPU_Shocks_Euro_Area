@@ -40,7 +40,7 @@ pacman::p_load(
 
 # Number of simulation runs PER CONFERENCE
 # N=50-100 is a good balance for ergodic approximation
-N_SIMULATIONS <- 50
+N_SIMULATIONS <- 100
 
 # Temperature parameter (higher = more randomness)
 # 1.0 is the default used in main analysis
