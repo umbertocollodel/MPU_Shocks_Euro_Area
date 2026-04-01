@@ -103,6 +103,8 @@ cor_df <- comparison_df %>%
   mutate(label = paste0("r = ", r, sig),
          tenor = factor(tenor, levels = c("3mnt", "6mnt", "1Y", "2Y", "5Y", "10Y")))
 
+dir.create("../output/figures", recursive = TRUE, showWarnings = FALSE)
+
 # Figure: scatterplot daily MP surprise vs ECB MPD surprise: -----
 
 comparison_df %>%
@@ -130,3 +132,62 @@ ggsave("../output/figures/mp_daily_vs_ecb_scatter.pdf",
 
 mp_daily_df %>%
   saveRDS("../intermediate_data/mp_daily_df.rds")
+
+# ==============================================================================
+# R2 request: correlation between home-built first-moment surprise (mp_daily)
+# and MPU (diff_3) — same data, same 3-day window, mean vs. dispersion.
+# If uncorrelated, MPU genuinely isolates the second moment within the design.
+# ==============================================================================
+
+mpu_vs_mp <- mp_daily_df %>%
+  inner_join(differences_df %>% select(date, tenor, diff_3), by = c("date", "tenor")) %>%
+  filter(!is.na(mp_daily), !is.na(diff_3))
+
+cor_mpu_mp <- mpu_vs_mp %>%
+  split(.$tenor) %>%
+  map_dfr(~ {
+    test <- cor.test(.x$mp_daily, .x$diff_3, method = "pearson")
+    tibble(
+      tenor = unique(.x$tenor),
+      r     = round(test$estimate, 3),
+      p     = round(test$p.value,  3),
+      sig   = case_when(test$p.value < 0.01 ~ "***",
+                        test$p.value < 0.05 ~ "**",
+                        test$p.value < 0.10 ~ "*",
+                        TRUE ~ "")
+    )
+  }) %>%
+  mutate(
+    label = paste0("r = ", r, sig),
+    tenor = factor(tenor, levels = c("3mnt", "6mnt", "1Y", "2Y", "5Y", "10Y"))
+  )
+
+cat("\n=== Correlation: home-built MP surprise vs MPU (same window, same data) ===\n\n")
+print(cor_mpu_mp %>% select(tenor, r, p, sig), n = Inf)
+
+# Figure: scatter of MPU vs home-built MP surprise, by tenor -----
+
+mpu_vs_mp %>%
+  left_join(cor_mpu_mp %>% select(tenor, label), by = "tenor") %>%
+  ggplot(aes(mp_daily, diff_3)) +
+  geom_point(size = 2, alpha = 0.5, color = "#4575b4") +
+  geom_smooth(method = "lm", se = TRUE, color = "#d73027", fill = "#d73027",
+              alpha = 0.15, linewidth = 0.8) +
+  geom_text(aes(x = Inf, y = Inf, label = label),
+            hjust = 1.1, vjust = 1.5, size = 5,
+            color = "grey30", family = "Segoe UI Light",
+            inherit.aes = FALSE) +
+  facet_wrap(~ tenor, scales = "free", nrow = 2) +
+  labs(
+    x = "Home-Built MP Surprise (Bps, 3-day window)",
+    y = "MPU Surprise (Bps, 3-day window)",
+    caption = ""
+  ) +
+  theme_bw() +
+  theme(text       = element_text(family = "Segoe UI Light"),
+        axis.text  = element_text(size = 18),
+        axis.title = element_text(size = 20),
+        strip.text = element_text(size = 18, face = "bold"))
+
+ggsave("../output/figures/mpu_vs_mp_daily_scatter.pdf",
+       dpi = 320, width = 14, height = 10, bg = "white")
