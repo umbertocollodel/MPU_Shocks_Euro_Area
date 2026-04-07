@@ -1,4 +1,4 @@
-# Replication Code: Two Papers on ECB Monetary Policy Uncertainty
+# Replication Code: ECB Monetary Policy Uncertainty
 
 **Author:** Umberto Collodel (Central Bank of Malta)
 
