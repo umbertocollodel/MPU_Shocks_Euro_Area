@@ -458,7 +458,7 @@ differences_df %>%
 # Section: CESIUSD vs MPU Analysis -------
 
 # Install and load RefinitivR if not available
-if (!require("RefinitivR", quietly = TRUE)) {
+if (!require("Refinitiv", quietly = TRUE)) {
   if (!require("devtools", quietly = TRUE)) {
     install.packages("devtools")
   }
