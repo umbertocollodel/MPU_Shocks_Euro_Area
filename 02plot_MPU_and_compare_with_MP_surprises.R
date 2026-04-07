@@ -279,59 +279,140 @@ ggsave("../output/figures/mpu_all.png",
        dpi="retina")
 
 
- #Table: top 5 increases/decreases MPU -----
+ # Table: top 5 increases/decreases MPU -----
+# Descriptions are cached in a CSV keyed by date so they survive sample extensions.
+# On first run the cache is created from the hardcoded fallback below.
+# If the sample changes and new dates enter the top/bottom 5, a warning lists
+# exactly which dates need descriptions added to the cache CSV.
 
+descriptions_cache_path <- "../intermediate_data/top_bottom_5_descriptions.csv"
 
-differences_df %>% 
+# --- Compute current top/bottom 5 dynamically ---
+top5_dates <- differences_df %>%
   filter(tenor == "10Y") %>%
-  arrange(-diff_3) %>% 
-  slice(c(1:5)) %>% 
-  select(date,diff_3) %>% 
-  mutate(date = as.character(date)) %>% 
-  mutate(diff_3 = round(diff_3,2)) %>% 
-  mutate(`Decision` = c(
+  arrange(desc(diff_3)) %>%
+  slice(1:5) %>%
+  select(date, diff_3) %>%
+  mutate(type = "top", rank = row_number())
+
+bottom5_dates <- differences_df %>%
+  filter(tenor == "10Y") %>%
+  arrange(diff_3) %>%
+  slice(1:5) %>%
+  select(date, diff_3) %>%
+  mutate(type = "bottom", rank = row_number())
+
+# --- Hardcoded fallback descriptions (used only on first run to seed the cache) ---
+top5_fallback_desc <- tibble(
+  type     = "top",
+  rank     = 1:5,
+  Decision = c(
     "ECB decided to keep interest rates unchanged.",
     "ECB announced a series of measures including a cut in the deposit rate by 10 basis points to -0.30% and an extension of the asset purchase programme (APP)",
     "ECB unexpectedly cut interest rates by 25 basis points.",
     "ECB announced the end of net asset purchases under the asset purchase programme (APP) and signaled future interest rate hikes",
-    "ECB launched an expanded asset purchase programme (APP) and maintained low interest rates."),
-  ) %>% 
-  mutate(Description = c(
-   "The Governing Council expressed significant concerns about the risks to the economic outlook, particularly due to the sovereign debt crisis in the Eurozone. President Jean-Claude Trichet emphasized the heightened uncertainty and the need for strong vigilance.",
-   "President Mario Draghi’s announcements were seen as less aggressive than expected, leading to increased uncertainty about the ECB’s commitment to combat low inflation.",
-   "In his first meeting as ECB President, Mario Draghi emphasized the need for decisive action to support the economy, leading to a rate cut. This shift in policy direction created uncertainty about the future path of monetary policy under new leadership.",
-   "The ECB’s decision to end net asset purchases and signal future rate hikes is a response to rising inflation. This shift towards tightening monetary policy has raised questions about the timing and pace of rate hikes and their impact on economic recovery.",
-   "The announcement of such a large-scale asset purchase programme and the commitment to maintaining low interest rates until inflation approached the target added to market uncertainty about the long-term effects of these measures.")) %>% 
-  setNames(c("GovC Date","MPU Surprise","Decision","Description")) %>% 
-  stargazer(summary = FALSE,
-            rownames = FALSE,
-            out = "../output/tables/top_5_mpu.tex")
+    "ECB launched an expanded asset purchase programme (APP) and maintained low interest rates."
+  ),
+  Description = c(
+    "The Governing Council expressed significant concerns about the risks to the economic outlook, particularly due to the sovereign debt crisis in the Eurozone. President Jean-Claude Trichet emphasized the heightened uncertainty and the need for strong vigilance.",
+    "President Mario Draghi’s announcements were seen as less aggressive than expected, leading to increased uncertainty about the ECB’s commitment to combat low inflation.",
+    "In his first meeting as ECB President, Mario Draghi emphasized the need for decisive action to support the economy, leading to a rate cut. This shift in policy direction created uncertainty about the future path of monetary policy under new leadership.",
+    "The ECB’s decision to end net asset purchases and signal future rate hikes is a response to rising inflation. This shift towards tightening monetary policy has raised questions about the timing and pace of rate hikes and their impact on economic recovery.",
+    "The announcement of such a large-scale asset purchase programme and the commitment to maintaining low interest rates until inflation approached the target added to market uncertainty about the long-term effects of these measures."
+  )
+)
 
-differences_df %>% 
-  filter(tenor == "10Y") %>%
-  arrange(diff_3) %>% 
-  slice(c(1:5)) %>% 
-  select(date,diff_3) %>%
-  mutate(date = as.character(date)) %>% 
-  mutate(diff_3 = round(diff_3,2)) %>% 
-    mutate(`Decision` = c(
-      "ECB increased the three key interest rates by 50 basis points. This decision was aimed at ensuring the timely return of inflation to the 2% medium-term target.",
-      "ECB kept interest rates unchanged but signaled a shift towards less accommodative monetary policy. President Mario Draghi mentioned that the urgency for further actions had diminished.",
-      "ECB confirmed the end of its net asset purchases under the asset purchase programme (APP) by the end of December 2018.",
-      "ECB signaled potential future rate cuts and a resumption of asset purchases if inflation did not move towards its target.",
-      "ECB kept interest rates unchanged but emphasized its readiness to act if necessary to support the euro area economy."),
-      ) %>%
-    mutate(`Description` = c(
-  "Christine Lagarde emphasized the resilience of the euro area banking sector and the ECB’s readiness to provide liquidity support if needed. She also highlighted that the elevated level of uncertainty reinforced the importance of a data-dependent approach to policy rate decisions.",
-  "Draghi’s comments about the reduced urgency for additional measures provided clarity and reduced market uncertainty.",
-  "Draghi highlighted the ECB’s confidence in the sustained convergence of inflation to its target, which reduced uncertainty.",
-  "Draghi’s clear communication about the ECB’s readiness to act helped reduce market uncertainty.",
-  "Draghi’s reassurances about the ECB’s commitment to maintaining price stability and supporting the economy reduced uncertainty."),
-    ) %>% 
-  setNames(c("GovC Date","MPU Surprise","Decision","Description")) %>% 
-  stargazer(summary = FALSE,
-            rownames=F,
-            out = "../output/tables/bottom_5_mpu.tex")
+bottom5_fallback_desc <- tibble(
+  type     = "bottom",
+  rank     = 1:5,
+  Decision = c(
+    "ECB increased the three key interest rates by 50 basis points. This decision was aimed at ensuring the timely return of inflation to the 2% medium-term target.",
+    "ECB kept interest rates unchanged but signaled a shift towards less accommodative monetary policy. President Mario Draghi mentioned that the urgency for further actions had diminished.",
+    "ECB confirmed the end of its net asset purchases under the asset purchase programme (APP) by the end of December 2018.",
+    "ECB signaled potential future rate cuts and a resumption of asset purchases if inflation did not move towards its target.",
+    "ECB kept interest rates unchanged but emphasized its readiness to act if necessary to support the euro area economy."
+  ),
+  Description = c(
+    "Christine Lagarde emphasized the resilience of the euro area banking sector and the ECB’s readiness to provide liquidity support if needed. She also highlighted that the elevated level of uncertainty reinforced the importance of a data-dependent approach to policy rate decisions.",
+    "Draghi’s comments about the reduced urgency for additional measures provided clarity and reduced market uncertainty.",
+    "Draghi highlighted the ECB’s confidence in the sustained convergence of inflation to its target, which reduced uncertainty.",
+    "Draghi’s clear communication about the ECB’s readiness to act helped reduce market uncertainty.",
+    "Draghi’s reassurances about the ECB’s commitment to maintaining price stability and supporting the economy reduced uncertainty."
+  )
+)
+
+# --- Load or initialise cache ---
+if (file.exists(descriptions_cache_path)) {
+
+  desc_cache <- read_csv(descriptions_cache_path, show_col_types = FALSE) %>%
+    mutate(date = as.Date(date))
+
+  # Check whether current top/bottom dates match cached dates
+  cached_top    <- desc_cache %>% filter(type == "top")    %>% pull(date) %>% sort()
+  cached_bottom <- desc_cache %>% filter(type == "bottom") %>% pull(date) %>% sort()
+  current_top   <- sort(top5_dates$date)
+  current_bottom <- sort(bottom5_dates$date)
+
+  new_top       <- setdiff(current_top,    cached_top)
+  new_bottom    <- setdiff(current_bottom, cached_bottom)
+  dropped_top   <- setdiff(cached_top,    current_top)
+  dropped_bottom <- setdiff(cached_bottom, current_bottom)
+
+  if (length(new_top) > 0 || length(new_bottom) > 0) {
+    warning(
+      "Top/bottom-5 dates have changed — descriptions in the cache may be stale.\n",
+      if (length(new_top) > 0)
+        paste0("  NEW top-5 dates (need descriptions added to cache): ",
+               paste(new_top, collapse = ", "), "\n"),
+      if (length(dropped_top) > 0)
+        paste0("  Dates no longer in top-5 (can be removed from cache): ",
+               paste(dropped_top, collapse = ", "), "\n"),
+      if (length(new_bottom) > 0)
+        paste0("  NEW bottom-5 dates (need descriptions added to cache): ",
+               paste(new_bottom, collapse = ", "), "\n"),
+      if (length(dropped_bottom) > 0)
+        paste0("  Dates no longer in bottom-5 (can be removed from cache): ",
+               paste(dropped_bottom, collapse = ", "), "\n"),
+      "Edit the cache at: ", descriptions_cache_path
+    )
+  }
+
+} else {
+  # First run: seed cache by joining fallback descriptions to computed dates (by rank)
+  message("Description cache not found — creating from hardcoded fallback: ", descriptions_cache_path)
+
+  desc_cache <- bind_rows(
+    top5_dates    %>% left_join(top5_fallback_desc,    by = c("type", "rank")),
+    bottom5_dates %>% left_join(bottom5_fallback_desc, by = c("type", "rank"))
+  ) %>%
+    select(type, date, Decision, Description)
+
+  write_csv(desc_cache, descriptions_cache_path)
+  message("Cache saved. Edit it directly to update descriptions when dates change.")
+}
+
+# --- Build and export tables ---
+
+build_narrative_table <- function(dates_df, cache, table_type, out_path) {
+  tbl <- dates_df %>%
+    left_join(cache %>% filter(type == table_type) %>% select(date, Decision, Description),
+              by = "date") %>%
+    arrange(rank) %>%
+    select(date, diff_3, Decision, Description) %>%
+    mutate(date = as.character(date), diff_3 = round(diff_3, 2)) %>%
+    setNames(c("GovC Date", "MPU Surprise", "Decision", "Description"))
+
+  if (any(is.na(tbl$Decision))) {
+    warning("Some ", table_type, "-5 dates have no description in the cache — NAs will appear in the table.\n",
+            "Add descriptions for: ",
+            paste(tbl$`GovC Date`[is.na(tbl$Decision)], collapse = ", "))
+  }
+
+  stargazer(tbl, summary = FALSE, rownames = FALSE, out = out_path)
+}
+
+build_narrative_table(top5_dates,    desc_cache, "top",    "../output/tables/top_5_mpu.tex")
+build_narrative_table(bottom5_dates, desc_cache, "bottom", "../output/tables/bottom_5_mpu.tex")
 
 
 # Table: share of increaseas and decreases (%) by tenor ------
