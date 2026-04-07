@@ -1,6 +1,6 @@
 # Replication Code: ECB Monetary Policy Uncertainty
 
-**Author:** Umberto Collodel (Central Bank of Malta)
+**Author:** Umberto Collodel (Central Bank of Malta), Vanessa Kunzmann (Deutsche Bundesbank)
 
 This repository contains replication code for two related papers. **Paper 1** constructs a novel market-based measure of monetary policy uncertainty (MPU) and studies its transmission to financial markets. **Paper 2** uses that MPU measure as a benchmark to evaluate LLM-agent simulations of trader disagreement following ECB press conferences. The scripts are numbered sequentially; 01–03.4 belong to Paper 1, 04 onwards to Paper 2.
 
@@ -295,8 +295,8 @@ ECB press conference transcripts and meeting dates are freely available from the
 ```bibtex
 @article{collodel2025mpu,
   title={Market-based Monetary Policy Uncertainty Shocks in the Euro Area},
-  author={Collodel, Umberto},
-  institution={Central Bank of Malta},
+  author={Collodel, Umberto; Kunzmann, Vanessa},
+  institution={Central Bank of Malta ; Deutsche BUndesbank},
   year={2025}
 }
 
