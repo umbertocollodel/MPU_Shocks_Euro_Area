@@ -1,68 +1,213 @@
-# Interpreting the Interpreter: LLM-Based Uncertainty Measurement
+# Replication Code: Two Papers on ECB Monetary Policy Uncertainty
 
 **Author:** Umberto Collodel (Central Bank of Malta)
 
-Replication code for analyzing ECB communication using Large Language Models to measure monetary policy uncertainty.
+This repository contains replication code for two related papers. **Paper 1** constructs a novel market-based measure of monetary policy uncertainty (MPU) and studies its transmission to financial markets. **Paper 2** uses that MPU measure as a benchmark to evaluate LLM-agent simulations of trader disagreement following ECB press conferences. The scripts are numbered sequentially; 01–03.4 belong to Paper 1, 04 onwards to Paper 2.
 
 ---
 
-## Quick Start
+## Paper 1: Market-based Monetary Policy Uncertainty Shocks in the Euro Area
 
-### 1. Setup (5 minutes)
+> This paper investigates the transmission of monetary policy to financial markets within the Euro area, focusing on the role of uncertainty. While previous research has extensively examined the effects of changes in expected policy rates through event studies of ECB announcements, the impact of second moments and uncertainty has been far less explored. We address this gap by introducing a novel market-based measure of uncertainty regarding future interest rates, calculated as the difference in the standard deviation of Overnight Index Swap (OIS) rates in a three-day window around ECB policy announcements. Our findings reveal that ECB announcements generally increase market uncertainty about future interest rates, regardless of the sign of the policy surprise. This increased uncertainty significantly impacts asset prices, leading to higher nominal yields, lower stock market returns, and Euro appreciation against safe-haven currencies.
+
+### Scripts (01–03.4)
+
+| Script | Description |
+|--------|-------------|
+| `01create_MPU.R` | Constructs the MPU index from daily OIS rates across six tenors (3M, 6M, 1Y, 2Y, 5Y, 10Y) |
+| `02plot_MPU_and_compare_with_MP_surprises.R` | Figures and tables comparing MPU with MP surprises; CESIUSD confound check |
+| `03.1relationship_liquidity_mpu_testing.R` | Correlation between MPU and bid-ask spread liquidity changes |
+| `03.2appendix_run_exogeneity_tests_MPU.R` | AR(3) exogeneity/serial-correlation check (appendix) |
+| `03.3mpu_all_days_vs_govc.R` | Distributional comparison: MPU on GovC days vs. all other trading days |
+| `03.4get_calendar_us_releases.R` | US economic release calendar — checks for systematic confounding of MPU by US data surprises |
+
+### Quick Start — Paper 1
+
+```r
+source("01create_MPU.R")
+source("02plot_MPU_and_compare_with_MP_surprises.R")
+source("03.1relationship_liquidity_mpu_testing.R")
+source("03.2appendix_run_exogeneity_tests_MPU.R")
+source("03.3mpu_all_days_vs_govc.R")
+source("03.4get_calendar_us_releases.R")
+```
+
+**Runtime:** ~10–15 minutes (no API calls required).
+
+### Data Requirements — Paper 1
+
+All files go in `../raw_data/`:
+
+| File | Description | Source | Access |
+|------|-------------|--------|--------|
+| `daily_OIS_updated15Sept_2025..xls` | Daily Euro area OIS rates, tenors 3M–10Y, 1998–2025 | Refinitiv Eikon / Bloomberg | Proprietary |
+| `dates_govc.xlsx` | ECB Governing Council meeting dates | ECB website | Free |
+| `00EA_MPD_update_june2025.xlsx` | ECB staff macroeconomic projections | ECB Monetary Policy Database | Free |
+| `information_shock_merge.xlsx` | Cleaned MP surprises (Jarociński & Karadi decomposition) | Authors | On request |
+
+**Note on the double dot in `daily_OIS_updated15Sept_2025..xls`:** this is the actual filename — include both dots.
+
+For OIS data alternatives, see the Data Availability Statement below.
+
+---
+
+## Paper 2: Interpreting the Interpreter: Can We Model post-ECB Conferences Volatility with LLM Agents?
+
+> This paper develops a novel method to simulate financial market reactions to ECB press conferences using a Large Language Model (LLM). We create a behavioral, agent-based simulation of 30 synthetic traders, each with distinct risk preferences, cognitive biases, and interpretive styles. These agents forecast Euro interest rate swap levels at 3-month, 2-year, and 10-year maturities, with the variation across forecasts serving as a measure of market uncertainty or disagreement. We evaluate three prompting strategies — naive, few-shot (enriched with historical data), and an advanced iterative 'LLM-as-a-Judge' framework — to assess the effect of prompt design on predictive performance. Even the naive approach generates a strong correlation (roughly 0.5) between synthetic disagreement and actual market outcomes, particularly for longer-term maturities. The LLM-as-a-Judge framework further improves accuracy at the first iteration. These results demonstrate that LLM-driven simulations can capture interpretive uncertainty beyond traditional measures, providing central banks with a practical tool to anticipate market reactions, refine communication strategies, and enhance financial stability.
+
+### Scripts (04 onwards)
+
+#### Data preparation
+| Script | Description |
+|--------|-------------|
+| `04scraping_ecb_pressconf.R` | Scrapes and stores all ECB press conference transcripts |
+| `05calculate_complexity_documents.R` | Computes readability/complexity metrics for each transcript |
+
+#### LLM simulation
+| Script | Description |
+|--------|-------------|
+| `07run_all_models_sequential.R` | Runs all three model variants back-to-back |
+| `src/run_model.R` | Entry point for a single Gemini-based model run |
+| `src/run_model_openrouter.R` | Entry point for OpenRouter (alternative LLM provider) |
+| `src/llm_api/gemini_api.R` | Gemini API wrappers |
+| `src/llm_api/openrouter_api.R` | OpenRouter API wrappers |
+| `config/prompts.R` | All prompt templates |
+| `config/model_config.yaml` | Parameters for all models (edit here, not in code) |
+
+#### Analysis and results
+| Script | Description |
+|--------|-------------|
+| `08clean_llm_result.R` | Parses raw Gemini LLM outputs |
+| `09clean_openrouter_result.R` | Parses raw OpenRouter outputs |
+| `09plot_llm_results.R` | Main figures and validation — **primary results** |
+| `18regression_ois_on_synthetic_measures.R` | Regression of actual OIS on synthetic disagreement |
+| `19plot_qwen3_results.R` | Results for Qwen3 model variant |
+
+#### Robustness
+| Script | Description |
+|--------|-------------|
+| `12run_bootstrap_robustness.R` | Bootstrap confidence intervals |
+| `14run_prompt_stability_test_robustness.R` | Sensitivity to prompt wording |
+| `15run_model_stability_test_robustness.R` | Sensitivity to model choice |
+| `16run_counterfactual_exercise.R` | Counterfactual simulation |
+| `17run_real_oos_test.R` | Out-of-sample validation |
+| `20temperature_robustness.R` | Sensitivity to LLM temperature parameter |
+
+### Quick Start — Paper 2
+
+#### Setup
+
 ```bash
-# Copy API key template
+# Add your API key
 cp .Renviron.example .Renviron
+# Edit .Renviron: GEMINI_API_KEY=your_key_here
 
-# Edit and add your Gemini API key
-# GEMINI_API_KEY=your_key_here
-
-# Install Python dependencies (only for llm_as_judge model)
+# Python dependencies (llm_as_judge model only)
 pip install -r requirements.txt
 ```
 
-### 2. Run Complete Pipeline
+#### Run
+
 ```r
-# Run entire analysis pipeline (15-25 hours)
+# Full pipeline (15–25 hours)
 source("00run_complete_pipeline.R")
 ```
 
-**OR** run individual stages:
+Or stage by stage:
+
 ```r
-# Run all three LLM model variants sequentially (10-20 hours)
+# 1. Data preparation (30–60 min)
+source("04scraping_ecb_pressconf.R")
+source("05calculate_complexity_documents.R")
+
+# 2. LLM models (10–20 hours)
 source("07run_all_models_sequential.R")
-
-# OR run individual models
+# OR a single model:
 source("src/run_model.R")
-run_model(model_name = "naive")                # 2-4 hours
-run_model(model_name = "historical_surprise")  # 2-4 hours
-run_model(model_name = "llm_as_judge")        # 6-12 hours
+run_model(model_name = "naive")               # 2–4 hours
+run_model(model_name = "historical_surprise") # 2–4 hours
+run_model(model_name = "llm_as_judge")       # 6–12 hours
+
+# 3. Parse and plot (10 min)
+source("08clean_llm_result.R")
+source("09plot_llm_results.R")   # Main results
+
+# 4. Robustness (1–3 hours)
+source("12run_bootstrap_robustness.R")
+source("14run_prompt_stability_test_robustness.R")
+source("15run_model_stability_test_robustness.R")
+source("16run_counterfactual_exercise.R")
+source("17run_real_oos_test.R")
 ```
 
-### 3. Analyze Results
+### Three LLM Models
+
+| Model | Description | Runtime | Cost |
+|-------|-------------|---------|------|
+| **Naive** | Basic prompt, no context | 2–4 hours | ~$8–12 |
+| **Historical Surprise** | Includes past volatility as context | 2–4 hours | ~$10–15 |
+| **LLM-as-Judge** | Iterative meta-learning prompt tuning | 6–12 hours | ~$15–25 |
+
+All models simulate 30 heterogeneous synthetic traders forecasting OIS rates at 3M, 2Y, and 10Y maturities.
+
+**Total cost for full replication (all models + robustness): ~$40–65.**
+
+### Configuration
+
+Edit `config/model_config.yaml` — no code changes needed:
+
+```yaml
+active_model: "naive"   # or "historical_surprise" or "llm_as_judge"
+
+models:
+  naive:
+    temperature: 1
+    parallel_workers: 5
+    seed: 120
+  historical_surprise:
+    history_window: 3
+  llm_as_judge:
+    max_optimization_iterations: 10
+    analyst_model: "gemini/gemini-2.5-flash"
+    judge_model: "gemini/gemini-2.5-pro"
+```
+
+### Data Requirements — Paper 2
+
+The MPU index from Paper 1 (`../intermediate_data/range_difference_df.rds`) is a direct input. Additional requirements:
+
+| Item | Description | Source |
+|------|-------------|--------|
+| ECB press conference transcripts | Automatically downloaded by `04scraping_ecb_pressconf.R` | ECB website (free) |
+| Gemini API key | Required for Gemini model runs | Google AI Studio (free tier available) |
+| OpenRouter API key | Required for non-Gemini model runs | OpenRouter.ai |
+
+### Software Requirements
+
+- **R** ≥ 4.2.0 (packages managed via `renv` — run `renv::restore()` on first use)
+- **Python** ≥ 3.8 (only for `llm_as_judge` model): `numpy`, `pandas`, `scipy`, `pyreadr`, `litellm`, `tqdm`
+
+### Troubleshooting
+
+**"GEMINI_API_KEY not found"**
 ```r
-source("08clean_llm_result.R")    # Parse LLM outputs
-source("09plot_llm_results.R")    # Generate visualizations
+file.exists(".Renviron")  # Should be TRUE
+# If not: file.copy(".Renviron.example", ".Renviron"), then restart R
 ```
 
-**Done!** See `REPLICATION_GUIDE.md` for detailed instructions.
+**Rate limit errors (429)**
+```yaml
+# In config/model_config.yaml:
+parallel_workers: 3  # Reduce from 5
+```
 
----
+**Test on a small subset first**
+```r
+# In src/run_model.R, around line ~133:
+dates_ecb_presconf <- dates_ecb_presconf[1:3]  # 3 conferences ≈ 10 min, ~$1–2
+```
 
-## What This Code Does
-
-### Three LLM Models for Uncertainty Measurement
-
-**The Research Question:** Can Large Language Models simulate how traders interpret ECB press conferences, and does their disagreement predict market volatility?
-
-**The Approach:** Three progressively sophisticated models:
-
-| Model | Description | Key Feature | Runtime |
-|-------|-------------|-------------|---------|
-| **Naive** | Basic prompt, no context | Baseline comparison | 2-4 hours |
-| **Historical Surprise** | Includes past volatility | Contextual learning | 2-4 hours |
-| **LLM-as-Judge** | Meta-learning optimization | Automatic prompt tuning | 6-12 hours |
-
-All models simulate 30 heterogeneous traders reacting to each ECB press conference, producing predictions for 3 interest rate tenors (3M, 2Y, 10Y).
+**Font warnings about "Segoe UI":** harmless on Windows; on Mac/Linux place `segoeui.ttf` in `code/` or ignore.
 
 ---
 
@@ -70,366 +215,93 @@ All models simulate 30 heterogeneous traders reacting to each ECB press conferen
 
 ```
 code/
-├── 00run_complete_pipeline.R    # Master script - runs everything
+├── 00run_complete_pipeline.R        # Runs Paper 2 pipeline end-to-end
 │
-├── config/                       # Model configurations
-│   ├── model_config.yaml         # Parameters for all models
-│   └── prompts.R                 # All prompt templates
-│
-├── src/                          # Core unified system
-│   ├── run_model.R               # Main entry point
-│   └── llm_api/
-│       ├── gemini_api.R          # R API functions
-│       └── llm_optimizer.py      # Python meta-learning
-│
-├── 07run_all_models_sequential.R # Run all models sequentially
-│
-├── Data preparation:
-│   ├── 01create_MPU.R            # Monetary Policy Uncertainty index
+├── Paper 1 — MPU construction & analysis
+│   ├── 01create_MPU.R
 │   ├── 02plot_MPU_and_compare_with_MP_surprises.R
-│   ├── 03appendix_run_exogeneity_tests_MPU.R
+│   ├── 03.1relationship_liquidity_mpu_testing.R
+│   ├── 03.2appendix_run_exogeneity_tests_MPU.R
+│   ├── 03.3mpu_all_days_vs_govc.R
+│   └── 03.4get_calendar_us_releases.R
+│
+├── Paper 2 — LLM agent simulation
 │   ├── 04scraping_ecb_pressconf.R
 │   ├── 05calculate_complexity_documents.R
-│   └── calendar_us_releases.R    # US economic releases analysis
+│   ├── 07run_all_models_sequential.R
+│   ├── 08clean_llm_result.R
+│   ├── 09clean_openrouter_result.R
+│   ├── 09plot_llm_results.R          # Main results
+│   ├── 18regression_ois_on_synthetic_measures.R
+│   ├── 19plot_qwen3_results.R
+│   └── 20temperature_robustness.R
 │
-├── Analysis pipeline:
-│   ├── 08clean_llm_result.R      # Parse LLM outputs
-│   └── 09plot_llm_results.R      # Visualizations & main validation
-│
-├── Robustness tests:
+├── Robustness (Paper 2)
 │   ├── 12run_bootstrap_robustness.R
 │   ├── 14run_prompt_stability_test_robustness.R
 │   ├── 15run_model_stability_test_robustness.R
 │   ├── 16run_counterfactual_exercise.R
 │   └── 17run_real_oos_test.R
 │
-├── Additional analysis:
-│   └── 18regression_ois_on_synthetic_measures.R  # Interaction analysis
+├── src/                              # Core LLM infrastructure
+│   ├── run_model.R
+│   ├── run_model_openrouter.R
+│   └── llm_api/
+│       ├── gemini_api.R
+│       └── openrouter_api.R
 │
-└── Documentation:
-    ├── README.md                 # This file
-    ├── REPLICATION_GUIDE.md      # Full instructions
-    └── VALIDATION_CHECKLIST.md   # Testing protocol
+└── config/
+    ├── model_config.yaml
+    └── prompts.R
 ```
 
-**Note on script numbering:** Gaps in numbering (06, 10, 11, 13) reflect merged or deprecated scripts from earlier development stages. Current numbering is intentional and all necessary scripts are present.
+**Note on script numbering:** gaps (06, 10, 11, 13) reflect merged or deprecated scripts from earlier development stages.
 
 ---
 
-## Requirements
-
-### Software
-- **R** ≥ 4.2.0
-- **Python** ≥ 3.8 (only for llm_as_judge model)
-- **Google Gemini API** key ([get one free](https://makersuite.google.com/app/apikey))
-
-### R Packages (auto-installed via pacman)
-The following packages will be automatically installed when running scripts:
-```r
-# Core packages
-tidyverse, yaml, gemini.R, httr2, readtext, crayon, stringr, purrr,
-readxl, writexl, showtext, lubridate, zoo, patchwork
-
-# Statistical packages
-boot, broom, corrr, DescTools, Hmisc, stargazer, xtable, padr
-
-# Additional
-future, furrr, RColorBrewer, ggplot2, scales
-```
-
-### Python Packages
-```bash
-pip install -r requirements.txt
-```
-
-Contents: `numpy`, `pandas`, `scipy`, `pyreadr`, `litellm`, `tqdm`
-
----
-
-## Data Requirements
-
-### Required Data Files
-
-Place all data files in `../raw_data/` (one level above the code directory):
-
-#### 1. **OIS Swap Rates** (REQUIRED)
-- **Filename:** `daily_OIS_updated15Sept_2025..xls`
-- **Description:** Daily Euro area overnight indexed swap (OIS) rates for tenors 3M, 2Y, 10Y
-- **Source:** Refinitiv Eikon / Bloomberg Terminal (proprietary)
-- **Time period:** 1998-2025
-- **Format:** Excel file with separate sheets per tenor
-- **Used by:** Scripts 01, 02, 03, 09
-
-**Alternative:** If you don't have access to Refinitiv/Bloomberg, you can:
-- Use ECB Statistical Data Warehouse for Euro Short-Term Rate (€STR)
-- Contact the author for data access for replication purposes
-- Note: Results may differ slightly with alternative data sources
-
-#### 2. **ECB Governing Council Meeting Dates** (REQUIRED)
-- **Filename:** `dates_govc.xlsx`
-- **Description:** Dates of all ECB Governing Council meetings with press conferences
-- **Source:** ECB website - [Monetary Policy Decisions](https://www.ecb.europa.eu/press/calendars/mgcgc/html/index.en.html)
-- **Access:** Freely available, manually compiled
-- **Format:** Excel file with columns: `year`, `month`, `day`
-- **Used by:** Scripts 01, 02, 04, calendar_us_releases.R
-
-**To replicate:** Download meeting dates from ECB website and format as XLSX with columns: year, month, day
-
-#### 3. **ECB Macroeconomic Projections Database** (OPTIONAL)
-- **Filename:** `00EA_MPD_update_june2025.xlsx`
-- **Description:** ECB staff macroeconomic projections
-- **Source:** ECB Monetary Policy Database
-- **Access:** Freely available
-- **URL:** https://www.ecb.europa.eu/stats/ecb_surveys/survey_of_professional_forecasters/html/index.en.html
-- **Used by:** Script 01 (for additional controls)
-
-#### 4. **US Economic Release Dates** (OPTIONAL - for calendar analysis)
-- **Directory:** `us_releases/`
-- **Files needed:**
-  - `release_dates_50.xlsx` - Employment Situation
-  - `release_dates_10.xlsx` - CPI
-  - `release_dates_53.xlsx` - GDP
-  - `release_dates_9.xlsx` - Retail Sales
-- **Source:** US Bureau of Labor Statistics / Census Bureau / BEA
-- **Access:** Freely available via FRED (Federal Reserve Economic Data)
-- **URL:** https://fred.stlouisfed.org/
-- **Used by:** `calendar_us_releases.R` (optional analysis)
-
-**To download:** Visit FRED website and download release dates for each indicator
-
-#### 5. **Refinitiv Tick Data** (OPTIONAL)
-- **Filename:** `Refinitiv_Tick_Data.xlsx`
-- **Description:** High-frequency tick data for additional analysis
-- **Source:** Refinitiv (proprietary)
-- **Used by:** Optional analysis scripts
-- **Note:** Not required for main results
-
-### ECB Press Conference Transcripts
-
-**Automatic Download:** Script `04scraping_ecb_pressconf.R` automatically downloads all ECB press conference transcripts from the ECB website.
-
-- **Source:** ECB website (freely available)
-- **Storage:** `../intermediate_data/texts/`
-- **No manual download required** - script handles this automatically
-
----
-
-## Cost Estimate
-
-**API Costs (Google Gemini):**
-- Naive model: ~$8-12
-- Historical Surprise model: ~$10-15
-- LLM-as-Judge model: ~$15-25
-- Robustness tests: ~$10-15
-
-**Total: ~$40-65** for complete replication with all robustness tests
-
-**To reduce costs:**
-- Test on subset first (see Troubleshooting section)
-- Run only Naive model (~$10)
-- Reduce parallel workers in config
-
----
-
-## Configuration
-
-All parameters in `config/model_config.yaml`:
-
-```yaml
-# Select which model to run
-active_model: "naive"
-
-models:
-  naive:
-    temperature: 1        # Randomness (0-2)
-    parallel_workers: 5   # API calls in parallel
-    seed: 120            # Reproducibility
-
-  historical_surprise:
-    history_window: 3    # Previous conferences to include
-
-  llm_as_judge:
-    max_optimization_iterations: 10
-    analyst_model: "gemini/gemini-2.5-flash"
-    judge_model: "gemini/gemini-2.5-pro"
-```
-
-**No code changes needed** - just edit YAML!
-
----
-
-## Complete Analysis Pipeline
-
-### Option 1: Full Automated Pipeline (EASIEST)
-
-```r
-# Run everything with one command (15-25 hours total)
-source("00run_complete_pipeline.R")
-```
-
-This executes all 6 stages automatically:
-1. ✓ Baseline MPU index (5 min)
-2. ✓ Data preparation (30-60 min)
-3. ✓ LLM models (10-20 hours)
-4. ✓ Main analysis (10 min)
-5. ✓ Robustness tests (1-2 hours)
-6. ✓ Out-of-sample validation (1-2 hours)
-
-### Option 2: Stage-by-Stage Execution
-
-```r
-# Stage 1: Baseline MPU index (5 minutes)
-source("01create_MPU.R")
-source("02plot_MPU_and_compare_with_MP_surprises.R")
-source("03appendix_run_exogeneity_tests_MPU.R")
-
-# Stage 2: Data preparation (30-60 minutes)
-source("04scraping_ecb_pressconf.R")         # Downloads ECB transcripts
-source("05calculate_complexity_documents.R")  # Document complexity metrics
-source("calendar_us_releases.R")             # Optional: US release calendar
-
-# Stage 3: Run all LLM models (10-20 hours) ⏰
-source("07run_all_models_sequential.R")
-
-# Stage 4: Main analysis (10 minutes)
-source("08clean_llm_result.R")               # Parse LLM outputs
-source("09plot_llm_results.R")               # ⭐ MAIN RESULTS & VALIDATION
-
-# Stage 5: Robustness tests (1-2 hours)
-source("12run_bootstrap_robustness.R")
-source("14run_prompt_stability_test_robustness.R")
-source("15run_model_stability_test_robustness.R")
-source("16run_counterfactual_exercise.R")
-
-# Stage 6: Out-of-sample validation (1-2 hours)
-source("17run_real_oos_test.R")
-```
-
-**Total runtime:** ~15-25 hours
-**Total cost:** ~$40-65
-
-### Option 3: Minimal Replication (Core Results Only)
-
-```r
-source("01create_MPU.R")                     # 3 min
-source("07run_all_models_sequential.R")      # 10-20 hours ⏰
-source("08clean_llm_result.R")               # 3 min
-source("09plot_llm_results.R")               # 5 min ⭐ MAIN RESULT
-```
-
-**Total runtime:** ~10-20 hours
-**Total cost:** ~$30-40
-
----
-
-## Key Results
-
-**Main Finding:** LLM-generated disagreement correlates significantly with market-based monetary policy uncertainty.
-
-**Main validation:** Script `09plot_llm_results.R` produces:
-- Spearman correlation: LLM disagreement vs OIS volatility
-- Time series comparison plots (overall and rolling correlations)
-- Robustness across tenors (3M, 2Y, 10Y)
-- Forecast error analysis
-
-**Output location:** `../output/figures/prompt_naive/`
-
----
-
-## Troubleshooting
-
-### "GEMINI_API_KEY not found"
-```r
-file.exists(".Renviron")  # Should be TRUE
-# If FALSE, create it:
-file.copy(".Renviron.example", ".Renviron")
-# Then edit .Renviron and add your key
-# Restart R session
-```
-
-### Rate limit errors (429)
-Edit `config/model_config.yaml`:
-```yaml
-parallel_workers: 3  # Reduce from 5
-```
-
-Or add delays between requests in the code.
-
-### Test on subset first
-To test the pipeline on a small subset before full run:
-
-Edit `src/run_model.R` around line ~133:
-```r
-dates_ecb_presconf <- dates_ecb_presconf[1:3]  # Test with 3 conferences
-```
-
-This reduces runtime to ~10 minutes and cost to ~$1-2.
-
-### Data file not found errors
-1. Verify all files are in `../raw_data/` directory
-2. Check file names match exactly (case-sensitive on Linux/Mac)
-3. See "Data Requirements" section above for download sources
-
-### Font warnings
-If you see warnings about "Segoe UI" font:
-- **Windows:** Font is pre-installed, warnings are harmless
-- **Mac/Linux:** Place `segoeui.ttf` in `code/` directory, or ignore (will use default font)
-
-**See `VALIDATION_CHECKLIST.md` for complete testing protocol.**
-
----
-
-## Key Innovation: Unified Model System
-
-**Before:** Three separate branches, manual switching, scattered configuration
-
-**After:** One codebase, YAML-driven configuration, seamless model switching
-
-```r
-# Change one line in config/model_config.yaml:
-active_model: "historical_surprise"
-
-# Then run:
-source("src/run_model.R")
-run_model()  # Uses the model from config
-```
-
-All three models share:
-- Same data pipeline
-- Same API infrastructure
-- Same output format
-- Easy comparison
-
-**Perfect for replication and publication.**
-
----
-
-## Output Structure
-
-All results are saved to:
+## Output
 
 ```
 ../output/
-├── figures/               # All visualizations
-│   ├── prompt_naive/      # Main model results
-│   ├── oos_jan2025/       # Out-of-sample validation
-│   └── ...
-└── tables/                # LaTeX/Excel tables
+├── figures/
+│   ├── (Paper 1 figures: MPU series, correlations, distributions)
+│   ├── prompt_naive/        # Paper 2 main results
+│   └── oos_jan2025/         # Out-of-sample validation
+└── tables/
+    └── (LaTeX tables for both papers)
 
 ../intermediate_data/
-├── gemini_result/         # Raw LLM responses
-├── aggregate_gemini_result/ # Cleaned LLM data
-├── texts/                 # ECB transcripts
-└── range_difference_df.rds # Market volatility data
+├── range_difference_df.rds        # MPU index (Paper 1 → Paper 2 input)
+├── top_bottom_5_descriptions.csv  # Cached narrative descriptions (Paper 1)
+├── gemini_result/                 # Raw LLM responses
+├── aggregate_gemini_result/       # Cleaned LLM data
+└── texts/                         # ECB press conference transcripts
 ```
+
+---
+
+## Data Availability Statement
+
+ECB press conference transcripts and meeting dates are freely available from the ECB website. OIS rates (Refinitiv Eikon) are proprietary. Researchers seeking to replicate Paper 1 can:
+
+1. Access OIS data via institutional subscriptions to Refinitiv Eikon or Bloomberg Terminal
+2. Contact the author for data access for replication purposes (subject to data provider terms)
+3. Use ECB Statistical Data Warehouse data as an alternative (results may differ slightly)
 
 ---
 
 ## Citation
 
 ```bibtex
+@article{collodel2025mpu,
+  title={Market-based Monetary Policy Uncertainty Shocks in the Euro Area},
+  author={Collodel, Umberto},
+  institution={Central Bank of Malta},
+  year={2025}
+}
+
 @article{collodel2025interpreting,
-  title={Interpreting the Interpreter: Can We Model Post-ECB Conferences Volatility with LLM Agents?},
+  title={Interpreting the Interpreter: Can We Model post-ECB Conferences Volatility with LLM Agents?},
   author={Collodel, Umberto},
   institution={Central Bank of Malta},
   year={2025}
@@ -438,38 +310,5 @@ All results are saved to:
 
 ---
 
-## Documentation
-
-- **`README.md`** - This file (overview and quick start)
-- **`REPLICATION_GUIDE.md`** - Complete step-by-step instructions
-- **`VALIDATION_CHECKLIST.md`** - Pre-run testing protocol
-
----
-
-## Data Availability Statement
-
-The code and methodology are freely available in this repository. Proprietary data sources (OIS rates from Refinitiv) are subject to licensing restrictions. Researchers seeking to replicate this study can:
-
-1. **Access via institutional subscriptions** to Refinitiv Eikon or Bloomberg Terminal
-2. **Contact the author** for data access for replication purposes (subject to data provider terms)
-3. **Use alternative data sources** such as ECB Statistical Data Warehouse (results may differ slightly)
-
-All other data (ECB press conference transcripts, meeting dates, macroeconomic projections) are freely available from public sources as documented above.
-
----
-
-## Support
-
-**Issues:** Please report issues or questions via the GitHub repository
-**Contact:** Umberto Collodel - Central Bank of Malta
-**Email:** [Include your email if appropriate]
-
----
-
-## License
-
-This code is provided for academic research and replication purposes. Please cite the paper if you use this code.
-
----
-
-**Last Updated:** November 2025 | **Version:** 2.0 (Unified System)
+**Contact:** Umberto Collodel — Central Bank of Malta
+**Last Updated:** April 2026
