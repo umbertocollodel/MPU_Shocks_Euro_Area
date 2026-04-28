@@ -326,7 +326,7 @@ complexity_volatility_filtered %>%
               alpha = 0.15, linewidth = 1, span = 0.75) +
   # Add correlation text in each facet
   geom_text(data = cor_by_tenor_robust %>% 
-              mutate(label = glue("ρ = {round(spearman, 2)}")),
+              mutate(label = glue::glue("ρ = {round(fk_spearman, 2)}")),
             aes(x = Inf, y = Inf, label = label),
             hjust = 1.1, vjust = 1.5, size = 6, 
             color = "grey30", family = "Segoe UI Light") +
