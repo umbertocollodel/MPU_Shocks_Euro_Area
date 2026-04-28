@@ -17,7 +17,7 @@ pacman::p_load(
 )
 # Set parameters
 
-years=seq(1998,2025,by=1)
+years=seq(1998,2026,by=1)
 
 
 # Navigate to the ECB page

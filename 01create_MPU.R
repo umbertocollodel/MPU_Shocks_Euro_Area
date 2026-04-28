@@ -48,17 +48,19 @@ calculate_leads <- function(df, var, leads){
 
 # Set parameters:
 
-names_sheets=excel_sheets("../raw_data/daily_OIS_updated15Sept_2025..xls")
+names_sheets=excel_sheets("../raw_data/daily_OIS_updated28April_2026.xls") %>%
+    setdiff("RIC")
 
 tenors=names_sheets %>% 
   str_remove("_.*")
+  
+
 
 
 ##### Clean daily data for OIS: -----
 
 df_list <- names_sheets %>% 
-  map(~ read_excel("../raw_data/daily_OIS_updated15Sept_2025..xls", sheet = .x)) %>%
-  map(~.x %>% select(1:5)) %>% 
+  map(~ read_excel("../raw_data/daily_OIS_updated28April_2026.xls", sheet = .x, skip=1)) %>%
   map(~ .x |> rename(Daily = Timestamp)) %>%
   map(~ .x %>% mutate(Daily = as.Date(Daily))) %>% 
   map(~ .x %>% setNames(c("daily","high","low","first","last"))) %>% 
@@ -88,7 +90,7 @@ df_list <- df_list %>%
 
   
 
-# Retrieve Governing Council dates (updated until September 2024)
+# Retrieve Governing Council dates (updated until April 2026)
 
 
 dates=read_xlsx("../raw_data/dates_govc.xlsx") %>% 
