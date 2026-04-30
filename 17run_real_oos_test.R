@@ -1,308 +1,271 @@
 # ============================================================================
-# OUT-OF-SAMPLE EXPERIMENT: RE-RUN LLM FOR POST-JAN 2025 CONFERENCES
-# ============================================================================
-#
-# IMPORTANT: Run this script from the 'code/' directory
+# OUT-OF-SAMPLE EXPERIMENT (CLEAN + FIXED + NO API CALLS)
+# Uses precomputed R=10 ensemble from P1 pipeline
 # ============================================================================
 
 library(tidyverse)
-library(readxl)
-library(writexl)
+library(readr)
 library(lubridate)
-library(gemini.R)
+library(writexl)
+library(scales)
+library(showtext)
 
-# Verify we're in the correct directory
-if (!file.exists("../intermediate_data/texts")) {
-  stop("Please run this script from the 'code/' directory.\n",
-       "Current directory: ", getwd())
+# ============================================================================
+# 0. SAFETY CHECKS
+# ============================================================================
+
+ensemble_path <- "../intermediate_data/full_ensemble_p1/parsed/all_runs_long.rds"
+
+if (!file.exists(ensemble_path)) {
+  stop("Missing file: all_runs_long.rds")
 }
 
-# Set API key
-setAPI(Sys.getenv("GEMINI_API_KEY"))
+dir.create("../output/figures/oos_jan2025", recursive = TRUE, showWarnings = FALSE)
 
 # ============================================================================
-# 1. IDENTIFY POST-JAN 2025 CONFERENCES
+# 1. LOAD ENSEMBLE DATA (NO API CALLS)
 # ============================================================================
 
-cutoff_date <- as.Date("2025-01-01")
+all_runs <- readRDS(ensemble_path)
 
-# Load conference files
-conference_files <- list.files(
-  "../intermediate_data/texts/", 
-  pattern = "\\d{4}-\\d{2}-\\d{2}",
-  full.names = TRUE
-)
-
-# Extract dates
-all_dates <- str_extract(basename(conference_files), "\\d{4}-\\d{2}-\\d{2}") %>%
-  as.Date()
-
-# Filter for post-Jan 2025
-test_files <- conference_files[all_dates >= cutoff_date]
-test_dates <- all_dates[all_dates >= cutoff_date]
-
-cat("\n=== TEST SAMPLE ===\n")
-cat(sprintf("Conferences to simulate: %d (Jan-Dec 2025)\n", length(test_dates)))
-cat("\nTest conference dates:\n")
-print(sort(test_dates))
-
-# ============================================================================
-# 2. LOAD TRANSCRIPTS
-# ============================================================================
-
-transcripts <- tibble(
-  date = test_dates,
-  file_path = test_files
-) %>%
-  arrange(date) %>%
-  mutate(
-    transcript_text = map_chr(file_path, ~read_file(.x))
-  )
-
-cat(sprintf("\nLoaded %d transcripts\n", nrow(transcripts)))
-
-# ============================================================================
-# 3. LOAD PROMPT TEMPLATE
-# ============================================================================
-
-prompt_oos=prompt_naive
-
-# ============================================================================
-# 4. RUN LLM SIMULATION
-# ============================================================================
-
-results_list <- list()
-
-for (i in 1:nrow(transcripts)) {
-  conf_date <- transcripts$date[i]
-  conf_text <- transcripts$transcript_text[i]
-  
-  cat(sprintf("\n[%d/%d] Processing: %s\n", 
-              i, nrow(transcripts), conf_date))
-  
-  # Build prompt exactly like process_single_conference
-  full_prompt <- gsub("\\[date\\]", conf_date, prompt_oos)
-  full_prompt <- paste0(full_prompt, conf_text, "\n\n")
-  
-  # Call Gemini using gemini.R
-  tryCatch({
-    response <- new_gemini(
-      prompt = full_prompt,
-      model = "2.5-flash",
-      temperature = 1,
-      maxOutputTokens = 100000,
-      topK = 40,
-      topP = 0.95,
-      seed = 120  # Use same seed as your other scripts
-    )
-    
-    # Parse markdown table
-    lines <- str_split(response, "\n")[[1]]
-    table_lines <- lines[str_detect(lines, "\\|")]
-    
-    if (length(table_lines) > 2) {
-      parsed_data <- table_lines[3:length(table_lines)] %>%
-        map_dfr(~{
-          parts <- str_split(.x, "\\|")[[1]] %>% str_trim()
-          if (length(parts) >= 6) {
-            tibble(
-              date = parts[2],
-              trader_id = parts[3],
-              tenor = parts[4],
-              direction = parts[5],
-              rate = as.numeric(parts[6])
-            )
-          }
-        }) %>%
-        # Override with actual conference date
-        mutate(date = as.character(conf_date))
-      
-      results_list[[i]] <- parsed_data
-      cat(sprintf("✓ Parsed %d predictions\n", nrow(parsed_data)))
-    } else {
-      warning(sprintf("Failed to parse response for %s", conf_date))
-    }
-    
-  }, error = function(e) {
-    warning(sprintf("API call failed for %s: %s", conf_date, e$message))
-  })
-  
-  # Rate limiting (5 seconds like your function)
-  Sys.sleep(5)
-}
-
-# ============================================================================
-# 5. COMBINE AND SAVE
-# ============================================================================
-
-test_results <- bind_rows(results_list) %>%
+test_runs <- all_runs %>%
   mutate(
     date = as.Date(date),
-    tenor = case_when(
-      tenor == "3MNT" ~ "3M",
-      TRUE ~ tenor
-    )
-  )
+    rate = as.numeric(rate)
+  ) %>%
+  filter(date >= as.Date("2025-01-01"))
 
-# Save raw results
-output_file <- sprintf("../intermediate_data/aggregate_gemini_result/prompt_naive/oos_test_%s.xlsx",
-                      Sys.Date())
-write_xlsx(test_results, path = output_file)
-
-cat("\n=== SIMULATION COMPLETE ===\n")
-cat(sprintf("Results saved: %s\n", output_file))
-cat(sprintf("Total predictions: %d\n", nrow(test_results)))
-cat(sprintf("Conferences simulated: %d\n", n_distinct(test_results$date)))
+cat("\n=== OUT-OF-SAMPLE DATA ===\n")
+cat("Rows:", nrow(test_runs), "\n")
+cat("Dates:", n_distinct(test_runs$date), "\n")
+cat("Runs:", n_distinct(test_runs$run), "\n")
+cat("Tenors:", n_distinct(test_runs$tenor), "\n\n")
 
 # ============================================================================
-# 6. COMPUTE DISAGREEMENT
+# 2. DISAGREEMENT METRICS (P1-CONSISTENT FIXED VERSION)
 # ============================================================================
 
-test_disagreement <- test_results %>%
-  group_by(date, tenor) %>%
+# Step 1: within-run disagreement (agent level)
+within_run <- test_runs %>%
+  group_by(date, run, tenor) %>%
   summarise(
-    llm_std = sd(rate, na.rm = TRUE),
-    llm_mean = mean(rate, na.rm = TRUE),
-    n_agents = n(),
+    within_sd = sd(rate, na.rm = TRUE),
     .groups = "drop"
   )
 
-cat("\n=== DISAGREEMENT METRICS ===\n")
-print(test_disagreement)
+# Step 2: ensemble disagreement (across runs)
+test_disagreement <- within_run %>%
+  group_by(date, tenor) %>%
+  summarise(
+    llm_std = mean(within_sd, na.rm = TRUE),
+    n_runs  = n(),
+    .groups = "drop"
+  )
 
-# Save
 write_xlsx(
   test_disagreement,
-  path = "../intermediate_data/oos_test_disagreement.xlsx"
+  "../intermediate_data/oos_test_disagreement.xlsx"
 )
 
-cat("\nDisagreement metrics saved.\n")
+cat("\n=== DISAGGREGATION DONE ===\n")
+print(test_disagreement)
 
 # ============================================================================
-# 7. VISUALIZE DISAGREEMENT BY TENOR
+# 3. MARKET VOLATILITY DATA
 # ============================================================================
 
-library(showtext)
+market_vol <- read_rds("../intermediate_data/range_difference_df.rds") %>%
+  mutate(
+    tenor = case_when(tenor == "3mnt" ~ "3M", TRUE ~ tenor),
+    date  = as.Date(date)
+  ) %>%
+  filter(date >= as.Date("2025-01-01")) %>%
+  select(date, tenor, market_std = correct_post_mean_3)
 
-# Load font - cross-platform compatible
-if (!("Segoe UI" %in% font_families())) {
-  # Try to load from local directory (relative path)
-  font_path <- file.path(getwd(), "segoeui.ttf")
-  if (file.exists(font_path)) {
-    font_add("Segoe UI", regular = font_path)
-  } else {
-    warning("Segoe UI font file not found. Using default font. Place 'segoeui.ttf' in the code/ directory if needed.")
-  }
-}
+# ============================================================================
+# 4. MERGE DATA
+# ============================================================================
+
+comparison <- test_disagreement %>%
+  inner_join(market_vol, by = c("date", "tenor"))
+
+# ============================================================================
+# 5. CORRELATIONS
+# ============================================================================
+
+correlations <- comparison %>%
+  group_by(tenor) %>%
+  summarise(
+    pearson  = cor(llm_std, market_std, use = "complete.obs"),
+    spearman = cor(llm_std, market_std, method = "spearman", use = "complete.obs"),
+    n        = n(),
+    .groups  = "drop"
+  )
+
+cat("\n=== CORRELATIONS ===\n")
+print(correlations)
+
+write_xlsx(
+  correlations,
+  "../intermediate_data/oos_correlations.xlsx"
+)
+
+# ============================================================================
+# 6. PLOT: DISAGREEMENT OVER TIME
+# ============================================================================
+
+font_add("Segoe UI", regular = "segoeui.ttf")
 showtext_auto()
 
-# Color palette (matching your existing scripts)
-color_palette_tenors <- c("10Y" = "#d73027", "2Y" = "#4575b4", "3M" = "#91bfdb")
+colors <- c("10Y" = "#d73027",
+            "2Y"  = "#4575b4",
+            "3M"  = "#91bfdb")
 
-# Create output directory
-dir.create("../output/figures/oos_jan2025", showWarnings = FALSE, recursive = TRUE)
-
-# Plot disagreement time series
-p_disagreement <- test_disagreement %>%
+p1 <- test_disagreement %>%
   mutate(tenor = factor(tenor, levels = c("3M", "2Y", "10Y"))) %>%
-  mutate(date = as.Date(date)) |> 
   ggplot(aes(x = date, y = llm_std, color = tenor)) +
   geom_line(linewidth = 0.9) +
   geom_point(size = 2.5) +
   facet_wrap(~tenor, ncol = 1, scales = "free_y") +
-  scale_color_manual(values = color_palette_tenors, guide = "none") +
+  scale_color_manual(values = colors, guide = "none") +
   scale_x_date(date_breaks = "1 month", date_labels = "%b %Y") +
   labs(
-    title = "LLM Disagreement: Out-of-Sample Period (Jan-Dec 2025)",
+    title = "LLM Disagreement (Out-of-Sample 2025)",
     x = NULL,
-    y = "Standard Deviation of Predicted Rate (pp)"
+    y = "SD of Forecasts"
   ) +
   theme_minimal(base_family = "Segoe UI") +
   theme(
     axis.text.x = element_text(angle = 45, hjust = 1),
     panel.border = element_rect(colour = "grey80", fill = NA),
-    strip.text = element_text(face = "bold", size = 11),
-    plot.title = element_text(face = "bold", size = 13),
     panel.grid.minor = element_blank()
   )
 
 ggsave(
   "../output/figures/oos_jan2025/disagreement_by_tenor.png",
-  plot = p_disagreement,
+  p1,
   width = 10,
   height = 8,
   dpi = 300
 )
 
-cat("\n✓ Plot saved: ../output/figures/oos_jan2025/disagreement_by_tenor.png\n")
+# ============================================================================
+# CLEAN SCATTER WITH REGRESSION + NON-OVERLAPPING LABELS
+# ============================================================================
 
-# Summary stats by tenor
-summary_stats <- test_disagreement %>%
-  group_by(tenor) %>%
-  summarise(
-    mean_std = mean(llm_std, na.rm = TRUE),
-    median_std = median(llm_std, na.rm = TRUE),
-    min_std = min(llm_std, na.rm = TRUE),
-    max_std = max(llm_std, na.rm = TRUE),
-    n_obs = n(),
-    .groups = "drop"
-  )
+library(ggrepel)
 
-cat("\n=== SUMMARY STATISTICS BY TENOR ===\n")
-print(summary_stats, width = Inf)
-
-
-# Load market volatility data
-market_vol <- read_rds("../intermediate_data/range_difference_df.rds") %>%
+comparison <- comparison %>%
   mutate(
-    tenor = case_when(tenor == "3mnt" ~ "3M", TRUE ~ tenor),
-    date = as.Date(date)
-  ) %>%
-  filter(date >= as.Date("2025-01-01")) %>%
-  select(date, tenor, market_std = correct_post_mean_3)
-
-# Merge with LLM disagreement
-comparison <- test_disagreement %>%
-  inner_join(market_vol, by = c("date", "tenor"))
-
-# Correlations by tenor
-correlations <- comparison %>%
-  group_by(tenor) %>%
-  summarise(
-    pearson = cor(llm_std, market_std, use = "complete.obs"),
-    spearman = cor(llm_std, market_std, method = "spearman", use = "complete.obs"),
-    n = n()
+    tenor = factor(tenor, levels = c("3M", "2Y", "10Y")),
+    month_label = paste(format(date, "%b"), format(date, "%Y"))
   )
 
-print(correlations)
+# OLS regression
+ols_fit <- lm(market_std ~ llm_std, data = comparison)
 
-p_combined <- ggplot(comparison, aes(x = llm_std, y = market_std)) +
-  geom_smooth(method = "lm", se = FALSE, alpha = 0.2, color = "black", linewidth = 0.8) +
-  geom_point(aes(color = tenor), size = 3, alpha = 0.8) +
-  geom_text(aes(label = format(date, "%b")), hjust = -0.3, size = 4.5, family = "Segoe UI") +
-  scale_color_manual(values = color_palette_tenors, name = "Tenor") +
+reg_slope <- coef(ols_fit)[2]
+reg_intercept <- coef(ols_fit)[1]
+
+cat("\nOLS slope:", round(reg_slope, 4), "\n")
+cat("OLS intercept:", round(reg_intercept, 4), "\n")
+
+
+reg_r2 <- summary(ols_fit)$r.squared
+
+
+reg_label <- sprintf(
+  "Market Vol = %.3f + %.3f × LLM Disagreement",
+  reg_intercept,
+  reg_slope
+)
+
+
+
+p_scatter <- ggplot(comparison, aes(x = llm_std, y = market_std)) +
+
+  # regression line
+  geom_abline(
+    intercept = reg_intercept,
+    slope = reg_slope,
+    linewidth = 1
+  ) +
+
+  # points
+  geom_point(aes(color = tenor), size = 3, alpha = 0.85) +
+
+  # NON-OVERLAPPING LABELS (key fix)
+  ggrepel::geom_text_repel(
+    aes(label = month_label),
+    size = 4,
+    family = "Segoe UI",
+    max.overlaps = Inf,
+    box.padding = 0.4,
+    point.padding = 0.3,
+    segment.color = "grey60"
+  ) +
+annotate(
+  "text",
+  x = -Inf, y = Inf,               # TOP‑LEFT corner
+  label = reg_label,
+  hjust = -0.05, vjust = 1.1,      # pull text inside panel
+  size = 4,
+  family = "Segoe UI"
+) +
+  scale_color_manual(values = c(
+    "10Y" = "#d73027",
+    "2Y"  = "#4575b4",
+    "3M"  = "#91bfdb"
+  )) +
+
   labs(
-    title = "",
     x = "LLM Disagreement (pp)",
-    y = "Realized Market Volatility (pp)"
+    y = "Realized Market Volatility (pp)",
+    col=""
   ) +
   theme_minimal(base_family = "Segoe UI") +
   theme(
-    plot.title = element_text(face = "bold", size = 18),
-    plot.subtitle = element_text(size = 16),
-    axis.title = element_text(size = 18),
-    axis.text = element_text(size = 16),
-    legend.position = c(0.87, 0.25),
-    legend.title = element_text(size = 16, face = "bold"),
-    legend.text = element_text(size = 14),
+    legend.position = "right",   # FIX: remove overlap
     panel.border = element_rect(colour = "grey80", fill = NA),
-    panel.grid.minor = element_blank()
+    panel.grid.minor = element_blank(),
+    legend.title = element_text(face = "bold")
   )
 
-ggsave("../output/figures/oos_jan2025/pooled_scatter.pdf",
-       p_combined,
-       dpi = 320, # Increased DPI for consistency
-       width = 10,
-       height = 8, # Adjusted height for better facet spacing
-       bg = "white")
+ggsave(
+  "../output/figures/oos_jan2025/pooled_scatter.pdf",
+  p_scatter,
+  width = 10,
+  height = 8,
+  dpi = 320,
+  bg = "white"
+)
 
+# ============================================================================
+# 8. SUMMARY STATS
+# ============================================================================
+
+summary_stats <- test_disagreement %>%
+  group_by(tenor) %>%
+  summarise(
+    mean_std   = mean(llm_std, na.rm = TRUE),
+    median_std = median(llm_std, na.rm = TRUE),
+    min_std    = min(llm_std, na.rm = TRUE),
+    max_std    = max(llm_std, na.rm = TRUE),
+    n_obs      = n(),
+    .groups    = "drop"
+  )
+
+cat("\n=== SUMMARY ===\n")
+print(summary_stats)
+
+write_xlsx(
+  summary_stats,
+  "../intermediate_data/oos_summary_stats.xlsx"
+)
+
+# ============================================================================
+# 9. FINAL MESSAGE
+# ============================================================================
+
+cat("\n=== COMPLETE ===\n")
+cat("Out-of-sample evaluation finished (NO API calls used)\n")
