@@ -232,7 +232,9 @@ grid <- expand_grid(
 ) %>%
   sample_n(nrow(.))
 
-n_expected <- n_dates * 2 * 10
+# Only intro runs are executed via API; full runs come from cache and may be
+# incomplete for some dates. Completion check covers intro only.
+n_expected <- n_dates * 10
 
 cat(crayon::green(paste0(
   "Grid ready: ", nrow(grid), " rows (",
@@ -304,6 +306,14 @@ process_one <- function(date, version, run, full_texts, intro_texts,
       "  Skip: ", date, " [", version, "] run ", run, " (exists)\n"
     )))
     return(invisible(TRUE))
+  }
+
+  # Full runs must come from cache only — never re-call the API for them.
+  if (version == "full") {
+    cat(crayon::yellow(paste0(
+      "  Skip (not cached): ", date, " [full] run ", run, "\n"
+    )))
+    return(invisible(FALSE))
   }
 
   cat(crayon::yellow(paste0(
@@ -441,7 +451,7 @@ completed_grid <- tibble(stem = tools::file_path_sans_ext(completed_files)) %>%
 
 full_grid_check <- expand_grid(
   date    = as.character(the_dates),
-  version = c("full", "intro"),
+  version = "intro",
   run     = 1:10
 )
 
