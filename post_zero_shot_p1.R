@@ -80,7 +80,8 @@ planned_stems <- c(
   file.path(fig_dir,  "p1_fig_correlation_uplift"),
   file.path(fig_dir,  "p1_fig_GR_full"),
   file.path(fig_dir,  "p1_fig_sd_stabilization"),
-  file.path(data_dir, "p1_comparison_table")
+  file.path(data_dir, "p1_comparison_table"),
+  file.path(data_dir, "p1_pre_post_regression")
 )
 invisible(lapply(planned_stems, assert_p1))
 cat("Prefix assertion passed for all", length(planned_stems), "output paths.\n\n")
@@ -751,25 +752,7 @@ if (!file.exists(text_corr_path)) {
 text_corr <- readRDS(text_corr_path) %>%
   mutate(tenor = factor(tenor, levels = tenor_levels))
 
-# ---- 2. Pre-vol baseline: lagged market vol (previous conference) ----
-lag_corr <- market_vol %>%
-  arrange(tenor, date) %>%
-  group_by(tenor) %>%
-  mutate(vol_lag = lag(vol_1d)) %>%
-  ungroup() %>%
-  filter(!is.na(vol_lag), !is.na(vol_1d)) %>%
-  group_by(tenor) %>%
-  summarise(
-    rho  = cor(vol_lag, vol_1d, method = "spearman", use = "complete.obs"),
-    pval = cor.test(~ vol_lag + vol_1d,
-                    data = cur_data(), method = "spearman",
-                    exact = FALSE)$p.value,
-    n    = n(),
-    .groups = "drop"
-  ) %>%
-  mutate(tenor = factor(tenor, levels = tenor_levels))
-
-# ---- 3. LLM correlations ----
+# ---- 2. LLM correlations ----
 # Re-use uplift_results from section 8 (ensemble R=10 and single draw v6)
 # Both on the common sample (ensemble ∩ market_vol ∩ v6)
 llm_corr <- uplift_results %>%
@@ -832,7 +815,6 @@ tc <- function(var_prefix) {
 
 n_text <- text_corr %>% filter(tenor == "3M") %>% pull(n)
 
-lc <- function(tenor_val) lag_corr %>% filter(tenor == tenor_val)
 llm_ens <- function(tenor_val) {
   rho  <- uplift_results %>% filter(tenor == tenor_val, design == "Ensemble R=10") %>% pull(rho)
   pval <- llm_pvals %>% filter(tenor == tenor_val) %>% pull(pval_ensemble)
@@ -875,11 +857,6 @@ comp_table <- bind_rows(
            hd$`2Y`$rho,  hd$`2Y`$pval,
            hd$`10Y`$rho, hd$`10Y`$pval,
            n_text, n_text, n_text),
-  make_row("Lagged market vol",
-           lc("3M")$rho,  lc("3M")$pval,
-           lc("2Y")$rho,  lc("2Y")$pval,
-           lc("10Y")$rho, lc("10Y")$pval,
-           lc("3M")$n,    lc("2Y")$n,    lc("10Y")$n),
   make_row("LLM ensemble (R = 10)",
            llm_ens("3M")$rho,  llm_ens("3M")$pval,
            llm_ens("2Y")$rho,  llm_ens("2Y")$pval,
@@ -900,8 +877,7 @@ dir.create("../output/tables", recursive = TRUE, showWarnings = FALSE)
 
 latex_rows <- comp_table %>%
   mutate(
-    # Separator row before pre-vol and LLM blocks
-    sep = Measure %in% c("Lagged market vol", "LLM single draw")
+    sep = Measure %in% c("LLM ensemble (R = 10)")
   )
 
 latex_lines <- c(
@@ -916,10 +892,9 @@ latex_lines <- c(
   "\\multicolumn{4}{l}{\\textit{Text-based measures}} \\\\[2pt]"
 )
 
-text_block  <- c("FK Complexity","Word Count","Hedging Words",
-                 "LM Uncertainty Density","Net Hawkish-Dovish")
-pre_vol_blk <- "Lagged market vol"
-llm_block   <- c("LLM ensemble (R = 10)")
+text_block <- c("FK Complexity","Word Count","Hedging Words",
+                "LM Uncertainty Density","Net Hawkish-Dovish")
+llm_block  <- c("LLM ensemble (R = 10)")
 
 emit_rows <- function(measures) {
   comp_table %>%
@@ -930,14 +905,12 @@ emit_rows <- function(measures) {
 
 latex_lines <- c(latex_lines,
   emit_rows(text_block),
-  "[4pt]\\multicolumn{4}{l}{\\textit{Persistence baseline}} \\\\[2pt]",
-  emit_rows(pre_vol_blk),
   "[4pt]\\multicolumn{4}{l}{\\textit{LLM synthetic disagreement}} \\\\[2pt]",
   emit_rows(llm_block),
   "\\bottomrule",
   "\\multicolumn{4}{p{10cm}}{\\footnotesize",
   "  Spearman rank correlation with post-announcement OIS volatility.",
-  "  Text measures and lagged vol use all available conferences;",
+  "  Text measures use all available conferences;",
   "  LLM correlations use the common sample (ensemble $\\cap$ market vol $\\cap$ v6).",
   "  $^{***}$p$<$0.01, $^{**}$p$<$0.05, $^{*}$p$<$0.10.",
   "} \\\\",
@@ -947,6 +920,120 @@ latex_lines <- c(latex_lines,
 
 writeLines(latex_lines, "../output/tables/p1_comparison_table.tex")
 cat("  Saved: p1_comparison_table.tex\n")
+
+# ==============================================================================
+# 13. PRE-POST OIS REGRESSION — by tenor
+# ==============================================================================
+# Outcome:   correct_post_mean_1  (1-day post-announcement OIS range)
+# Baseline:  correct_pre_mean_3   (3-day pre-announcement range — only pre-window
+#            saved in range_difference_df.rds)
+# Model A:   post_1d ~ pre_3d
+# Model B:   post_1d ~ pre_3d + sd_mean  (LLM ensemble disagreement)
+
+cat("Pre-post OIS regression (1-day post ~ 3-day pre ± LLM ensemble)...\n")
+
+ois_pre <- readRDS("../intermediate_data/range_difference_df.rds") %>%
+  mutate(
+    tenor = if_else(tenor == "3mnt", "3M", tenor),
+    tenor = factor(tenor, levels = tenor_levels),
+    date  = as.Date(date)
+  ) %>%
+  select(tenor, date,
+         vol_pre_3d  = correct_pre_mean_3,
+         vol_post_1d = correct_post_mean_1) %>%
+  filter(!is.na(vol_pre_3d), !is.na(vol_post_1d), tenor %in% tenor_levels)
+
+reg_df <- ensemble %>%
+  inner_join(ois_pre, by = c("date", "tenor")) %>%
+  filter(!is.na(sd_mean))
+
+cat(glue(
+  "Regression sample: {n_distinct(reg_df$date)} dates, {nrow(reg_df)} obs\n"
+))
+
+reg_results <- reg_df %>%
+  mutate(tenor = as.character(tenor)) %>%
+  group_by(tenor) %>%
+  nest() %>%
+  mutate(
+    modelA = map(data, ~ lm(vol_post_1d ~ vol_pre_3d,            data = .x)),
+    modelB = map(data, ~ lm(vol_post_1d ~ vol_pre_3d + sd_mean,  data = .x))
+  )
+
+reg_summary <- reg_results %>%
+  mutate(
+    coef_pre_A  = map_dbl(modelA, ~ coef(.x)["vol_pre_3d"]),
+    pval_pre_A  = map_dbl(modelA, ~ summary(.x)$coefficients["vol_pre_3d", "Pr(>|t|)"]),
+    r2_A        = map_dbl(modelA, ~ summary(.x)$r.squared),
+    coef_pre_B  = map_dbl(modelB, ~ coef(.x)["vol_pre_3d"]),
+    pval_pre_B  = map_dbl(modelB, ~ summary(.x)$coefficients["vol_pre_3d", "Pr(>|t|)"]),
+    coef_llm_B  = map_dbl(modelB, ~ coef(.x)["sd_mean"]),
+    pval_llm_B  = map_dbl(modelB, ~ summary(.x)$coefficients["sd_mean", "Pr(>|t|)"]),
+    r2_B        = map_dbl(modelB, ~ summary(.x)$r.squared),
+    delta_r2    = r2_B - r2_A,
+    n           = map_int(data, nrow)
+  ) %>%
+  select(-data, -modelA, -modelB) %>%
+  mutate(tenor = factor(tenor, levels = tenor_levels)) %>%
+  arrange(tenor)
+
+cat("\nRegression results (post_1d ~ pre_3d ± LLM ensemble):\n")
+reg_summary %>%
+  mutate(
+    `pre_3d (A)`    = sprintf("%.4f%s", coef_pre_A, add_stars(pval_pre_A)),
+    `R² (A)`        = round(r2_A,    3),
+    `pre_3d (B)`    = sprintf("%.4f%s", coef_pre_B, add_stars(pval_pre_B)),
+    `LLM SD (B)`    = sprintf("%.4f%s", coef_llm_B, add_stars(pval_llm_B)),
+    `R² (B)`        = round(r2_B,    3),
+    `ΔR²`           = round(delta_r2, 3)
+  ) %>%
+  select(tenor, n, `pre_3d (A)`, `R² (A)`, `pre_3d (B)`, `LLM SD (B)`, `R² (B)`, `ΔR²`) %>%
+  print()
+
+save_table(
+  reg_summary %>% mutate(across(where(is.factor), as.character)),
+  "p1_pre_post_regression"
+)
+
+# LaTeX table
+latex_reg <- c(
+  "\\begin{table}[htbp]",
+  "\\centering",
+  "\\caption{Post-announcement OIS volatility regressed on pre-announcement level and LLM disagreement}",
+  "\\label{tab:p1_pre_post_reg}",
+  "\\begin{tabular}{lcccccc}",
+  "\\toprule",
+  " & \\multicolumn{2}{c}{Model A} & \\multicolumn{4}{c}{Model B} \\\\",
+  "\\cmidrule(lr){2-3}\\cmidrule(lr){4-7}",
+  "Tenor & Pre (3d) & $R^2$ & Pre (3d) & LLM SD & $R^2$ & $\\Delta R^2$ \\\\",
+  "\\midrule"
+)
+
+for (i in seq_len(nrow(reg_summary))) {
+  r <- reg_summary[i, ]
+  latex_reg <- c(latex_reg, glue(
+    "{r$tenor} & {sprintf('%.4f%s', r$coef_pre_A, add_stars(r$pval_pre_A))} & ",
+    "{round(r$r2_A, 3)} & ",
+    "{sprintf('%.4f%s', r$coef_pre_B, add_stars(r$pval_pre_B))} & ",
+    "{sprintf('%.4f%s', r$coef_llm_B, add_stars(r$pval_llm_B))} & ",
+    "{round(r$r2_B, 3)} & {round(r$delta_r2, 3)} \\\\"
+  ))
+}
+
+latex_reg <- c(latex_reg,
+  "\\bottomrule",
+  "\\multicolumn{7}{p{13cm}}{\\footnotesize",
+  "  OLS regressions by tenor. Outcome: 1-day post-announcement OIS range.",
+  "  Pre (3d): 3-day pre-announcement OIS range. LLM SD: ensemble mean SD",
+  "  across R = 10 runs. $\\Delta R^2$ = incremental $R^2$ from adding LLM SD.",
+  "  $^{***}$p$<$0.01, $^{**}$p$<$0.05, $^{*}$p$<$0.10.",
+  "} \\\\",
+  "\\end{tabular}",
+  "\\end{table}"
+)
+
+writeLines(latex_reg, "../output/tables/p1_pre_post_regression.tex")
+cat("  Saved: p1_pre_post_regression.tex\n")
 
 cat("\n", strrep("=", 80), "\n")
 cat("POST ZERO-SHOT P1 COMPLETE\n")
