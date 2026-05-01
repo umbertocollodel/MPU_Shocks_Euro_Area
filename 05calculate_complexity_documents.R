@@ -316,6 +316,10 @@ cor_by_tenor_robust <- complexity_volatility_filtered %>%
 cat("\n=== Robust Spearman Correlations (outliers removed) ===\n")
 print(cor_by_tenor_robust)
 
+saveRDS(cor_by_tenor_robust,
+        "../intermediate_data/text_measure_correlations.rds")
+cat("Saved: ../intermediate_data/text_measure_correlations.rds\n")
+
 # Create scatter plot by tenor - with outliers removed
 complexity_volatility_filtered %>%
   filter(!is_outlier) %>%
