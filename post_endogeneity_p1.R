@@ -31,7 +31,7 @@ cat(strrep("=", 70), "\n\n")
 # ==============================================================================
 
 if (!require("pacman")) install.packages("pacman")
-pacman::p_load(tidyverse, patchwork, showtext, writexl)
+pacman::p_load(tidyverse, patchwork, showtext, writexl, stargazer)
 
 if (!("Segoe UI" %in% font_families())) {
   fp <- file.path(getwd(), "segoeui.ttf")
@@ -113,102 +113,97 @@ cat(paste0(
 ))
 
 # ==============================================================================
-# 3. FIGURE 1 — Main result: correlations (left) + Δρ forest (right)
+# 3. TABLE 1 — Main result: Spearman correlations and Δρ
 # ==============================================================================
 
-cat("Building Figure 1...\n")
+cat("Building Table 1 (main correlation results)...\n")
 
-# --- Left panel: ρ_endo and ρ_headline per tenor, with 95% CIs ----------------
+# t-approximation p-value for H0: rho = 0 (valid for Spearman with n >= 10)
+pval_spearman <- function(rho, n) {
+  t_stat <- rho * sqrt(n - 2) / sqrt(1 - rho^2)
+  2 * pt(abs(t_stat), df = n - 2, lower.tail = FALSE)
+}
 
-comp_long <- bind_rows(
-  comparison_tbl %>%
-    transmute(tenor,
-              rho = spearman_endo_vs_vol,
-              lo  = ci_low_endo,
-              hi  = ci_high_endo,
-              model = "Two-stage"),
-  comparison_tbl %>%
-    transmute(tenor,
-              rho = spearman_headline_vs_vol,
-              lo  = ci_low_head,
-              hi  = ci_high_head,
-              model = "Headline")
-) %>%
+sig_stars <- function(p) {
+  dplyr::case_when(p < 0.01 ~ "***", p < 0.05 ~ "**", p < 0.10 ~ "*", TRUE ~ "")
+}
+
+tbl1_data <- comparison_tbl %>%
   mutate(
-    tenor = factor(tenor, levels = c("10Y", "2Y", "3M")),
-    model = factor(model, levels = c("Headline", "Two-stage"))
+    p_endo    = pval_spearman(spearman_endo_vs_vol,    n_conferences),
+    p_head    = pval_spearman(spearman_headline_vs_vol, n_conferences),
+    delta_sig = ifelse(!(ci_low_delta <= 0 & 0 <= ci_high_delta), "†", ""),
+    verdict   = ifelse(ci_low_delta <= 0 & 0 <= ci_high_delta, "Refuted", "Concern")
   )
 
-p_corr <- ggplot(comp_long,
-                 aes(y = tenor, x = rho, color = model, shape = model)) +
-  geom_vline(xintercept = 0, linetype = "dashed",
-             color = "grey60", linewidth = 0.4) +
-  geom_errorbarh(aes(xmin = lo, xmax = hi),
-                 height = 0.15, linewidth = 0.9,
-                 position = position_dodge(width = 0.45)) +
-  geom_point(size = 4.5, position = position_dodge(width = 0.45)) +
-  scale_color_manual(values = col_model, name = NULL) +
-  scale_shape_manual(values = c("Headline" = 16, "Two-stage" = 17), name = NULL) +
-  scale_x_continuous(limits = c(-0.15, 1.0),
-                     breaks = seq(0, 0.8, 0.2)) +
-  labs(
-    x     = expression(rho~"(disagreement, market vol)"),
-    y     = NULL,
-    title = "Spearman correlations with realised market vol"
-  ) +
-  base_theme +
-  theme(
-    legend.position = "bottom",
-    legend.text     = element_text(size = 12),
-    plot.title      = element_text(size = 13, face = "bold", hjust = 0.5)
+tbl1_out <- tbl1_data %>%
+  transmute(
+    Tenor                   = tenor,
+    N                       = n_conferences,
+    `rho_ts [95% CI]`       = sprintf("%.3f%s [%.3f, %.3f]",
+                                       spearman_endo_vs_vol, sig_stars(p_endo),
+                                       ci_low_endo, ci_high_endo),
+    `rho_hl [95% CI]`       = sprintf("%.3f%s [%.3f, %.3f]",
+                                       spearman_headline_vs_vol, sig_stars(p_head),
+                                       ci_low_head, ci_high_head),
+    `Delta_rho [95% CI]`    = sprintf("%.3f%s [%.3f, %.3f]",
+                                       delta_rho, delta_sig,
+                                       ci_low_delta, ci_high_delta),
+    Verdict                 = verdict
   )
 
-# --- Right panel: Δρ = ρ_headline − ρ_endo, per tenor -------------------------
+cat("\n")
+print(tbl1_out)
+cat("\n")
 
-delta_tbl <- comparison_tbl %>%
-  mutate(
-    tenor      = factor(tenor, levels = c("10Y", "2Y", "3M")),
-    zero_in_ci = ci_low_delta <= 0 & 0 <= ci_high_delta,
-    verdict    = ifelse(zero_in_ci, "Refuted", "Concern")
+writexl::write_xlsx(tbl1_out, file.path(output_dir, "tbl1_correlation_comparison.xlsx"))
+cat("  Saved: tbl1_correlation_comparison.xlsx\n")
+
+tryCatch({
+
+  tbl1_sg <- tbl1_data %>%
+    transmute(
+      "Tenor"                     = tenor,
+      "N"                         = n_conferences,
+      "$\\rho_{ts}$ [95\\% CI]"   = sprintf("%.3f%s [%.3f, %.3f]",
+                                             spearman_endo_vs_vol, sig_stars(p_endo),
+                                             ci_low_endo, ci_high_endo),
+      "$\\rho_{hl}$ [95\\% CI]"   = sprintf("%.3f%s [%.3f, %.3f]",
+                                             spearman_headline_vs_vol, sig_stars(p_head),
+                                             ci_low_head, ci_high_head),
+      "$\\Delta\\rho$ [95\\% CI]" = sprintf("%.3f%s [%.3f, %.3f]",
+                                             delta_rho,
+                                             ifelse(!(ci_low_delta <= 0 & 0 <= ci_high_delta),
+                                                    "$\\dagger$", ""),
+                                             ci_low_delta, ci_high_delta),
+      "Verdict"                   = verdict
+    ) %>%
+    as.data.frame()
+
+  stargazer(
+    tbl1_sg,
+    type         = "latex",
+    summary      = FALSE,
+    rownames     = FALSE,
+    header       = FALSE,
+    title        = "Spearman correlations between synthetic disagreement and realised market volatility",
+    label        = "tab:endo_corr",
+    notes        = c(
+      "\\textit{ts}: two-stage model (panel from macro regime only, no transcript).",
+      "\\textit{hl}: headline zero-shot ensemble. $\\Delta\\rho = \\rho_{hl} - \\rho_{ts}$.",
+      "Stars on $\\rho$: $t$-approx.\\ $p$-value (H$_0$: $\\rho=0$);",
+      "$^{*}\\,p<0.10$, $^{**}\\,p<0.05$, $^{***}\\,p<0.01$.",
+      "$\\dagger$: 0 outside the 95\\% bootstrap CI for $\\Delta\\rho$ (5,000 reps).",
+      "Verdict: $0 \\in \\mathrm{CI}(\\Delta\\rho) \\Rightarrow$ endogeneity concern refuted."
+    ),
+    notes.append = FALSE,
+    out          = file.path(output_dir, "tbl1_correlation_comparison.tex")
   )
+  cat("  Saved: tbl1_correlation_comparison.tex\n")
 
-p_delta <- ggplot(delta_tbl, aes(y = tenor, x = delta_rho)) +
-  geom_vline(xintercept = 0, linetype = "dashed",
-             color = "grey40", linewidth = 0.5) +
-  geom_errorbarh(aes(xmin = ci_low_delta, xmax = ci_high_delta),
-                 height = 0.2, linewidth = 0.9, color = "grey30") +
-  geom_point(aes(color = verdict), size = 5) +
-  scale_color_manual(values = col_verdict, name = NULL,
-                     guide = guide_legend(override.aes = list(size = 4))) +
-  scale_x_continuous(breaks = seq(-0.5, 0.5, 0.25)) +
-  labs(
-    x = expression(Delta*rho == rho[headline] - rho[two-stage]),
-    y = NULL,
-    title = expression(Delta*rho~": headline advantage")
-  ) +
-  base_theme +
-  theme(
-    legend.position   = "bottom",
-    legend.text       = element_text(size = 12),
-    plot.title        = element_text(size = 13, face = "bold", hjust = 0.5),
-    axis.text.y       = element_blank(),
-    axis.ticks.y      = element_blank()
-  )
-
-fig1 <- p_corr + p_delta +
-  plot_layout(widths = c(1.5, 1)) +
-  plot_annotation(
-    caption = paste0(
-      "Two-stage: panel generated from macro regime only (no transcript). ",
-      "Headline: standard zero-shot ensemble. ",
-      "95% bootstrap CIs (5,000 reps, percentile method). ",
-      "Δρ = 0 inside all CIs → endogeneity concern empirically refuted."
-    )
-  )
-
-ggsave(file.path(output_dir, "fig1_endo_main.pdf"),
-       fig1, dpi = 320, width = 10.5, height = 4, bg = "white")
-cat("  Saved: fig1_endo_main.pdf\n")
+}, error = function(e) {
+  cat("  stargazer failed — skipping tbl1_correlation_comparison.tex:", conditionMessage(e), "\n")
+})
 
 # ==============================================================================
 # 4. FIGURE 2 — Scatter: endo_sd vs. headline_sd, faceted by tenor
@@ -288,49 +283,53 @@ cat("\n")
 writexl::write_xlsx(tbl_out, file.path(output_dir, "endo_table.xlsx"))
 cat("  Saved: endo_table.xlsx\n")
 
-# LaTeX version (optional — requires knitr + kableExtra)
+# LaTeX version via stargazer
 tryCatch({
-  requireNamespace("knitr",      quietly = TRUE)
-  requireNamespace("kableExtra", quietly = TRUE)
 
-  tbl_latex <- comparison_tbl %>%
+  endo_sg <- comparison_tbl %>%
     mutate(verdict = ifelse(ci_low_delta <= 0 & 0 <= ci_high_delta,
                             "Refuted", "Concern")) %>%
     transmute(
-      Tenor   = tenor,
-      N       = n_conferences,
-      `$\\rho_{endo}$ [95\\% CI]` = sprintf("%.3f [%.3f, %.3f]",
-                                             spearman_endo_vs_vol,
-                                             ci_low_endo, ci_high_endo),
-      `$\\rho_{head}$ [95\\% CI]` = sprintf("%.3f [%.3f, %.3f]",
-                                             spearman_headline_vs_vol,
-                                             ci_low_head, ci_high_head),
-      `$\\Delta\\rho$ [95\\% CI]` = sprintf("%.3f [%.3f, %.3f]",
-                                             delta_rho, ci_low_delta, ci_high_delta),
-      Verdict = verdict
-    )
+      "Tenor"                            = tenor,
+      "N"                                = n_conferences,
+      "$\\rho_{ts}$ [95\\% CI]"          = sprintf("%.3f [%.3f, %.3f]",
+                                                    spearman_endo_vs_vol,
+                                                    ci_low_endo, ci_high_endo),
+      "$\\rho_{hl}$ [95\\% CI]"          = sprintf("%.3f [%.3f, %.3f]",
+                                                    spearman_headline_vs_vol,
+                                                    ci_low_head, ci_high_head),
+      "$\\rho_{ts,hl}$ [95\\% CI]"       = sprintf("%.3f [%.3f, %.3f]",
+                                                    spearman_endo_vs_headline,
+                                                    ci_low_eh, ci_high_eh),
+      "$\\Delta\\rho$ [95\\% CI]"        = sprintf("%.3f [%.3f, %.3f]",
+                                                    delta_rho,
+                                                    ci_low_delta, ci_high_delta),
+      "Verdict"                          = verdict
+    ) %>%
+    as.data.frame()
 
-  tex <- knitr::kable(
-    tbl_latex,
-    format   = "latex",
-    booktabs = TRUE,
-    escape   = FALSE,
-    caption  = paste0(
-      "Endogeneity test: Spearman correlations with 95\\% bootstrap CIs ",
-      "(5{,}000 replications, percentile method). ",
-      "$\\rho_{endo}$: two-stage model (panel generated from macro regime only); ",
-      "$\\rho_{head}$: headline zero-shot ensemble. ",
-      "$\\Delta\\rho = \\rho_{head} - \\rho_{endo}$; ",
-      "Verdict: $0 \\in$ CI $\\Rightarrow$ endogeneity concern refuted."
-    )
+  stargazer(
+    endo_sg,
+    type         = "latex",
+    summary      = FALSE,
+    rownames     = FALSE,
+    header       = FALSE,
+    title        = "Endogeneity test: Spearman correlations with 95\\% bootstrap confidence intervals",
+    label        = "tab:endo_full",
+    notes        = c(
+      "\\textit{ts}: two-stage model (panel from macro regime only, no transcript).",
+      "\\textit{hl}: headline zero-shot ensemble.",
+      "$\\rho_{ts,hl}$: cross-correlation between the two disagreement measures.",
+      "$\\Delta\\rho = \\rho_{hl} - \\rho_{ts}$. 95\\% bootstrap CIs: 5,000 reps (percentile method).",
+      "Verdict: $0 \\in \\mathrm{CI}(\\Delta\\rho) \\Rightarrow$ endogeneity concern refuted."
+    ),
+    notes.append = FALSE,
+    out          = file.path(output_dir, "endo_table.tex")
   )
-  tex <- kableExtra::kable_styling(tex,
-                                   latex_options = c("hold_position", "booktabs"))
-  writeLines(tex, file.path(output_dir, "endo_table.tex"))
   cat("  Saved: endo_table.tex\n")
 
 }, error = function(e) {
-  cat("  knitr/kableExtra not available — skipping endo_table.tex\n")
+  cat("  stargazer failed — skipping endo_table.tex:", conditionMessage(e), "\n")
 })
 
 # ==============================================================================
@@ -549,16 +548,19 @@ p_pv <- ggplot(net_hawk_by_date,
 
 # --- Archetype heatmap: z-score WITHIN each row so colour shows deviation ------
 # from that archetype's own average — not absolute share (which is ~1/n_types)
+max_pct_arch <- max(arch_by_date$pct)
+min_pct_arch <- min(arch_by_date$pct)
+
 p_arch <- ggplot(arch_by_date,
                  aes(x = date_fct, y = arch_cat, fill = pct)) +
   geom_tile(color = "white", linewidth = 0.35) +
   scale_fill_distiller(
     palette   = "Blues",
     direction = 1,
-    trans     = "sqrt",           # stretches 1–15% range, compresses large values
-    name      = "%",
-    breaks    = c(1, 4, 9, 16, 25),
-    labels    = scales::number_format(accuracy = 1)
+    trans     = "sqrt",
+    name      = NULL,
+    breaks    = c(min_pct_arch, max_pct_arch),
+    labels    = c("0%", paste0(round(max_pct_arch), "%"))
   ) +
   scale_x_discrete(breaks = x_breaks, labels = x_labs) +
   scale_y_discrete(limits = rev(arch_levels)) +
@@ -574,17 +576,10 @@ p_arch <- ggplot(arch_by_date,
     legend.key.height = unit(1.5, "cm")
   )
 
-fig3 <- p_pv / p_arch +
-  plot_layout(heights = c(1, 1.3)) +
+fig3 <- p_arch +
   plot_annotation(
-    title   = "Panel composition over time — averaged across 5 independent draws",
-    caption = paste0(
-      "Top: net hawkishness = % Hawkish − % Dovish per conference; ",
-      "positive bars = net-hawkish panel, negative = net-dovish. ",
-      "Bottom: absolute share of each archetype; colour scale is square-root ",
-      "transformed so the 1–15% range occupies most of the gradient. ",
-      "Panel generated from macro regime only — no transcript information."
-    ),
+    title   = "",
+    caption = "",
     theme = theme(
       plot.title   = element_text(size = 13, face = "bold", hjust = 0.5,
                                   margin = margin(b = 6)),
@@ -594,7 +589,7 @@ fig3 <- p_pv / p_arch +
   )
 
 ggsave(file.path(output_dir, "fig3_panel_composition.pdf"),
-       fig3, dpi = 320, width = 12, height = 8.5, bg = "white")
+       fig3, dpi = 320, width = 12, height = 5, bg = "white")
 cat("  Saved: fig3_panel_composition.pdf\n")
 
 # ==============================================================================
