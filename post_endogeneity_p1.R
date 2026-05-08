@@ -233,13 +233,9 @@ fig2 <- ggplot(merged, aes(x = sd_mean_endo, y = sd_mean_head, color = tenor)) +
   scale_color_manual(values = col_tenor, guide = "none") +
   labs(
     x       = "Two-stage disagreement (SD, %)",
-    y       = "Headline disagreement (SD, %)",
-    title   = "Agreement between two-stage and headline disagreement measures",
-    caption = paste0(
-      "Each point is one conference-date. Shaded band = 95% confidence interval of OLS fit. ",
-      "ρ = Spearman correlation between the two measures per tenor."
-    )
-  ) +
+    y       = "Baseline disagreement (SD, %)",
+    title   = "",
+    caption = "") +
   base_theme +
   theme(
     plot.title = element_text(size = 13, face = "bold", hjust = 0.5)
@@ -564,7 +560,7 @@ p_arch <- ggplot(arch_by_date,
   ) +
   scale_x_discrete(breaks = x_breaks, labels = x_labs) +
   scale_y_discrete(limits = rev(arch_levels)) +
-  labs(x = NULL, y = NULL, title = "Archetype share (%)") +
+  labs(x = NULL, y = NULL, title = "") +
   base_theme +
   theme(
     panel.border      = element_blank(),
