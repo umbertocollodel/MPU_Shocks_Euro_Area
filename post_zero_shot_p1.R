@@ -38,7 +38,7 @@ cat(strrep("=", 80), "\n\n")
 if (!require("pacman")) install.packages("pacman")
 pacman::p_load(
   tidyverse, readxl, writexl, readr, scales, showtext,
-  boot, RColorBrewer, glue
+  boot, RColorBrewer, glue, sandwich, lmtest
 )
 
 # Font — same guard pattern as 09plot_llm_results.R
@@ -936,82 +936,101 @@ cat(glue(
   "Regression sample: {n_distinct(reg_df$date)} dates, {nrow(reg_df)} obs\n"
 ))
 
-reg_results <- reg_df %>%
-  mutate(tenor = as.character(tenor)) %>%
-  group_by(tenor) %>%
-  nest() %>%
-  mutate(
-    modelA = map(data, ~ lm(vol_post_1d ~ vol_pre_3d,            data = .x)),
-    modelB = map(data, ~ lm(vol_post_1d ~ vol_pre_3d + sd_mean,  data = .x))
-  )
+# Pool across tenors
+model1 <- lm(vol_post_1d ~ vol_pre_3d,                        data = reg_df)
+model2 <- lm(vol_post_1d ~ vol_pre_3d + sd_mean,              data = reg_df)
+model3 <- lm(vol_post_1d ~ vol_pre_3d + sd_mean + tenor,      data = reg_df)
 
-reg_summary <- reg_results %>%
-  mutate(
-    coef_pre_A  = map_dbl(modelA, ~ coef(.x)["vol_pre_3d"]),
-    pval_pre_A  = map_dbl(modelA, ~ summary(.x)$coefficients["vol_pre_3d", "Pr(>|t|)"]),
-    r2_A        = map_dbl(modelA, ~ summary(.x)$r.squared),
-    coef_pre_B  = map_dbl(modelB, ~ coef(.x)["vol_pre_3d"]),
-    pval_pre_B  = map_dbl(modelB, ~ summary(.x)$coefficients["vol_pre_3d", "Pr(>|t|)"]),
-    coef_llm_B  = map_dbl(modelB, ~ coef(.x)["sd_mean"]),
-    pval_llm_B  = map_dbl(modelB, ~ summary(.x)$coefficients["sd_mean", "Pr(>|t|)"]),
-    r2_B        = map_dbl(modelB, ~ summary(.x)$r.squared),
-    delta_r2    = r2_B - r2_A,
-    n           = map_int(data, nrow)
-  ) %>%
-  select(-data, -modelA, -modelB) %>%
-  mutate(tenor = factor(tenor, levels = tenor_levels)) %>%
-  arrange(tenor)
+# Heteroskedasticity-robust SEs (HC1)
+vcov1 <- vcovHC(model1, type = "HC1")
+vcov2 <- vcovHC(model2, type = "HC1")
+vcov3 <- vcovHC(model3, type = "HC1")
+se1   <- sqrt(diag(vcov1))
+se2   <- sqrt(diag(vcov2))
+se3   <- sqrt(diag(vcov3))
 
-cat("\nRegression results (post_1d ~ pre_3d ± LLM ensemble):\n")
-reg_summary %>%
-  mutate(
-    `pre_3d (A)`    = sprintf("%.4f%s", coef_pre_A, add_stars(pval_pre_A)),
-    `R² (A)`        = round(r2_A,    3),
-    `pre_3d (B)`    = sprintf("%.4f%s", coef_pre_B, add_stars(pval_pre_B)),
-    `LLM SD (B)`    = sprintf("%.4f%s", coef_llm_B, add_stars(pval_llm_B)),
-    `R² (B)`        = round(r2_B,    3),
-    `ΔR²`           = round(delta_r2, 3)
-  ) %>%
-  select(tenor, n, `pre_3d (A)`, `R² (A)`, `pre_3d (B)`, `LLM SD (B)`, `R² (B)`, `ΔR²`) %>%
-  print()
+# Robust p-values
+pval1 <- 2 * pt(-abs(coef(model1) / se1), df = model1$df.residual)
+pval2 <- 2 * pt(-abs(coef(model2) / se2), df = model2$df.residual)
+pval3 <- 2 * pt(-abs(coef(model3) / se3), df = model3$df.residual)
 
-save_table(
-  reg_summary %>% mutate(across(where(is.factor), as.character)),
-  "p1_pre_post_regression"
-)
+# Summary stats
+n_obs   <- nobs(model1)
+r2_1    <- summary(model1)$r.squared
+adjr2_1 <- summary(model1)$adj.r.squared
+r2_2    <- summary(model2)$r.squared
+adjr2_2 <- summary(model2)$adj.r.squared
+r2_3    <- summary(model3)$r.squared
+adjr2_3 <- summary(model3)$adj.r.squared
+
+# Joint F-test: both slopes = 0 in model 2
+wtest <- waldtest(model2, . ~ 1, vcov = function(x) vcovHC(x, type = "HC1"))
+f_val <- wtest$F[2]
+f_p   <- wtest$`Pr(>F)`[2]
+
+cat(glue("\nF-test (joint slopes = 0): F = {round(f_val, 2)}, p = {formatC(f_p, format='e', digits=2)}\n"))
+
+fmt_coef <- function(b, p) sprintf("%.3f%s", b, add_stars(p))
+fmt_se   <- function(s)    sprintf("(%.3f)", s)
+
+cat("\nRegression results (pooled across tenors, robust SEs):\n")
+cat(sprintf("%-30s %10s %10s %10s\n", "", "(1)", "(2)", "(3)"))
+cat(sprintf("%-30s %10s %10s %10s\n", "Pre-Meeting OIS Volatility",
+            fmt_coef(coef(model1)["vol_pre_3d"], pval1["vol_pre_3d"]),
+            fmt_coef(coef(model2)["vol_pre_3d"], pval2["vol_pre_3d"]),
+            fmt_coef(coef(model3)["vol_pre_3d"], pval3["vol_pre_3d"])))
+cat(sprintf("%-30s %10s %10s %10s\n", "",
+            fmt_se(se1["vol_pre_3d"]), fmt_se(se2["vol_pre_3d"]), fmt_se(se3["vol_pre_3d"])))
+cat(sprintf("%-30s %10s %10s %10s\n", "Synthetic SD", "",
+            fmt_coef(coef(model2)["sd_mean"], pval2["sd_mean"]),
+            fmt_coef(coef(model3)["sd_mean"], pval3["sd_mean"])))
+cat(sprintf("%-30s %10s %10s %10s\n", "", "", fmt_se(se2["sd_mean"]), fmt_se(se3["sd_mean"])))
+cat(sprintf("%-30s %10s %10s %10s\n", "Constant",
+            fmt_coef(coef(model1)["(Intercept)"], pval1["(Intercept)"]),
+            fmt_coef(coef(model2)["(Intercept)"], pval2["(Intercept)"]),
+            fmt_coef(coef(model3)["(Intercept)"], pval3["(Intercept)"])))
+cat(sprintf("%-30s %10s %10s %10s\n", "",
+            fmt_se(se1["(Intercept)"]), fmt_se(se2["(Intercept)"]), fmt_se(se3["(Intercept)"])))
+cat(sprintf("%-30s %10s %10s %10s\n", "Maturity FE", "No", "No", "Yes"))
+cat(sprintf("%-30s %10d %10d %10d\n", "Observations", n_obs, n_obs, n_obs))
+cat(sprintf("%-30s %10.3f %10.3f %10.3f\n", "R2", r2_1, r2_2, r2_3))
+cat(sprintf("%-30s %10.3f %10.3f %10.3f\n", "Adj R2", adjr2_1, adjr2_2, adjr2_3))
 
 # LaTeX table
 latex_reg <- c(
   "\\begin{table}[htbp]",
   "\\centering",
-  "\\caption{Post-announcement OIS volatility regressed on pre-announcement level and LLM disagreement}",
+  "\\caption{Pre-Post OIS Volatility Relationship}",
   "\\label{tab:p1_pre_post_reg}",
-  "\\begin{tabular}{lcccccc}",
+  "\\begin{tabular}{lccc}",
   "\\toprule",
-  " & \\multicolumn{2}{c}{Model A} & \\multicolumn{4}{c}{Model B} \\\\",
-  "\\cmidrule(lr){2-3}\\cmidrule(lr){4-7}",
-  "Tenor & Pre (3d) & $R^2$ & Pre (3d) & LLM SD & $R^2$ & $\\Delta R^2$ \\\\",
-  "\\midrule"
-)
-
-for (i in seq_len(nrow(reg_summary))) {
-  r <- reg_summary[i, ]
-  latex_reg <- c(latex_reg, glue(
-    "{r$tenor} & {sprintf('%.4f%s', r$coef_pre_A, add_stars(r$pval_pre_A))} & ",
-    "{round(r$r2_A, 3)} & ",
-    "{sprintf('%.4f%s', r$coef_pre_B, add_stars(r$pval_pre_B))} & ",
-    "{sprintf('%.4f%s', r$coef_llm_B, add_stars(r$pval_llm_B))} & ",
-    "{round(r$r2_B, 3)} & {round(r$delta_r2, 3)} \\\\"
-  ))
-}
-
-latex_reg <- c(latex_reg,
+  " & \\multicolumn{3}{c}{Post-Meeting OIS Volatility} \\\\",
+  "\\cmidrule(lr){2-4}",
+  " & (1) & (2) & (3) \\\\",
+  "\\midrule",
+  glue("Pre-Meeting OIS Volatility & {fmt_coef(coef(model1)['vol_pre_3d'], pval1['vol_pre_3d'])} & {fmt_coef(coef(model2)['vol_pre_3d'], pval2['vol_pre_3d'])} & {fmt_coef(coef(model3)['vol_pre_3d'], pval3['vol_pre_3d'])} \\\\"),
+  glue(" & {fmt_se(se1['vol_pre_3d'])} & {fmt_se(se2['vol_pre_3d'])} & {fmt_se(se3['vol_pre_3d'])} \\\\[0.5em]"),
+  glue("Synthetic SD & & {fmt_coef(coef(model2)['sd_mean'], pval2['sd_mean'])} & {fmt_coef(coef(model3)['sd_mean'], pval3['sd_mean'])} \\\\"),
+  glue(" & & {fmt_se(se2['sd_mean'])} & {fmt_se(se3['sd_mean'])} \\\\[0.5em]"),
+  glue("Constant & {fmt_coef(coef(model1)['(Intercept)'], pval1['(Intercept)'])} & {fmt_coef(coef(model2)['(Intercept)'], pval2['(Intercept)'])} & {fmt_coef(coef(model3)['(Intercept)'], pval3['(Intercept)'])} \\\\"),
+  glue(" & {fmt_se(se1['(Intercept)'])} & {fmt_se(se2['(Intercept)'])} & {fmt_se(se3['(Intercept)'])} \\\\"),
+  "\\midrule",
+  "Maturity FE & No & No & Yes \\\\",
+  glue("Observations & {n_obs} & {n_obs} & {n_obs} \\\\"),
+  glue("$R^2$ & {round(r2_1, 3)} & {round(r2_2, 3)} & {round(r2_3, 3)} \\\\"),
+  glue("Adjusted $R^2$ & {round(adjr2_1, 3)} & {round(adjr2_2, 3)} & {round(adjr2_3, 3)} \\\\"),
   "\\bottomrule",
-  "\\multicolumn{7}{p{13cm}}{\\footnotesize",
-  "  OLS regressions by tenor. Outcome: 1-day post-announcement OIS range.",
-  "  Pre (3d): 3-day pre-announcement OIS range. LLM SD: ensemble mean SD",
-  "  across R = 10 runs. $\\Delta R^2$ = incremental $R^2$ from adding LLM SD.",
-  "  $^{***}$p$<$0.01, $^{**}$p$<$0.05, $^{*}$p$<$0.10.",
+  "\\multicolumn{4}{p{11cm}}{\\footnotesize",
+  "  \\textit{Note:} OLS regression of post-meeting OIS volatility (OIS min-max range 1 day after",
+  "  ECB press conference) on (1) pre-meeting volatility (average OIS min-max range in the 3 days",
+  "  before the conference) and (2) LLM-generated synthetic disagreement.",
+  "  Synthetic SD denotes the cross-sectional standard deviation of rate forecasts across 30",
+  "  heterogeneous LLM-based agents interpreting ECB press conference transcripts.",
+  "  Observations are pooled across three tenors (3-month, 2-year, and 10-year OIS).",
+  "  Heteroskedasticity-robust standard errors in parentheses.",
+  glue("  $^{{***}}$p$<$0.01, $^{{**}}$p$<$0.05, $^{{*}}$p$<$0.10."),
+  glue("  The F-test (F\\,=\\,{round(f_val, 2)}, p\\,$<$\\,0.001) rejects the null that the coefficients"),
+  "  on Pre-Meeting OIS Volatility and Synthetic SD are jointly zero in specification~(2).",
   "} \\\\",
   "\\end{tabular}",
   "\\end{table}"
