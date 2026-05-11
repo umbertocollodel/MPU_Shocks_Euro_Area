@@ -594,14 +594,10 @@ fig_gr <- ggplot(gr_df, aes(x = R, y = G_R, colour = tenor)) +
   geom_line(linewidth = 1.1) +
   geom_vline(xintercept = 10, linetype = "dotdash", colour = "grey40",
              linewidth = 0.6) +
-  geom_hline(yintercept = 0.80, linetype = "dashed", colour = "grey50",
+  geom_hline(yintercept = 0.60, linetype = "dashed", colour = "grey50",
              linewidth = 0.5) +
-  geom_hline(yintercept = 0.90, linetype = "dotted", colour = "grey50",
+  geom_hline(yintercept = 0.75, linetype = "dotted", colour = "grey50",
              linewidth = 0.5) +
-  annotate("text", x = 20.5, y = 0.80, label = "0.80", size = 3,
-           colour = "grey40", hjust = 0) +
-  annotate("text", x = 20.5, y = 0.90, label = "0.90", size = 3,
-           colour = "grey40", hjust = 0) +
   annotate("text", x = 10.4, y = 0.12, label = "R = 10", size = 3,
            colour = "grey40", hjust = 0) +
   scale_colour_manual(values = tenor_colours, name = "Tenor") +
@@ -609,12 +605,7 @@ fig_gr <- ggplot(gr_df, aes(x = R, y = G_R, colour = tenor)) +
   scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) +
   labs(
     x       = "Number of runs averaged (R)",
-    y       = "G(R)",
-    caption = glue(
-      "Full sample: {n_dates_gr} ECB conferences. ",
-      "Dashed = 0.80 threshold (Cicchetti good); dotted = 0.90. ",
-      "Vertical dot-dash at R = 10."
-    )
+    y       = "G(R)"
   ) +
   p1_theme
 
@@ -675,13 +666,7 @@ fig_stab <- ggplot(stab_quantiles, aes(x = run)) +
   coord_cartesian(ylim = c(0.75, 1.25)) +
   labs(
     x       = "Runs averaged (R)",
-    y       = "Ensemble mean SD / terminal value (R = 10)",
-    caption = glue(
-      "Distribution across {n_conf_stab} ECB conferences at each R. ",
-      "Dark band = IQR (25th–75th pct); light band = 5th–95th pct; line = median. ",
-      "Dotted lines = ±5% of terminal value. Normalised so R = 10 ≡ 1."
-    )
-  ) +
+    y       = "Ensemble mean SD / terminal value (R = 10)") +
   p1_theme +
   theme(panel.border = element_rect(colour = "grey80", fill = NA))
 
