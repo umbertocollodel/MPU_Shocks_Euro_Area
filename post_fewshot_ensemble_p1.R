@@ -126,16 +126,13 @@ calibration <- bind_rows(
 
 sg_tbl <- calibration %>%
   transmute(
-    Tenor        = as.character(tenor),
-    N            = as.integer(n),
-    Market       = sprintf("%.3f", mean_market),
-    Naive        = sprintf("%.3f", mean_naive),
-    `Few-shot`   = sprintf("%.3f", mean_fewshot),
-    `Bias naive` = sprintf("%.3f%s", bias_naive,   sig_stars(p_bias_na)),
-    `Bias fs`    = sprintf("%.3f%s", bias_fewshot,  sig_stars(p_bias_fs)),
-    `MAE naive`  = sprintf("%.3f", mae_naive),
-    `MAE fs`     = sprintf("%.3f", mae_fewshot),
-    `Delta MAE`  = sprintf("%.3f%s", delta_mae,    sig_stars(p_delta))
+    Tenor           = as.character(tenor),
+    N               = as.integer(n),
+    `Bias (N)`      = sprintf("%.3f%s", bias_naive,  sig_stars(p_bias_na)),
+    `Bias (FS)`     = sprintf("%.3f%s", bias_fewshot, sig_stars(p_bias_fs)),
+    `MAE (N)`       = sprintf("%.3f",  mae_naive),
+    `MAE (FS)`      = sprintf("%.3f",  mae_fewshot),
+    `Delta MAE`     = sprintf("%.3f%s", delta_mae,   sig_stars(p_delta))
   ) %>%
   as.data.frame()
 
@@ -145,10 +142,12 @@ stargazer(sg_tbl,
           rownames     = FALSE,
           title        = "Calibration of LLM disagreement relative to realized market volatility",
           label        = "tab:calibration",
+          font.size    = "small",
           notes        = c(
+            "N = Naive prompt; FS = Few-shot prompt.",
             "Bias $= \\bar{x}_{LLM} - \\bar{x}_{mkt}$; paired $t$-test $H_0$: bias $= 0$.",
-            "Delta MAE $=$ MAE$_{naive}$ $-$ MAE$_{fs}$; paired $t$-test on absolute errors.",
-            "Market $=$ 1-day post-conference OIS SD.",
+            "Delta MAE $=$ MAE$_N -$ MAE$_{FS}$; paired $t$-test on absolute errors.",
+            "Market volatility $=$ 1-day post-conference OIS SD.",
             "\\sym{*} $p<0.10$, \\sym{**} $p<0.05$, \\sym{***} $p<0.01$."
           ),
           notes.align  = "l",
