@@ -285,9 +285,13 @@ ggplot(quarterly_df, aes(quarter, correct_post_mean_3, col = tenor)) +
     values = c("10Y" = "#d73027", "2Y" = "#4575b4", "3mnt" = "#91bfdb"),  # fixed key
     guide  = "none"
   ) +
-  scale_x_date(date_breaks = "2 years", date_labels = "%Y") +
-  scale_y_continuous(
+scale_x_date(
+  date_breaks  = "2 years",
+  date_labels  = "%Y",
+  limits       = c(as.Date("2005-01-01"), as.Date("2025-12-31"))
+) +  scale_y_continuous(
   breaks = c(0.05, 0.10, 0.15)) +
+  coord_cartesian(clip = "off") +
   theme_minimal(base_family = "Segoe UI") +
   theme(
     plot.title.position = "plot",
@@ -296,6 +300,7 @@ ggplot(quarterly_df, aes(quarter, correct_post_mean_3, col = tenor)) +
     panel.grid.minor = element_blank(),
     panel.border  = element_rect(colour = "grey80", fill = NA),
     strip.text    = element_text(size = 14),
+    axis.title = element_text(size=14),
     axis.text.x   = element_text(size = 12, angle = 90, hjust = 1),
     axis.text.y   = element_text(size = 12),
     legend.position = "none",
@@ -304,9 +309,9 @@ ggplot(quarterly_df, aes(quarter, correct_post_mean_3, col = tenor)) +
 
 
 
-ggsave("../output/figures/mpu_all.png",
-       width = 5,
-       height = 2.5,
+ggsave("../output/figures/mpu_all.pdf",
+       width = 12,
+       height = 6,
        dpi="retina")
 
 
