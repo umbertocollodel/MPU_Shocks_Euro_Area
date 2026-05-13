@@ -246,32 +246,63 @@ filtered_df <- differences_df %>%
   ungroup() %>%
   mutate(tenor = factor(tenor, levels = c("3mnt", "2Y", "10Y")))
 
+# ── Quarterly aggregation ──────────────────────────────────────────────────────
+quarterly_df <- filtered_df %>%
+  mutate(quarter = floor_date(date, "quarter")) %>%   # snap each date to Q-start
+  group_by(tenor, quarter) %>%
+  summarise(correct_post_mean_3 = mean(correct_post_mean_3, na.rm = TRUE),
+            .groups = "drop")
 
-# Plot
-ggplot(filtered_df, aes(date, correct_post_mean_3, col = tenor)) +
-  geom_col() +
+start_10y <- quarterly_df %>%
+  filter(tenor == "10Y") %>%
+  summarise(start = min(quarter)) %>%
+  pull(start)
+
+# One-row data frame scoped to the 10Y facet
+vline_df <- data.frame(
+  tenor      = factor("10Y", levels = c("3mnt", "2Y", "10Y")),
+  xintercept = start_10y
+)
+
+# ── Plot ───────────────────────────────────────────────────────────────────────
+ggplot(quarterly_df, aes(quarter, correct_post_mean_3, col = tenor)) +
+  geom_line(size=1) +
+  geom_vline(
+    data        = vline_df,
+    aes(xintercept = xintercept),
+    linetype    = "dashed",
+    colour      = "grey40",
+    linewidth   = 0.5
+  ) +
   labs(title = "",
-       col = "",
-       y = "Basis Points",
-       x = "",
-       fill = "",
+       col   = "",
+       y     = "Basis Points",
+       x     = "",
+       fill  = "",
        caption = "") +
-  facet_wrap(~ tenor, scales = "free_y", nrow = 1) +
-  scale_color_manual(values = c("10Y" = "#d73027", "2Y" = "#4575b4", "3M" = "#91bfdb"), guide = "none") +
+  facet_wrap(~ tenor, nrow = 1) +
+  scale_color_manual(
+    values = c("10Y" = "#d73027", "2Y" = "#4575b4", "3mnt" = "#91bfdb"),  # fixed key
+    guide  = "none"
+  ) +
+  scale_x_date(date_breaks = "2 years", date_labels = "%Y") +
+  scale_y_continuous(
+  breaks = c(0.05, 0.10, 0.15)) +
   theme_minimal(base_family = "Segoe UI") +
   theme(
     plot.title.position = "plot",
-    plot.title = element_text(size = 16, face = "bold", margin = margin(b = 10)),
+    plot.title    = element_text(size = 16, face = "bold", margin = margin(b = 10)),
     plot.subtitle = element_text(size = 13, color = "grey30", margin = margin(b = 20)),
     panel.grid.minor = element_blank(),
-    panel.border = element_rect(colour = "grey80", fill = NA),
-    strip.text = element_text(face = "bold", size = 12),
-    axis.text.x = element_text(size = 9, angle = 45, hjust = 1),
-    axis.text.y = element_text(size = 10),
+    panel.border  = element_rect(colour = "grey80", fill = NA),
+    strip.text    = element_text(size = 14),
+    axis.text.x   = element_text(size = 12, angle = 90, hjust = 1),
+    axis.text.y   = element_text(size = 12),
     legend.position = "none",
-    plot.caption = element_text(hjust = 0, size = 12)
-  ) +
-  scale_x_date(date_breaks = "2 years", date_labels = "%Y")
+    plot.caption  = element_text(hjust = 0, size = 12)
+  )
+
+
 
 ggsave("../output/figures/mpu_all.png",
        width = 5,
