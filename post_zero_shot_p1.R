@@ -380,16 +380,15 @@ main_plot <- ggplot(ensemble_ts, aes(x = date, colour = tenor, fill = tenor)) +
   scale_x_date(date_breaks = "2 years", date_labels = "%Y") +
   labs(
     x       = NULL,
-    y       = "Ensemble SD of Predicted Rate",
-    caption = paste0(
-      "Band = mean ± 1.96 SE across 10 runs (ensemble uncertainty). ",
-      "Filled circles = above 95th percentile per tenor."
-    )
+    y       = "SD of Predicted Rate"
   ) +
   p1_theme +
   theme(
-    axis.text.x  = element_text(angle = 90, hjust = 1, size = 9),
-    panel.border = element_rect(colour = "grey80", fill = NA)
+    axis.text.x  = element_text(angle = 90, hjust = 1, size = 12),
+    axis.title = element_text(size=14),
+    axis.text.y = element_text(size=12),
+    panel.border = element_rect(colour = "grey80", fill = NA),
+    strip.text = element_text(size=12)
   )
 
 ensemble_ts_zoom <- ensemble_ts %>%
@@ -409,19 +408,19 @@ zoom_plot <- ggplot(ensemble_ts_zoom, aes(x = date, colour = tenor, fill = tenor
   scale_fill_manual(values = tenor_colours, guide = "none") +
   scale_x_date(date_breaks = "6 months", date_labels = "%b\n%Y") +
   labs(
-    title   = "2022–2023\nDetail",
+    title   = "2022–2023",
     x       = NULL,
     y       = NULL,
     caption = ""
   ) +
   p1_theme +
   theme(
-    plot.title   = element_text(size = 11, face = "bold", hjust = 0.5,
+    plot.title   = element_text(size = 14, face = "bold", hjust = 0.5,
                                 margin = margin(b = 8)),
-    axis.text.x  = element_text(angle = 45, hjust = 1, size = 9),
-    axis.text.y  = element_text(size = 9),
+    axis.text.x  = element_text(angle = 45, hjust = 1, size = 12),
+    axis.text.y  = element_text(size = 12),
     panel.border = element_rect(colour = "grey80", fill = NA),
-    strip.text   = element_text(face = "bold", size = 10)
+    strip.text   = element_text(size = 12)
   )
 
 fig4 <- main_plot + zoom_plot +
