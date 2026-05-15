@@ -232,7 +232,7 @@ p_baseline <- ggplot(baseline_results,
 
 for (ext in c("pdf", "png")) {
   ggsave(
-    file.path(fig_dir, paste0("p1_ensemble_3day_vol_corr_ordered.", ext)),
+    file.path(fig_dir, paste0("p1_ensemble_1day_vol_corr_ordered.", ext)),
     plot = p_baseline, dpi = 320, width = 10, height = 6, bg = "white"
   )
 }
