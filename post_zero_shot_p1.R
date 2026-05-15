@@ -38,7 +38,7 @@ cat(strrep("=", 80), "\n\n")
 if (!require("pacman")) install.packages("pacman")
 pacman::p_load(
   tidyverse, readxl, writexl, readr, scales, showtext,
-  boot, RColorBrewer, glue, sandwich, lmtest
+  boot, RColorBrewer, glue, sandwich, lmtest, patchwork
 )
 
 # Font — same guard pattern as 09plot_llm_results.R
@@ -352,10 +352,12 @@ save_plot(fig3, "p1_fig3_direction", w = 12, h = 8)
 cat("Figure 4: ensemble SD time series...\n")
 
 p95_thresholds <- ensemble %>%
+  filter(!(date %in% c("2005-01-20") & tenor == "10Y")) |> 
   group_by(tenor) %>%
   summarise(p95 = quantile(sd_mean, 0.95, na.rm = TRUE), .groups = "drop")
 
 ensemble_ts <- ensemble %>%
+  filter(!(date %in% c("2005-01-20") & tenor == "10Y")) |> 
   left_join(p95_thresholds, by = "tenor") %>%
   mutate(
     highlight = sd_mean > p95,
@@ -363,7 +365,7 @@ ensemble_ts <- ensemble %>%
     ribbon_hi = sd_mean + 1.96 * sd_se
   )
 
-fig4 <- ggplot(ensemble_ts, aes(x = date, colour = tenor, fill = tenor)) +
+main_plot <- ggplot(ensemble_ts, aes(x = date, colour = tenor, fill = tenor)) +
   geom_hline(yintercept = 0, linetype = "dashed", colour = "grey70", linewidth = 0.4) +
   geom_ribbon(aes(ymin = ribbon_lo, ymax = ribbon_hi),
               colour = NA, alpha = 0.15) +
@@ -390,7 +392,42 @@ fig4 <- ggplot(ensemble_ts, aes(x = date, colour = tenor, fill = tenor)) +
     panel.border = element_rect(colour = "grey80", fill = NA)
   )
 
-save_plot(fig4, "p1_fig4_sd_timeseries", w = 10, h = 9)
+ensemble_ts_zoom <- ensemble_ts %>%
+  filter(date >= as.Date("2022-01-01"), date <= as.Date("2024-01-01"))
+
+zoom_plot <- ggplot(ensemble_ts_zoom, aes(x = date, colour = tenor, fill = tenor)) +
+  geom_hline(yintercept = 0, linetype = "dashed", colour = "grey70", linewidth = 0.4) +
+  geom_ribbon(aes(ymin = ribbon_lo, ymax = ribbon_hi),
+              colour = NA, alpha = 0.15) +
+  geom_line(aes(y = sd_mean), linewidth = 1.0) +
+  geom_point(
+    data  = filter(ensemble_ts_zoom, highlight),
+    aes(y = sd_mean), shape = 21, size = 2.5, stroke = 1
+  ) +
+  facet_wrap(~ tenor, ncol = 1, scales = "free_y") +
+  scale_colour_manual(values = tenor_colours, guide = "none") +
+  scale_fill_manual(values = tenor_colours, guide = "none") +
+  scale_x_date(date_breaks = "6 months", date_labels = "%b\n%Y") +
+  labs(
+    title   = "2022–2023\nDetail",
+    x       = NULL,
+    y       = NULL,
+    caption = ""
+  ) +
+  p1_theme +
+  theme(
+    plot.title   = element_text(size = 11, face = "bold", hjust = 0.5,
+                                margin = margin(b = 8)),
+    axis.text.x  = element_text(angle = 45, hjust = 1, size = 9),
+    axis.text.y  = element_text(size = 9),
+    panel.border = element_rect(colour = "grey80", fill = NA),
+    strip.text   = element_text(face = "bold", size = 10)
+  )
+
+fig4 <- main_plot + zoom_plot +
+  plot_layout(widths = c(2.5, 1))
+
+save_plot(fig4, "p1_fig4_sd_timeseries", w = 14, h = 9)
 
 # ==============================================================================
 # 6. SINGLE-RUN vs ENSEMBLE COMPARISON
