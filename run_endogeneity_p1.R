@@ -973,15 +973,19 @@ cat("\n")
 for (i in seq_len(nrow(comparison_tbl))) {
   row          <- comparison_tbl[i, ]
   zero_in_ci   <- row$ci_low_delta <= 0 && 0 <= row$ci_high_delta
-  delta_label  <- sprintf("%.3f", abs(row$delta_rho))
+  concern      <- !zero_in_ci && row$ci_low_delta > 0  # only flag when headline > endo
+  delta_label  <- sprintf("%.3f", row$delta_rho)
   ci_label     <- sprintf("[%.3f, %.3f]", row$ci_low_delta, row$ci_high_delta)
   msg          <- paste0(
-    "Tenor ", row$tenor, ": |Deltaρ| = ", delta_label, ", 95% CI ", ci_label
+    "Tenor ", row$tenor, ": Deltaρ = ", delta_label, ", 95% CI ", ci_label
   )
-  if (zero_in_ci) {
+  if (concern) {
+    cat(crayon::red(paste0("  [CONCERN]   ", msg, "\n")))
+  } else if (zero_in_ci) {
     cat(crayon::green(paste0("  [REFUTED]   ", msg, "\n")))
   } else {
-    cat(crayon::red(paste0("  [CONCERN]   ", msg, "\n")))
+    # CI excludes 0 on the negative side: endo outperforms headline
+    cat(crayon::green(paste0("  [REFUTED+]  ", msg, "  (endo > headline)\n")))
   }
 }
 
