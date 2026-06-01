@@ -44,8 +44,85 @@ print(summary(regression_df))
 cat("\n=== NUMBER OF OBSERVATIONS BY TENOR ===\n")
 print(table(regression_df$tenor))
 
+output_dir <- "../output/tables"
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
+
 #------------------------------------------------------------------------------
-## 4. LOAD AND RESHAPE POLICY SURPRISE DATA
+## 4. TABLE 2: HIGH-LOW RANGE ~ SYNTHETIC SD × BID-ASK SPREAD
+#------------------------------------------------------------------------------
+# Addresses referee concern that the OIS high-low range reflects illiquidity
+# rather than belief dispersion.
+# Logic: if synthetic_sd still predicts the range after controlling for the
+# bid-ask spread and its interaction with synthetic_sd, the belief-dispersion
+# channel is separable from the liquidity channel.
+# Bid-ask spread: ask minus bid close, 1 trading day post-conference (bps).
+
+post_spread_df <- readRDS("../intermediate_data/post_spread_1d.rds") %>%
+  mutate(date = as.Date(date))
+
+regression_df_liq <- regression_df %>%
+  left_join(post_spread_df %>% select(date, tenor, post_spread_1d_bps),
+            by = c("date", "tenor")) %>%
+  drop_na(post_spread_1d_bps) %>%
+  # Standardise spread within-tenor so the interaction coefficient is
+  # comparable across maturities (3M spreads are structurally smaller than 10Y).
+  group_by(tenor) %>%
+  mutate(spread_std = (post_spread_1d_bps - mean(post_spread_1d_bps)) /
+                       sd(post_spread_1d_bps)) %>%
+  ungroup()
+
+cat("\n=== BID-ASK MERGE: N PER TENOR ===\n")
+print(table(regression_df_liq$tenor))
+
+clust_se_liq <- function(mod) sqrt(diag(vcovCL(mod, cluster = ~date,
+                                               data = regression_df_liq)))
+
+# (1) Baseline: synthetic SD only
+liq1 <- lm(correct_post_mean_1 ~ synthetic_sd,
+           data = regression_df_liq)
+
+# (2) + standardised bid-ask spread (liquidity level control)
+liq2 <- lm(correct_post_mean_1 ~ synthetic_sd + spread_std,
+           data = regression_df_liq)
+
+# (3) + interaction: does the synthetic-SD effect vary with illiquidity?
+liq3 <- lm(correct_post_mean_1 ~ synthetic_sd * spread_std,
+           data = regression_df_liq)
+
+# (4) + maturity FE
+liq4 <- lm(correct_post_mean_1 ~ synthetic_sd * spread_std + factor(tenor),
+           data = regression_df_liq)
+
+se_liq <- lapply(list(liq1, liq2, liq3, liq4), clust_se_liq)
+
+stargazer(liq1, liq2, liq3, liq4,
+          type = "latex",
+          title = "OIS High-Low Range, Synthetic Disagreement, and Illiquidity",
+          dep.var.labels = "Post-conf.\\ OIS high-low range (pp)",
+          covariate.labels = c("Synthetic SD (pp)",
+                               "Bid-ask spread, std.\\ (within-tenor)",
+                               "Synthetic SD $\\times$ Bid-ask spread"),
+          se = se_liq,
+          omit = "factor\\(tenor\\)",
+          add.lines = list(
+            c("Maturity FE",       "No",  "No",  "No",  "Yes"),
+            c("Date-clustered SE", "Yes", "Yes", "Yes", "Yes")
+          ),
+          out      = file.path(output_dir, "table2_liquidity_interaction.tex"),
+          no.space = TRUE,
+          keep.stat = c("n", "rsq", "adj.rsq"),
+          notes    = paste0(
+            "Date-clustered SEs in parentheses. ",
+            "Bid-ask spread = ask$-$bid close price, 1 trading day after the GovC meeting, ",
+            "standardised within each tenor (mean 0, SD 1). ",
+            "Synthetic SD and the dependent variable are in percentage points."
+          ),
+          notes.append = FALSE)
+
+cat("\nTable 2 saved to:", file.path(output_dir, "table2_liquidity_interaction.tex"), "\n")
+
+#------------------------------------------------------------------------------
+## 5. LOAD AND RESHAPE POLICY SURPRISE DATA
 #------------------------------------------------------------------------------
 # Source: MPD "Press Conference Window" sheet — conference-window OIS changes (bps).
 # Tenor mapping: simulation "3M" -> OIS_3M, "2Y" -> OIS_2Y, "10Y" -> OIS_10Y.
@@ -104,16 +181,13 @@ n_corr <- sum(!is.na(regression_df_s$abs_surprise) &
 cat(sprintf("r = %.3f  (N = %d)\n", r_corr, n_corr))
 
 #------------------------------------------------------------------------------
-## 5. TABLE 3: VOLATILITY-PERSISTENCE REGRESSION (lm ladder, date-clustered SEs)
+## 6. TABLE 3: VOLATILITY-PERSISTENCE REGRESSION (lm ladder, date-clustered SEs)
 #------------------------------------------------------------------------------
-# DV: correct_post_mean_1 (post-conference 3-day OIS volatility, pp).
+# DV: correct_post_mean_1 (post-conference 1-day OIS volatility, pp).
 # Maturity FE absorbed via factor(tenor); FE rows suppressed in output via omit.
 # All SEs clustered by date using vcovCL (sandwich); passed to stargazer via se=.
 # Two-way clustering (~date + tenor) computed for the preferred spec as robustness.
 # abs_surprise enters as a regressor — NOT absorbed by any FE.
-
-output_dir <- "../output/tables"
-if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
 
 clust_se <- function(mod) sqrt(diag(vcovCL(mod, cluster = ~date,
                                            data = regression_df_s)))

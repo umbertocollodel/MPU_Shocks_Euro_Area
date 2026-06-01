@@ -146,3 +146,29 @@ mpu_liq_df %>%
 
 ggsave("../output/figures/liquidity_vs_mpu_scatter.pdf",
        dpi = 320, width = 14, height = 10, bg = "white")
+
+# ==============================================================================
+# 1-day post-conference bid-ask spread
+# ==============================================================================
+# For each GovC date and tenor: spread (ask - bid, bps) on the first trading
+# day after the meeting.  Saved for use as an interaction / control in script 18.
+
+post_spread_1d_df <- map_dfr(tenors, function(tenor_name) {
+  df <- spread_df %>% filter(tenor == tenor_name)
+  map_dfr(dates, function(d) {
+    post1 <- df %>%
+      arrange(daily) %>%
+      filter(daily > d) %>%
+      slice(1) %>%
+      pull(spread)
+    if (length(post1) == 0 || is.na(post1)) return(NULL)
+    tibble(date = d, tenor = tenor_name, post_spread_1d_bps = post1 * 100)
+  })
+}) %>%
+  mutate(tenor = if_else(tenor == "3mnt", "3M", tenor))
+
+cat("post_spread_1d_df rows:", nrow(post_spread_1d_df), "\n")
+print(table(post_spread_1d_df$tenor))
+
+saveRDS(post_spread_1d_df, "../intermediate_data/post_spread_1d.rds")
+cat("Saved: ../intermediate_data/post_spread_1d.rds\n")
