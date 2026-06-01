@@ -1,66 +1,43 @@
 #==============================================================================
-# SCRIPT: Regression Analysis of OIS Target on Synthetic Measures
+# SCRIPT: Volatility-Persistence Regression — Table 3
 #==============================================================================
-# This script performs two sets of regression analyses:
+# Regresses post-conference OIS volatility on pre-conference volatility and
+# LLM ensemble synthetic disagreement, with a policy-surprise control.
 #
-# PART 1: Confidence interaction analysis
-#   Models of actual OIS target (correct_post_mean_3) on:
-#   1. Synthetic SD (standard deviation of simulated rate changes)
-#   2. Average confidence score of agents for each conference
-#   3. Interaction effect between synthetic SD and average confidence
-#
-# PART 2: Pre-post OIS relationship analysis
-#   Models of post-meeting OIS volatility on:
-#   A. Pre-meeting OIS volatility alone
-#   B. Pre-meeting OIS volatility + synthetic SD
-#   Purpose: Show joint significance and incremental R-squared
-#
-# Output: Two LaTeX tables with regression results
+# Output: ../output/tables/table3_volatility_persistence.tex
 
-# Load necessary libraries
 library(tidyverse)
 library(readxl)
+library(stargazer)
+library(sandwich)  # vcovCL for clustered SEs
 
 #------------------------------------------------------------------------------
-## 1. LOAD AND PROCESS SIMULATION DATA (NAIVE PROMPT)
+## 1. LOAD SIMULATION DATA
 #------------------------------------------------------------------------------
 
-# Read LLM simulation results
-clean_df <- read_xlsx(paste0("../intermediate_data/aggregate_gemini_result/prompt_naive/",
-                             "2.5flash_",
-                             "2025-07-21",
-                             ".xlsx"))
-
-# Calculate synthetic SD (standard deviation of rate) by date and tenor
-synthetic_sd_df <- clean_df %>%
-  group_by(date, tenor) %>%
-  summarise(
-    synthetic_sd = sd(rate, na.rm = TRUE),
-    avg_confidence = mean(confidence, na.rm = TRUE),
-    .groups = "drop"
-  ) %>%
-  mutate(date = as.Date(date))
+# Ensemble SD: mean of within-run SDs across R=10 runs (post_zero_shot_p1.R §3).
+# Tenor is already "3M"/"2Y"/"10Y" (factor converted to char on save).
+ensemble_sd_df <- readRDS("../intermediate_data/p1/p1_ensemble_sd.rds") %>%
+  mutate(date = as.Date(date)) %>%
+  select(date, tenor, synthetic_sd = sd_mean)
 
 #------------------------------------------------------------------------------
-## 2. LOAD ACTUAL OIS TARGET DATA
+## 2. LOAD ACTUAL OIS DATA
 #------------------------------------------------------------------------------
 
-# Read actual OIS target data (correct_post_mean and correct_pre_mean)
 ois_df <- read_rds("../intermediate_data/range_difference_df.rds") %>%
   mutate(tenor = case_when(tenor == "3mnt" ~ "3M", TRUE ~ tenor)) %>%
-  select(tenor, date, correct_pre_mean_3, correct_post_mean_3) %>%
+  select(tenor, date, correct_pre_mean_3, correct_post_mean_1) %>%
   mutate(date = as.Date(date))
 
 #------------------------------------------------------------------------------
-## 3. MERGE DATASETS
+## 3. MERGE
 #------------------------------------------------------------------------------
 
-# Combine synthetic measures with actual OIS target
 regression_df <- ois_df %>%
-  inner_join(synthetic_sd_df, by = c("date", "tenor")) %>%
-  drop_na(correct_pre_mean_3, correct_post_mean_3, synthetic_sd, avg_confidence)
+  inner_join(ensemble_sd_df, by = c("date", "tenor")) %>%
+  drop_na(correct_pre_mean_3, correct_post_mean_1, synthetic_sd)
 
-# Display summary statistics of the merged data
 cat("\n=== SUMMARY STATISTICS ===\n")
 print(summary(regression_df))
 
@@ -68,102 +45,138 @@ cat("\n=== NUMBER OF OBSERVATIONS BY TENOR ===\n")
 print(table(regression_df$tenor))
 
 #------------------------------------------------------------------------------
-## 4. RUN THREE REGRESSION MODELS
+## 4. LOAD AND RESHAPE POLICY SURPRISE DATA
 #------------------------------------------------------------------------------
+# Source: MPD "Press Conference Window" sheet — conference-window OIS changes (bps).
+# Tenor mapping: simulation "3M" -> OIS_3M, "2Y" -> OIS_2Y, "10Y" -> OIS_10Y.
+# Rows with a blank date are non-conference days and are dropped.
+# Within-row blanks (tenor not yet traded on that date) are kept as NA.
+# Unit conversion: bps / 100 -> percentage points, so abs_surprise aligns with
+# correct_post_mean_1 and synthetic_sd (both are pp-scale rate values).
 
-# Model 1: Only synthetic_sd
-model1 <- lm(correct_post_mean_3 ~ synthetic_sd, data = regression_df)
+raw_surprise <- read_xlsx(
+  "../raw_data/00EA_MPD_update_june2025.xlsx",
+  sheet = "Press Conference Window"
+) %>%
+  filter(!is.na(date)) %>%
+  mutate(date = as.Date(as.numeric(date), origin = "1899-12-30"))
 
-# Model 2: synthetic_sd + avg_confidence
-model2 <- lm(correct_post_mean_3 ~ synthetic_sd + avg_confidence, data = regression_df)
+surprise_long <- raw_surprise %>%
+  select(date, OIS_3M, OIS_2Y, OIS_10Y) %>%
+  pivot_longer(
+    cols      = c(OIS_3M, OIS_2Y, OIS_10Y),
+    names_to  = "tenor",
+    values_to = "surprise_bps"
+  ) %>%
+  mutate(
+    tenor        = str_remove(tenor, "^OIS_"),  # "OIS_3M" -> "3M"
+    surprise_pp  = surprise_bps / 100,           # bps -> pp
+    abs_surprise = abs(surprise_pp)
+    # alt: signed_surprise = surprise_pp
+  )
 
-# Model 3: with interaction effect
-model3 <- lm(correct_post_mean_3 ~ synthetic_sd * avg_confidence, data = regression_df)
+cat("\n=== SURPRISE DATA: N PER TENOR (before merge) ===\n")
+print(table(surprise_long$tenor, useNA = "ifany"))
 
-# Display regression results
-cat("\n=== MODEL 1: synthetic_sd only ===\n")
-print(summary(model1))
+# Left join: every regression row is retained; NAs where the surprise is
+# unavailable for a given date-tenor pair (e.g. early dates, missing tenors).
+regression_df_s <- regression_df %>%
+  left_join(
+    surprise_long %>% select(date, tenor, abs_surprise),
+    by = c("date", "tenor")
+  )
 
-cat("\n=== MODEL 2: synthetic_sd + avg_confidence ===\n")
-print(summary(model2))
+cat("\n=== ROWS LOST AT MERGE ===\n")
+cat(sprintf(
+  "Regression rows before: %d | after left join: %d | net change: %+d\n",
+  nrow(regression_df), nrow(regression_df_s),
+  nrow(regression_df_s) - nrow(regression_df)
+))
 
-cat("\n=== MODEL 3: with interaction ===\n")
-print(summary(model3))
+cat("\n=== MATCHED N PER TENOR ===\n")
+print(table(regression_df_s$tenor, useNA = "ifany"))
 
-# Load stargazer for LaTeX table generation
-library(stargazer)
+cat("\n=== CORR(|Surprise|, Synthetic SD) ===\n")
+r_corr <- cor(regression_df_s$abs_surprise, regression_df_s$synthetic_sd,
+              use = "complete.obs")
+n_corr <- sum(!is.na(regression_df_s$abs_surprise) &
+              !is.na(regression_df_s$synthetic_sd))
+cat(sprintf("r = %.3f  (N = %d)\n", r_corr, n_corr))
 
-# Create output directory if it doesn't exist
+#------------------------------------------------------------------------------
+## 5. TABLE 3: VOLATILITY-PERSISTENCE REGRESSION (lm ladder, date-clustered SEs)
+#------------------------------------------------------------------------------
+# DV: correct_post_mean_1 (post-conference 3-day OIS volatility, pp).
+# Maturity FE absorbed via factor(tenor); FE rows suppressed in output via omit.
+# All SEs clustered by date using vcovCL (sandwich); passed to stargazer via se=.
+# Two-way clustering (~date + tenor) computed for the preferred spec as robustness.
+# abs_surprise enters as a regressor — NOT absorbed by any FE.
+
 output_dir <- "../output/tables"
-if (!dir.exists(output_dir)) {
-  dir.create(output_dir, recursive = TRUE)
-}
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
 
-#------------------------------------------------------------------------------
-## 5. PRE-POST OIS RELATIONSHIP ANALYSIS
-#------------------------------------------------------------------------------
+clust_se <- function(mod) sqrt(diag(vcovCL(mod, cluster = ~date,
+                                           data = regression_df_s)))
 
-# Model A: Post-meeting volatility regressed on pre-meeting volatility only
-modelA <- lm(correct_post_mean_3 ~ correct_pre_mean_3, data = regression_df)
+# (1) Baseline persistence
+m1 <- lm(correct_post_mean_1 ~ correct_pre_mean_3,
+         data = regression_df_s)
 
-# Model B: Add synthetic_sd to assess incremental explanatory power
-modelB <- lm(correct_post_mean_3 ~ correct_pre_mean_3 + synthetic_sd, data = regression_df)
+# (2) + Synthetic SD
+m2 <- lm(correct_post_mean_1 ~ correct_pre_mean_3 + synthetic_sd,
+         data = regression_df_s)
 
-# Display regression results
-cat("\n=== MODEL A: correct_post_mean_3 ~ correct_pre_mean_3 ===\n")
-print(summary(modelA))
+# (3) + Maturity FE
+m3 <- lm(correct_post_mean_1 ~ correct_pre_mean_3 + synthetic_sd + factor(tenor),
+         data = regression_df_s)
 
-cat("\n=== MODEL B: correct_post_mean_3 ~ correct_pre_mean_3 + synthetic_sd ===\n")
-print(summary(modelB))
+# (4) + |Surprise|, no maturity FE
+m4 <- lm(correct_post_mean_1 ~ correct_pre_mean_3 + synthetic_sd + abs_surprise,
+         data = regression_df_s)
 
-# Test joint significance using F-test
-cat("\n=== F-TEST FOR JOINT SIGNIFICANCE ===\n")
-cat("Testing if adding synthetic_sd significantly improves model fit:\n\n")
-ftest <- anova(modelA, modelB)
-print(ftest)
+# (5) + |Surprise| + Maturity FE  [preferred]
+m5 <- lm(correct_post_mean_1 ~ correct_pre_mean_3 + synthetic_sd + abs_surprise +
+           factor(tenor),
+         data = regression_df_s)
 
-# Extract and display key statistics
-rsq_A <- summary(modelA)$r.squared
-rsq_B <- summary(modelB)$r.squared
-rsq_improvement <- rsq_B - rsq_A
+# Date-clustered SEs for all five specs
+se_list <- lapply(list(m1, m2, m3, m4, m5), clust_se)
 
-cat("\n=== R-SQUARED COMPARISON ===\n")
-cat(sprintf("Model A R-squared: %.4f\n", rsq_A))
-cat(sprintf("Model B R-squared: %.4f\n", rsq_B))
-cat(sprintf("Improvement: %.4f (%.2f%% increase)\n", rsq_improvement, (rsq_improvement/rsq_A)*100))
+# Two-way clustering robustness for preferred spec (not in main table)
+se_m5_2w <- sqrt(diag(vcovCL(m5, cluster = ~date + tenor,
+                              data = regression_df_s)))
 
-# Generate LaTeX table for pre-post analysis
-stargazer(modelA, modelB,
+# --- Synthetic SD coefficient tracking (3) -> (5) ---
+cat("\n=== SYNTHETIC SD COEFFICIENT: SPEC (3) vs (5) ===\n")
+cat(sprintf("Spec (3)    coef = %+.5f  SE = %.5f\n",
+            coef(m3)["synthetic_sd"], se_list[[3]]["synthetic_sd"]))
+cat(sprintf("Spec (5)    coef = %+.5f  SE = %.5f\n",
+            coef(m5)["synthetic_sd"], se_list[[5]]["synthetic_sd"]))
+cat(sprintf("Spec (5) 2W coef = %+.5f  SE = %.5f  [two-way cluster robustness]\n",
+            coef(m5)["synthetic_sd"], se_m5_2w["synthetic_sd"]))
+
+# --- LaTeX output ---
+stargazer(m1, m2, m3, m4, m5,
           type = "latex",
-          title = "Pre-Post OIS Volatility Relationship",
-          dep.var.labels = "Post-Meeting OIS Volatility",
-          covariate.labels = c("Pre-Meeting OIS Volatility", "Synthetic SD"),
-          out = file.path(output_dir, "regression_pre_post_ois.tex"),
+          title = "Volatility Persistence: Post-Conference OIS Volatility",
+          dep.var.labels = "Post-conf.\\ OIS vol.\\ 1-day (pp)",
+          covariate.labels = c("Pre-conf.\\ OIS vol.\\ 3-day (pp)",
+                               "Synthetic SD (pp)",
+                               "$|\\text{Surprise}|$ (pp)"),
+          se      = se_list,
+          omit    = "factor\\(tenor\\)",
+          add.lines = list(
+            c("Maturity FE",        "No",  "No",  "Yes", "No",  "Yes"),
+            c("Date-clustered SE",  "Yes", "Yes", "Yes", "Yes", "Yes")
+          ),
+          out      = file.path(output_dir, "table3_volatility_persistence.tex"),
           no.space = TRUE,
           keep.stat = c("n", "rsq", "adj.rsq"),
-          notes = c("Standard errors in parentheses.",
-                   sprintf("F-test for joint significance: F=%.2f, p<%.4f",
-                          ftest$F[2], ftest$`Pr(>F)`[2])),
+          notes    = paste0(
+            "Date-clustered SEs in parentheses. ",
+            "Surprise = conference-window OIS change (bps) $\\div$ 100."
+          ),
           notes.append = FALSE)
 
-cat("\nLaTeX table saved to:", file.path(output_dir, "regression_pre_post_ois.tex"), "\n")
-
-#------------------------------------------------------------------------------
-## 6. CREATE LATEX TABLE (CONFIDENCE ANALYSIS)
-#------------------------------------------------------------------------------
-
-# Generate LaTeX table
-stargazer(model1, model2, model3,
-          type = "latex",
-          title = "Regression Results: OIS Target on Synthetic Measures",
-          dep.var.labels = "OIS Target (bps)",
-          covariate.labels = c("Synthetic SD", "Avg. Confidence", "Synthetic SD $\\times$ Avg. Confidence"),
-          out = file.path(output_dir, "regression_results_confidence.tex"),
-          no.space = TRUE,
-          keep.stat = c("n", "rsq", "adj.rsq"),
-          notes = "Standard errors in parentheses.",
-          notes.append = FALSE)
-
-cat("\nLaTeX table saved to:", file.path(output_dir, "regression_results_confidence.tex"), "\n")
-
+cat("\nTable 3 saved to:", file.path(output_dir, "table3_volatility_persistence.tex"), "\n")
 cat("\n=== ANALYSIS COMPLETE ===\n")
