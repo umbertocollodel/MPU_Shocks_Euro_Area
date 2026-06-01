@@ -12,7 +12,7 @@
 #     Stage 1: generate 30 agent panels conditioning ONLY on conference date
 #              and macro regime (no transcript). One panel per (conference, run)
 #              so that panel-composition uncertainty is averaged out alongside
-#              forecast uncertainty across the 5 runs.
+#              forecast uncertainty across the 10 runs.
 #     Stage 2: each frozen (date, run) panel forecasts given the transcript.
 #   Resulting disagreement is compared against the headline zero-shot ensemble
 #   on the same 30 conferences using Spearman correlations with bootstrapped CIs.
@@ -74,6 +74,13 @@ if (nchar(api_key) == 0) stop("OPENROUTER_API_KEY not set. Add it to .Renviron."
 source("config/prompts.R")
 cat(crayon::green("Loaded config/prompts.R (prompt_naive schema used for Stage 2 output)\n\n"))
 
+# ------------------------------------------------------------------------------
+# SET THIS TO TRUE to delete all existing panels, runs, and parsed outputs
+# before re-running (e.g. after a prompt change). Set to FALSE to resume an
+# interrupted run without repeating completed calls.
+force_rerun <- FALSE
+# ------------------------------------------------------------------------------
+
 panels_dir <- "../intermediate_data/endogeneity_p1/panels"
 runs_dir   <- "../intermediate_data/endogeneity_p1/runs"
 parsed_dir <- "../intermediate_data/endogeneity_p1/parsed"
@@ -83,6 +90,32 @@ log_calls  <- "../intermediate_data/endogeneity_p1/failed_calls.log"
 dir.create(panels_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(runs_dir,   recursive = TRUE, showWarnings = FALSE)
 dir.create(parsed_dir, recursive = TRUE, showWarnings = FALSE)
+
+if (force_rerun) {
+  to_delete <- c(
+    list.files(panels_dir, pattern = "\\.rds$", full.names = TRUE),
+    list.files(runs_dir,   pattern = "\\.rds$", full.names = TRUE),
+    list.files(parsed_dir, pattern = "\\.(rds|xlsx)$", full.names = TRUE),
+    log_panels, log_calls
+  )
+  to_delete <- to_delete[file.exists(to_delete)]
+  n_del <- length(to_delete)
+  if (n_del > 0) {
+    cat(crayon::red(paste0(
+      "\nforce_rerun = TRUE: about to delete ", n_del,
+      " existing file(s) across panels/, runs/, and parsed/.\n"
+    )))
+    cat(crayon::cyan("  Type 'yes' to confirm deletion, or anything else to abort:\n"))
+    ans_del <- readline()
+    if (tolower(trimws(ans_del)) != "yes") {
+      stop("Deletion aborted by user. Set force_rerun <- FALSE to resume.", call. = FALSE)
+    }
+    file.remove(to_delete)
+    cat(crayon::green(paste0("  Deleted ", n_del, " file(s). Starting clean.\n\n")))
+  } else {
+    cat(crayon::yellow("force_rerun = TRUE but no existing files found — nothing to delete.\n\n"))
+  }
+}
 
 tic("Total script")
 
@@ -306,7 +339,7 @@ call_openrouter <- function(prompt,
 }
 
 # ==============================================================================
-# 6. STAGE 1 EXECUTION — parallel panel generation (150 calls: 30 dates × 5 seeds)
+# 6. STAGE 1 EXECUTION — parallel panel generation (300 calls: 30 dates × 10 seeds)
 #
 # Each (date, run) pair gets its own independently-drawn panel (seed = run).
 # This averages out panel-composition luck alongside forecast randomness so
@@ -409,21 +442,46 @@ for (i in seq_len(nrow(panel_grid))) {
   pr <- panel_grid$run[i]
   pf <- file.path(panels_dir, sprintf("%s_%02d.rds", pd, pr))
   if (!file.exists(pf)) {
-    panel_parse_issues <- c(panel_parse_issues, paste0(pd, "_", pr))
+    panel_parse_issues <- c(panel_parse_issues, sprintf("%s_%02d", pd, pr))
     next
   }
   pp <- parse_panel_rows(readRDS(pf))
-  if (nrow(pp) < 25) panel_parse_issues <- c(panel_parse_issues, paste0(pd, "_", pr))
+  if (nrow(pp) < 25) panel_parse_issues <- c(panel_parse_issues, sprintf("%s_%02d", pd, pr))
 }
 
 if (length(panel_parse_issues) > 0) {
   cat(crayon::red(paste0(
-    "\n  STOP: ", length(panel_parse_issues),
-    " panel(s) parsed to < 25 rows — review before continuing:\n"
+    "\n  ", length(panel_parse_issues),
+    " panel(s) parsed to < 25 rows — deleting and re-running those calls:\n"
   )))
-  for (d in panel_parse_issues) cat(crayon::red(paste0("    ", d, "\n")))
-  toc()
-  stop("Panel parse failure. Inspect panel responses and re-run.", call. = FALSE)
+  for (stem in panel_parse_issues) {
+    bad_file <- file.path(panels_dir, paste0(stem, ".rds"))
+    cat(crayon::red(paste0("    Deleting: ", bad_file, "\n")))
+    if (file.exists(bad_file)) file.remove(bad_file)
+  }
+  cat(crayon::yellow("  Re-running failed panels sequentially...\n"))
+  plan(sequential)
+  for (stem in panel_parse_issues) {
+    parts <- stringr::str_match(stem, "^(\\d{4}-\\d{2}-\\d{2})_(\\d+)$")
+    generate_panel(parts[1, 2], as.integer(parts[1, 3]), panel_only_prompt)
+  }
+  # Re-check
+  still_bad <- character(0)
+  for (stem in panel_parse_issues) {
+    pf <- file.path(panels_dir, paste0(stem, ".rds"))
+    if (!file.exists(pf) || nrow(parse_panel_rows(readRDS(pf))) < 25)
+      still_bad <- c(still_bad, stem)
+  }
+  if (length(still_bad) > 0) {
+    cat(crayon::red(paste0(
+      "\n  STOP: ", length(still_bad),
+      " panel(s) still bad after retry — manual inspection required:\n"
+    )))
+    for (d in still_bad) cat(crayon::red(paste0("    ", d, "\n")))
+    toc()
+    stop("Panel parse failure after retry. Inspect responses and re-run.", call. = FALSE)
+  }
+  cat(crayon::green("  All re-run panels now parse to >= 25 rows.\n"))
 }
 
 cat(crayon::green(paste0("  All ", n_panels_ex, " panels parse to >= 25 rows.\n")))
@@ -520,7 +578,7 @@ n_expected <- 300L
 
 cat(crayon::green(paste0(
   "Stage 2 grid: ", nrow(grid), " rows (",
-  n_distinct(grid$date), " dates x 5 runs)\n\n"
+  n_distinct(grid$date), " dates x 10 runs)\n\n"
 )))
 
 # ==============================================================================
