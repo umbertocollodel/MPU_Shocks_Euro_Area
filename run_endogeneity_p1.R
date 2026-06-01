@@ -18,9 +18,9 @@
 #   on the same 30 conferences using Spearman correlations with bootstrapped CIs.
 #
 #   Sample: 30 conferences, stratified random draw across vol terciles.
-#   Stage 1 calls: 30 × 5 = 150 (parallel, 5 workers)
-#   Stage 2 calls: 30 × 5 = 150 (parallel, 5 workers)
-#   Grand total:   300 API calls
+#   Stage 1 calls: 30 × 10 = 300 (parallel, 5 workers)
+#   Stage 2 calls: 30 × 10 = 300 (parallel, 5 workers)
+#   Grand total:   600 API calls
 #
 # Outputs (ALL under intermediate_data/endogeneity_p1/):
 #   selected_dates.rds
@@ -99,6 +99,7 @@ vol_by_date <- range_df %>%
   filter(tenor %in% c("3M", "2Y", "10Y"),
          !is.na(correct_post_mean_1)) %>%
   group_by(date) %>%
+  filter(n_distinct(tenor) == 3L) %>%
   summarise(vol_score = mean(correct_post_mean_1, na.rm = TRUE),
             .groups   = "drop") %>%
   filter(!is.na(vol_score))
@@ -197,46 +198,34 @@ any text that follows. Generate the panel based on macroeconomic regime alone.
 
 Panel construction:
 - Generate exactly 30 participants, identified as T001 through T030.
-- Draw from the realistic range of institutions active in euro-area OIS markets:
-  commercial banks, investment banks, hedge funds, pension funds, insurance firms,
-  proprietary trading desks, and asset managers.
-- Each participant's archetype, risk profile, time horizon, and prior view should
-  reflect who was active and how they were positioned in the euro-area rate market
-  around [date], given the monetary policy cycle at that time.
 - Assign each participant:
-    (a) risk_profile  : High / Medium / Low
-    (b) time_horizon  : Short-term (< 1 week) / Medium-term (1 week to 3 months) /
-                        Long-term (> 3 months)
-    (c) prior_view    : Hawkish / Neutral / Dovish — reflecting their rate outlook
-                        as of [date], based on regime alone, not any specific event
-    (d) key_bias      : one of Confirmation Bias, Overconfidence, Anchoring,
-                        Herding, Loss Aversion, Recency Bias, Status Quo Bias,
-                        Narrative Fallacy
-- Distribute archetypes, risk profiles, prior views, and biases to reflect the
-  realistic heterogeneity of euro OIS market participants around [date].
-- Ensure meaningful spread: not all participants should share the same prior view
-  or the same key bias.
-
-Macroeconomic regime conditioning (use general knowledge as of [date] only):
-- Where was the ECB deposit rate relative to its recent history around [date]?
-- Was ECB policy in a tightening, easing, or on-hold phase around [date]?
-- What was the prevailing level of uncertainty about future rate paths in the
-  euro area at that time?
-Do NOT reference any specific press conference, statement, or meeting — broad
-macroeconomic regime information only.
+    (a) risk_aversion      : High / Medium / Low — let the distribution reflect
+                             the prevailing uncertainty in euro-area rate markets
+                             around [date], based on macro regime alone.
+    (b) behavioral_biases  : 1–2 biases per trader, drawn from:
+                             Confirmation Bias, Overconfidence, Anchoring,
+                             Herding, Loss Aversion, Recency Bias.
+                             Separate multiple biases with a semicolon.
+    (c) interpretation_style : one of:
+                             Fundamentalist, Sentiment Reader, Quantitative,
+                             Skeptic, Narrative-Driven.
+- Distribute risk aversion, biases, and interpretation styles to reflect
+  realistic heterogeneity across euro OIS market participants.
+- Ensure meaningful spread: not all participants should share the same
+  risk_aversion level or the same interpretation_style.
 
 Output:
 Return ONLY the following markdown table. No preamble, no commentary, and no
-explanation before or after the table. The table must have exactly these six
+explanation before or after the table. The table must have exactly these four
 columns in this order.
 
-| agent_id | archetype            | risk_profile | time_horizon  | prior_view | key_bias              |
-|----------|----------------------|--------------|---------------|------------|-----------------------|
-| T001     | Commercial Bank      | Medium       | Short-term    | Neutral    | Anchoring             |
-| T002     | Hedge Fund           | High         | Short-term    | Hawkish    | Overconfidence        |
-| T003     | Pension Fund         | Low          | Long-term     | Dovish     | Confirmation Bias     |
-| ...      | ...                  | ...          | ...           | ...        | ...                   |
-| T030     | Asset Manager        | Medium       | Medium-term   | Neutral    | Herding               |
+| agent_id | risk_aversion | behavioral_biases               | interpretation_style |
+|----------|---------------|---------------------------------|----------------------|
+| T001     | Medium        | Anchoring                       | Quantitative         |
+| T002     | High          | Overconfidence; Herding         | Sentiment Reader     |
+| T003     | Low           | Confirmation Bias               | Fundamentalist       |
+| ...      | ...           | ...                             | ...                  |
+| T030     | Medium        | Loss Aversion                   | Skeptic              |
 
 Generate all 30 rows. The agent_id column must run sequentially from T001 to T030.
 "
@@ -324,12 +313,12 @@ call_openrouter <- function(prompt,
 # that the within-run SD in Stage 2 reflects both sources of variation.
 # ==============================================================================
 
-panel_grid <- expand_grid(date = the_dates, run = 1:5) %>%
+panel_grid <- expand_grid(date = the_dates, run = 1:10) %>%
   sample_n(nrow(.))
 
 cat(crayon::blue(paste0(
   "Stage 1: generating ", nrow(panel_grid),
-  " agent panels in parallel (", length(the_dates), " dates x 5 seeds)...\n\n"
+  " agent panels in parallel (", length(the_dates), " dates x 10 seeds)...\n\n"
 )))
 
 generate_panel <- function(date, run, prompt_template) {
@@ -384,7 +373,7 @@ plan(sequential)
 # Stage 1 sanity check --------------------------------------------------------
 
 n_panels    <- length(list.files(panels_dir, pattern = "\\.rds$"))
-n_panels_ex <- nrow(panel_grid)   # 150
+n_panels_ex <- nrow(panel_grid)   # 300
 cat(crayon::blue(paste0(
   "\nStage 1 complete. Panels found: ", n_panels, " / ", n_panels_ex, "\n"
 )))
@@ -400,18 +389,16 @@ parse_panel_rows <- function(response_text) {
   lines <- lines[nchar(lines) > 0]
   pat   <- paste0(
     "^\\|?\\s*(T\\d{3})\\s*\\|\\s*(.+?)\\s*\\|\\s*(.+?)\\s*\\|",
-    "\\s*(.+?)\\s*\\|\\s*(.+?)\\s*\\|\\s*(.+?)\\s*\\|?\\s*$"
+    "\\s*(.+?)\\s*\\|?\\s*$"
   )
   m <- str_match(lines, pat)
   m <- m[!is.na(m[, 1]), , drop = FALSE]
   if (nrow(m) == 0) return(tibble())
   tibble(
-    agent_id     = m[, 2],
-    archetype    = m[, 3],
-    risk_profile = m[, 4],
-    time_horizon = m[, 5],
-    prior_view   = m[, 6],
-    key_bias     = m[, 7]
+    agent_id             = m[, 2],
+    risk_aversion        = m[, 3],
+    behavioral_biases    = m[, 4],
+    interpretation_style = m[, 5]
   )
 }
 
@@ -475,8 +462,7 @@ Instructions:
   interest rate swap market across three tenors: 3 months (3M), 2 years (2Y),
   and 10 years (10Y), conditional on the press conference transcript below.
 - Each participant reads and interprets the transcript through the lens of
-  their assigned archetype, risk profile, time horizon, prior view, and key
-  behavioral bias.
+  their assigned risk aversion, behavioral biases, and interpretation style.
 - For each (participant x tenor) combination, provide:
     (a) Expected direction: Up / Down / Unchanged — relative to the
         pre-conference rate.
@@ -501,7 +487,7 @@ No preamble, no commentary, no explanation before or after the table.
 Guidelines:
 - Use only the information available as of [date].
 - Each participant's forecast must reflect their unique characteristics from
-  the panel — archetype, risk profile, time horizon, prior view, and key bias.
+  the panel — risk aversion, behavioral biases, and interpretation style.
 - Ensure diversity in interpretation: not all participants should forecast the
   same direction or the same rate level.
 - Do not aggregate or summarize responses.
@@ -527,10 +513,10 @@ cat(crayon::green("  Stage 2 prompt approved.\n\n"))
 # 8. STAGE 2 GRID
 # ==============================================================================
 
-grid <- expand_grid(date = the_dates, run = 1:5) %>%
+grid <- expand_grid(date = the_dates, run = 1:10) %>%
   sample_n(nrow(.))
 
-n_expected <- 150L
+n_expected <- 300L
 
 cat(crayon::green(paste0(
   "Stage 2 grid: ", nrow(grid), " rows (",
@@ -910,10 +896,10 @@ cat(strrep("-", 60), "\n\n")
 cat(paste0(
   "Number of Stage 1 panels:        ",
   length(list.files(panels_dir, pattern = "\\.rds$")),
-  " (expect 150)\n"
+  " (expect 300)\n"
 ))
 cat(paste0(
-  "Number of Stage 2 runs completed: ", n_completed, " (expect 150)\n\n"
+  "Number of Stage 2 runs completed: ", n_completed, " (expect 300)\n\n"
 ))
 
 cat("Mean within-run SD by tenor (compare to headline; expect ~10-20 bps range):\n")
@@ -950,6 +936,13 @@ toc()
 cat("\n", strrep("=", 80), "\n")
 cat(crayon::green("ENDOGENEITY TEST P1 COMPLETE\n"))
 cat(strrep("=", 80), "\n\n")
+
+cat(
+  "NOTE: Stage 1 panels use baseline fields (risk_aversion, behavioral_biases,\n",
+  "  interpretation_style) to match the zero-shot prompt schema. The archetype\n",
+  "  field is absent from this run; Figure 10 (archetype heatmap) cannot be\n",
+  "  reproduced from these panels.\n\n"
+)
 
 cat(
   "INTERPRETATION:\n",
