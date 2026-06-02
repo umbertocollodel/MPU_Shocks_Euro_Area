@@ -163,51 +163,52 @@ cat("\n")
 writexl::write_xlsx(tbl1_out, file.path(output_dir, "tbl1_correlation_comparison.xlsx"))
 cat("  Saved: tbl1_correlation_comparison.xlsx\n")
 
-tryCatch({
-
-  tbl1_sg <- tbl1_data %>%
-    transmute(
-      "Tenor"                     = tenor,
-      "N"                         = n_conferences,
-      "$\\rho_{ts}$ [95\\% CI]"   = sprintf("%.3f%s [%.3f, %.3f]",
-                                             spearman_endo_vs_vol, sig_stars(p_endo),
-                                             ci_low_endo, ci_high_endo),
-      "$\\rho_{hl}$ [95\\% CI]"   = sprintf("%.3f%s [%.3f, %.3f]",
-                                             spearman_headline_vs_vol, sig_stars(p_head),
-                                             ci_low_head, ci_high_head),
-      "$\\Delta\\rho$ [95\\% CI]" = sprintf("%.3f%s [%.3f, %.3f]",
-                                             delta_rho,
-                                             ifelse(!(ci_low_delta <= 0 & 0 <= ci_high_delta),
-                                                    "$\\dagger$", ""),
-                                             ci_low_delta, ci_high_delta),
-      "Verdict"                   = verdict
-    ) %>%
-    as.data.frame()
-
-  stargazer(
-    tbl1_sg,
-    type         = "latex",
-    summary      = FALSE,
-    rownames     = FALSE,
-    header       = FALSE,
-    title        = "Spearman correlations between synthetic disagreement and realised market volatility",
-    label        = "tab:endo_corr",
-    notes        = c(
-      "\\textit{ts}: two-stage model (panel from macro regime only, no transcript).",
-      "\\textit{hl}: headline zero-shot ensemble. $\\Delta\\rho = \\rho_{hl} - \\rho_{ts}$.",
-      "Stars on $\\rho$: $t$-approx.\\ $p$-value (H$_0$: $\\rho=0$);",
-      "$^{*}\\,p<0.10$, $^{**}\\,p<0.05$, $^{***}\\,p<0.01$.",
-      "$\\dagger$: 0 outside the 95\\% bootstrap CI for $\\Delta\\rho$ (5,000 reps).",
-      "Verdict: $0 \\in \\mathrm{CI}(\\Delta\\rho) \\Rightarrow$ endogeneity concern refuted."
-    ),
-    notes.append = FALSE,
-    out          = file.path(output_dir, "tbl1_correlation_comparison.tex")
+tbl1_rows <- tbl1_data %>%
+  transmute(
+    tenor   = tenor,
+    rho_ts  = sprintf("%.3f%s", spearman_endo_vs_vol,     sig_stars(p_endo)),
+    rho_hl  = sprintf("%.3f%s", spearman_headline_vs_vol,  sig_stars(p_head)),
+    delta   = sprintf("%.3f%s", delta_rho,
+                      ifelse(!(ci_low_delta <= 0 & 0 <= ci_high_delta),
+                             "$^{\\dagger}$", "")),
+    ci      = sprintf("[%.3f,\\;%.3f]", ci_low_delta, ci_high_delta)
   )
-  cat("  Saved: tbl1_correlation_comparison.tex\n")
 
-}, error = function(e) {
-  cat("  stargazer failed — skipping tbl1_correlation_comparison.tex:", conditionMessage(e), "\n")
-})
+tex_rows <- paste0(
+  tbl1_rows$tenor, " & ",
+  tbl1_rows$rho_ts, " & ",
+  tbl1_rows$rho_hl, " & ",
+  tbl1_rows$delta, " & ",
+  tbl1_rows$ci, " \\\\",
+  collapse = "\n"
+)
+
+tex_out <- paste0(
+  "\\begin{table}[htbp]\n",
+  "\\centering\n",
+  "\\caption{Endogeneity test: Spearman correlations with realised market volatility}\n",
+  "\\label{tab:endo_corr}\n",
+  "\\begin{tabular}{lcccc}\n",
+  "\\toprule\n",
+  "Tenor & $\\rho_{ts}$ & $\\rho_{hl}$ & $\\Delta\\rho$ & 95\\% CI \\\\\n",
+  "\\midrule\n",
+  tex_rows, "\n",
+  "\\bottomrule\n",
+  "\\end{tabular}\n",
+  "\\smallskip\n",
+  "\\begin{minipage}{0.92\\linewidth}\n",
+  "\\footnotesize\n",
+  "\\textit{Notes:} $\\rho_{ts}$: two-stage model (panel from macro regime only); ",
+  "$\\rho_{hl}$: headline zero-shot ensemble. ",
+  "$\\Delta\\rho = \\rho_{hl} - \\rho_{ts}$; 95\\% bootstrap CI (5{,}000 reps, percentile method). ",
+  "$^{*}\\,p<0.10$, $^{**}\\,p<0.05$, $^{***}\\,p<0.01$ (H$_0$: $\\rho = 0$). ",
+  "$^{\\dagger}$: 0 lies outside the 95\\% CI for $\\Delta\\rho$.\n",
+  "\\end{minipage}\n",
+  "\\end{table}\n"
+)
+
+writeLines(tex_out, file.path(output_dir, "tbl1_correlation_comparison.tex"))
+cat("  Saved: tbl1_correlation_comparison.tex\n")
 
 # ==============================================================================
 # 4. FIGURE 2 — Scatter: endo_sd vs. headline_sd, faceted by tenor
@@ -222,7 +223,10 @@ rho_labels <- comparison_tbl %>%
     label = sprintf("ρ = %.2f", spearman_endo_vs_headline)
   )
 
-fig2 <- ggplot(merged, aes(x = sd_mean_endo, y = sd_mean_head, color = tenor)) +
+merged_plot <- merged %>%
+  filter(!(tenor == "3M" & sd_mean_head > 0.2))
+
+fig2 <- ggplot(merged_plot, aes(x = sd_mean_endo, y = sd_mean_head, color = tenor)) +
   geom_smooth(method = "lm", se = TRUE, linewidth = 0.9,
               color = "grey30", fill = "grey85") +
   geom_point(alpha = 0.8, size = 2.8) +
