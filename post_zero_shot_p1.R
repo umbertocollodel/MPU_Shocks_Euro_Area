@@ -505,7 +505,7 @@ fig5 <- ggplot(spearman_corr, aes(x = tenor, y = rho, fill = tenor)) +
   geom_col(width = 0.45, show.legend = FALSE) +
   geom_errorbar(aes(ymin = ci_low, ymax = ci_high),
                 width = 0.15, colour = "grey20", linewidth = 0.8) +
-  geom_text(aes(label = round(rho, 2), y = rho + 0.03),
+  geom_text(aes(label = round(rho, 2), y = rho + 0.15),
             size = 5, fontface = "bold") +
   scale_fill_manual(values = tenor_colours) +
   scale_y_continuous(limits = c(0, 0.8), breaks = seq(0, 0.8, 0.2)) +
@@ -514,7 +514,16 @@ fig5 <- ggplot(spearman_corr, aes(x = tenor, y = rho, fill = tenor)) +
     y       = "Spearman ρ",
     caption = "") +
   p1_theme +
-  theme(panel.grid.major.x = element_blank())
+  theme(panel.grid.major.x = element_blank()) +
+    theme(
+    axis.text.x        = element_text(size = 14),
+    axis.text.y= element_text(size=12),
+    axis.title = element_text(size=16),
+    legend.title = element_text(size=16),
+    legend.text=element_text(size=14),
+    strip.text=element_text(size=16),
+    panel.border       = element_rect(colour = "grey80", fill = NA)
+  )
 
 save_plot(fig5, "p1_fig5_correlations", w = 8, h = 6)
 
