@@ -80,7 +80,8 @@ planned_stems <- c(
   file.path(fig_dir,  "p1_fig_correlation_uplift"),
   file.path(fig_dir,  "p1_fig_GR_full"),
   file.path(fig_dir,  "p1_fig_sd_stabilization"),
-  file.path(data_dir, "p1_comparison_table")
+  file.path(data_dir, "p1_comparison_table"),
+  file.path(data_dir, "p1_directional_analysis")
 )
 invisible(lapply(planned_stems, assert_p1))
 cat("Prefix assertion passed for all", length(planned_stems), "output paths.\n\n")
@@ -944,6 +945,197 @@ cat("  Saved: p1_comparison_table.tex\n")
 cat("\n", strrep("=", 80), "\n")
 cat("POST ZERO-SHOT P1 COMPLETE\n")
 cat(strrep("=", 80), "\n\n")
+
+# ==============================================================================
+# 13. DIRECTIONAL ANALYSIS — CONSOLIDATED SUMMARY TABLE
+# ==============================================================================
+
+cat("Section 13: directional analysis (consolidated table)...\n")
+
+assign_regime <- function(d) {
+  case_when(
+    d >= as.Date("1999-01-01") & d <= as.Date("2008-09-01") ~ "Pre-crisis tightening",
+    d >= as.Date("2009-01-01") & d <= as.Date("2021-12-31") ~ "Easing/ZLB",
+    d >= as.Date("2022-01-01") & d <= as.Date("2023-12-31") ~ "Tightening cycle",
+    TRUE ~ NA_character_
+  )
+}
+
+modal_all <- direction_pct %>%
+  group_by(date, tenor) %>%
+  slice_max(percentage, n = 1, with_ties = FALSE) %>%
+  ungroup()
+
+# ---- Panel A: mean directional share by regime ----
+panel_a <- direction_pct %>%
+  mutate(
+    regime = assign_regime(date),
+    tenor  = as.character(tenor)
+  ) %>%
+  filter(!is.na(regime)) %>%
+  group_by(regime, tenor, direction_clean) %>%
+  summarise(
+    value = as.character(round(mean(percentage, na.rm = TRUE), 1)),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    section = "A: Regime shares",
+    metric  = paste0(regime, " - ", as.character(direction_clean), " (%)")
+  ) %>%
+  select(section, metric, tenor, value) %>%
+  pivot_wider(names_from = tenor, values_from = value)
+
+# ---- Panel B: post-Lehman reversal speed (2Y) ----
+dates_2y   <- direction_pct %>% filter(tenor == "2Y") %>%
+  pull(date) %>% unique() %>% sort()
+shock_date <- dates_2y[which.min(abs(dates_2y - as.Date("2008-09-15")))]
+shock_idx  <- which(dates_2y == shock_date)
+
+first_down_n <- modal_all %>%
+  filter(as.character(tenor) == "2Y") %>%
+  arrange(date) %>%
+  mutate(m = match(date, dates_2y) - shock_idx) %>%
+  filter(m > 0, as.character(direction_clean) == "Down") %>%
+  slice_min(m, n = 1, with_ties = FALSE) %>%
+  pull(m)
+
+lehman_note <- if (length(first_down_n) > 0) {
+  glue("Shock meeting (closest to 2008-09-15): {shock_date}. ",
+       "For 2Y, 'Down' first becomes modal {first_down_n} meeting(s) after the shock.")
+} else {
+  glue("Shock meeting: {shock_date}. ",
+       "'Down' did not become modal within 10 meetings after the shock (2Y).")
+}
+
+panel_b <- tibble(
+  section = "B: Post-Lehman reversal (2Y)",
+  metric  = "Meetings until 'Down' is modal direction",
+  `3M`    = "--",
+  `2Y`    = if (length(first_down_n) > 0) as.character(first_down_n) else "n.a.",
+  `10Y`   = "--"
+)
+
+# ---- Panel C: modal reversal frequency ----
+panel_c <- modal_all %>%
+  arrange(tenor, date) %>%
+  group_by(tenor) %>%
+  mutate(
+    prev = lag(direction_clean),
+    flip = !is.na(prev) & direction_clean != prev
+  ) %>%
+  filter(!is.na(prev)) %>%
+  summarise(
+    value   = as.character(round(100 * sum(flip) / n(), 1)),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    section = "C: Modal reversal frequency",
+    metric  = "Direction changes (pct of consecutive pairs)",
+    tenor   = as.character(tenor)
+  ) %>%
+  select(section, metric, tenor, value) %>%
+  pivot_wider(names_from = tenor, values_from = value)
+
+# ---- Panel D: 2022 tightening acceleration ----
+acc_flags <- map_dfr(tenor_levels, function(t) {
+  sub <- direction_pct %>%
+    filter(
+      as.character(direction_clean) == "Up",
+      as.character(tenor) == t,
+      date >= as.Date("2022-01-01"),
+      date <= as.Date("2022-12-31")
+    ) %>%
+    arrange(date)
+  if (nrow(sub) < 2) return(tibble())
+  deltas   <- diff(sub$percentage)
+  best_idx <- which.max(deltas)
+  tibble(
+    tenor        = t,
+    delta_up_pp  = round(deltas[best_idx], 1),
+    flagged_pair = paste0(
+      format(sub$date[best_idx],     "%b %Y"),
+      " -> ",
+      format(sub$date[best_idx + 1], "%b %Y")
+    )
+  )
+})
+
+panel_d <- acc_flags %>%
+  mutate(delta_up_pp = as.character(delta_up_pp)) %>%
+  pivot_longer(c(delta_up_pp, flagged_pair), names_to = "type", values_to = "value") %>%
+  mutate(
+    section = "D: 2022 tightening acceleration",
+    metric  = if_else(type == "delta_up_pp",
+                      "Largest consecutive Up-share jump (pp)",
+                      "Flagged meeting pair")
+  ) %>%
+  select(section, metric, tenor, value) %>%
+  pivot_wider(names_from = tenor, values_from = value)
+
+# ---- Assemble consolidated table ----
+dir_summary <- bind_rows(panel_a, panel_b, panel_c, panel_d) %>%
+  select(section, metric, any_of(tenor_levels))
+
+cat("\n", strrep("=", 70), "\n")
+cat("DIRECTIONAL ANALYSIS - SUMMARY TABLE\n")
+cat(strrep("=", 70), "\n")
+print(dir_summary, n = Inf)
+cat(glue("\nNote: {lehman_note}\n\n"))
+
+save_table(dir_summary, "p1_directional_analysis")
+
+# ---- LaTeX ----
+latex_dir <- "../output/tables"
+dir.create(latex_dir, recursive = TRUE, showWarnings = FALSE)
+
+panel_headers <- c(
+  "A: Regime shares"                = "\\textit{Panel A: Mean directional share by regime}",
+  "B: Post-Lehman reversal (2Y)"    = "\\textit{Panel B: Post-Lehman reversal speed (2Y tenor only)}",
+  "C: Modal reversal frequency"     = "\\textit{Panel C: Modal direction reversal frequency}",
+  "D: 2022 tightening acceleration" = "\\textit{Panel D: 2022 tightening acceleration}"
+)
+
+tex_esc <- function(x) str_replace_all(as.character(x), "%", "\\\\%")
+na_dash <- function(x) ifelse(is.na(x), "--", x)
+
+latex_body <- character()
+prev_sec   <- ""
+for (i in seq_len(nrow(dir_summary))) {
+  row <- dir_summary[i, ]
+  sec <- row$section
+  if (sec != prev_sec) {
+    if (nchar(prev_sec) > 0) latex_body <- c(latex_body, "\\addlinespace[6pt]")
+    latex_body <- c(latex_body,
+      glue("\\multicolumn{{4}}{{l}}{{{panel_headers[sec]}}} \\\\[2pt]"))
+    prev_sec <- sec
+  }
+  latex_body <- c(latex_body, glue(
+    "\\quad {tex_esc(row$metric)} & {tex_esc(na_dash(row$`3M`))} & ",
+    "{tex_esc(na_dash(row$`2Y`))} & {tex_esc(na_dash(row$`10Y`))} \\\\"
+  ))
+}
+
+latex_lines <- c(
+  "\\begin{table}[htbp]",
+  "\\centering",
+  "\\small",
+  "\\caption{Directional forecast analysis by tenor}",
+  "\\label{tab:p1_directional_analysis}",
+  "\\begin{tabular}{p{8cm}ccc}",
+  "\\toprule",
+  " & \\textbf{3M} & \\textbf{2Y} & \\textbf{10Y} \\\\",
+  "\\midrule",
+  latex_body,
+  "\\bottomrule",
+  glue("\\multicolumn{{4}}{{p{{13cm}}}}{{\\footnotesize \\textit{{Note:}} {lehman_note}}} \\\\"),
+  "\\end{tabular}",
+  "\\end{table}"
+)
+
+writeLines(latex_lines, file.path(latex_dir, "p1_directional_analysis.tex"))
+cat(glue("  Saved: p1_directional_analysis (.rds / .xlsx / .tex)\n\n"))
+
+cat("Section 13 complete.\n\n")
 
 #===============================================================================
 # END OF SCRIPT
