@@ -325,7 +325,7 @@ fig3 <- ggplot(direction_pct,
   facet_wrap(~ tenor, ncol = 1) +
   scale_fill_manual(
     values = c("Up" = "#d73027", "Unchanged" = "grey70", "Down" = "#4575b4"),
-    name   = "Predicted Direction"
+    name   = ""
   ) +
   scale_x_discrete(
     breaks = function(x) x[seq(1, length(x), by = 12)],
@@ -338,7 +338,12 @@ fig3 <- ggplot(direction_pct,
   ) +
   p1_theme +
   theme(
-    axis.text.x        = element_text(angle = 90, vjust = 0.5, size = 9),
+    axis.text.x        = element_text(angle = 90, vjust = 0.5, size = 12),
+    axis.text.y= element_text(size=12),
+    axis.title = element_text(size=14),
+    legend.title = element_text(size=16),
+    legend.text=element_text(size=14),
+    strip.text=element_text(size=16),
     panel.grid.major.x = element_blank(),
     panel.border       = element_rect(colour = "grey80", fill = NA)
   )
@@ -384,13 +389,14 @@ main_plot <- ggplot(ensemble_ts, aes(x = date, colour = tenor, fill = tenor)) +
   ) +
   p1_theme +
   theme(
-    axis.text.x  = element_text(angle = 90, hjust = 1, size = 12),
+    axis.text.x        = element_text(angle = 90, vjust = 0.5, size = 14),
+    axis.text.y= element_text(size=12),
     axis.title = element_text(size=14),
-    axis.text.y = element_text(size=12),
-    panel.border = element_rect(colour = "grey80", fill = NA),
-    strip.text = element_text(size=12)
+    legend.title = element_text(size=16),
+    legend.text=element_text(size=14),
+    strip.text=element_text(size=16),
+    panel.border       = element_rect(colour = "grey80", fill = NA)
   )
-
 ensemble_ts_zoom <- ensemble_ts %>%
   filter(date >= as.Date("2022-01-01"), date <= as.Date("2024-01-01"))
 
@@ -415,12 +421,13 @@ zoom_plot <- ggplot(ensemble_ts_zoom, aes(x = date, colour = tenor, fill = tenor
   ) +
   p1_theme +
   theme(
-    plot.title   = element_text(size = 14, face = "bold", hjust = 0.5,
-                                margin = margin(b = 8)),
-    axis.text.x  = element_text(angle = 45, hjust = 1, size = 12),
-    axis.text.y  = element_text(size = 12),
-    panel.border = element_rect(colour = "grey80", fill = NA),
-    strip.text   = element_text(size = 12)
+    axis.text.x        = element_text(angle = 90, vjust = 0.5, size = 14),
+    axis.text.y= element_text(size=12),
+    axis.title = element_text(size=16),
+    legend.title = element_text(size=16),
+    legend.text=element_text(size=14),
+    strip.text=element_text(size=16),
+    panel.border       = element_rect(colour = "grey80", fill = NA)
   )
 
 fig4 <- main_plot + zoom_plot +
