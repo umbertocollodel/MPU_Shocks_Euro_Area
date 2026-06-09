@@ -77,7 +77,9 @@ surprise_long <- raw_surprise %>%
 # Bid-ask spread: ask minus bid close, 1 trading day post-conference (bps).
 # Standardised within-tenor so the coefficient is comparable across maturities.
 
-post_spread_df <- readRDS("../intermediate_data/post_spread_1d.rds") %>%
+spread_path <- "../intermediate_data/post_spread_1d.rds"
+if (!file.exists(spread_path)) stop("post_spread_1d.rds not found. Generate it from the bid-ask spread pipeline before running this script.")
+post_spread_df <- readRDS(spread_path) %>%
   mutate(date = as.Date(date))
 
 #------------------------------------------------------------------------------

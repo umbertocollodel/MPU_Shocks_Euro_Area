@@ -40,7 +40,7 @@ walk(c(OUTPUT_DIR, RESULTS_DIR, RAW_RESPONSES_DIR), ~dir.create(.x, recursive = 
 call_chatgpt <- function(prompt, user_message, temperature = 1.0) {
   tryCatch({
     result <- create_chat_completion(
-      model = "gpt-5-mini",  # Updated to use gpt-4o-mini instead of non-existent gpt-5-mini
+      model = "gpt-4o-mini",
       messages = list(
         list(role = "system", content = prompt),
         list(role = "user", content = user_message)
@@ -987,7 +987,7 @@ p1 <- ggplot(biggest_differences, aes(x = avg_val, y = difference)) +
   )
 
 # --- Plot 2: Individual model correlations with market ---
-p2 <- ggplot(market_corr_data, aes(x = model_name, y = spearman_correlation, fill = model_name)) +
+p2 <- ggplot(analysis$correlations$detailed, aes(x = model_name, y = spearman_correlation, fill = model_name)) +
   geom_col(alpha = 0.8, width = 0.6) +
   geom_text(aes(label = sprintf("%.3f", spearman_correlation)), vjust = -0.3, size = 6) +
   facet_wrap(~tenor, nrow = 1) +
@@ -1011,6 +1011,10 @@ p2 <- ggplot(market_corr_data, aes(x = model_name, y = spearman_correlation, fil
 # =============================================================================
 
 # Prepare combined data
+ensemble_corr <- analysis$correlations$detailed %>%
+  filter(model_name == "gemini") %>%
+  select(tenor, spearman_corr = spearman_correlation)
+
 plot_data <- bind_rows(
   icc_by_tenor %>% select(tenor, value = icc) %>% mutate(metric_plot = "ICC"),
   ensemble_corr %>% select(tenor, value = spearman_corr) %>% mutate(metric_plot = "Ensemble")

@@ -36,7 +36,9 @@ if (!file.exists("../intermediate_data/texts")) {
   stop("Please run this script from the 'code/' directory.\n",
        "Current directory: ", getwd())
 }
-setAPI(Sys.getenv("GEMINI_API_KEY"))
+api_key_gemini <- Sys.getenv("GEMINI_API_KEY")
+if (nchar(api_key_gemini) == 0) stop("GEMINI_API_KEY not set. Add it to .Renviron.")
+setAPI(api_key_gemini)
 
 # Configuration parameters: ----
 N_MINOR_VARIATIONS <- 10

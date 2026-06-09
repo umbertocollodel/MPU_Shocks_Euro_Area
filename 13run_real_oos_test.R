@@ -76,7 +76,7 @@ market_vol <- readRDS("../intermediate_data/range_difference_df.rds") %>%
     date  = as.Date(date)
   ) %>%
   filter(date >= as.Date("2025-01-01")) %>%
-  select(date, tenor, market_std = correct_post_mean_3)
+  select(date, tenor, market_std = correct_post_mean_1)
 
 # ============================================================================
 # 4. MERGE DATA

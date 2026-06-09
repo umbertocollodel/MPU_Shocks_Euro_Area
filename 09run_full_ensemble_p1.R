@@ -197,6 +197,7 @@ process_one <- function(date, run, text) {
 # 5. PARALLEL EXECUTION
 # ==============================================================================
 
+on.exit(plan(sequential), add = TRUE)
 plan(multisession, workers = 5)  # tune to machine; I/O-bound so >nCPUs is fine
 
 cat(crayon::blue(paste0(
@@ -256,7 +257,7 @@ cat(strrep("=", 60), "\n\n")
 # 7–9. PARSING, AGGREGATION, SANITY CHECKS  (only when all calls are complete)
 # ==============================================================================
 
-if (n_missing == 0) {
+if (n_missing <= 0) {
 
   # 7. PARSING -----------------------------------------------------------------
 

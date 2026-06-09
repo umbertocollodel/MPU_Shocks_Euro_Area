@@ -26,7 +26,9 @@ dir.create("../output/tables",                   recursive = TRUE, showWarnings 
 # 1. DATA
 # ==============================================================================
 
-fewshot_sd <- readRDS("../intermediate_data/fewshot_ensemble_p1/parsed/ensemble_sd.rds") %>%
+fewshot_path <- "../intermediate_data/fewshot_ensemble_p1/parsed/ensemble_sd.rds"
+if (!file.exists(fewshot_path)) stop("Run 16run_fewshot_ensemble_p1.R first to generate: ", fewshot_path)
+fewshot_sd <- readRDS(fewshot_path) %>%
   mutate(date = as.character(date), tenor = factor(tenor, levels = tenor_levels))
 
 naive_sd <- readRDS("../intermediate_data/p1/p1_ensemble_sd.rds") %>%

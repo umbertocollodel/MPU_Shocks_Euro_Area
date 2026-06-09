@@ -199,6 +199,11 @@ if (!file.exists(all_runs_path)) {
         mutate(date = as.character(date)) %>%
         mutate(across(contains("rate"),       as.numeric)) %>%
         mutate(across(contains("confidence"), as.numeric)) %>%
+        mutate(tenor = case_when(
+          tenor %in% c("3m", "3mnt", "3-month") ~ "3M",
+          tenor %in% c("10y", "10yr", "10-year") ~ "10Y",
+          TRUE ~ tenor
+        )) %>%
         filter(tenor %in% c("3M", "2Y", "10Y")) %>%
         mutate(date = conf_date, run = run_id, agent_id = id) %>%
         select(date, run, agent_id, tenor, direction, rate, confidence)
