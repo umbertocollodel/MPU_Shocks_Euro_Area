@@ -442,7 +442,7 @@ main_robustness_analysis <- function() {
     cat(crayon::yellow("Warning: Low success rate. Consider checking API limits or connection.\n"))
   }
   
-  return(llm_results)
+  return(robustness_results)
 }
 
 
@@ -456,11 +456,9 @@ main_robustness_analysis <- function() {
 if (interactive()) {
   cat("Ready to run robustness analysis. Execute: main_robustness_analysis()\n")
 } else {
-  # Uncomment the next line to run automatically
-  final_results <- main_robustness_analysis()
+  main_robustness_analysis()
 }
 
-llm_results <- main_robustness_analysis()
 final_results <- clean_prompt_robustness_results()
 
 
@@ -613,7 +611,7 @@ print(p3)
 
 # Save Plot 1: ICC by Variation Type
 ggsave(
-  filename = paste0(output_dir, "robustness/icc_by_variation_type.pdf"),
+  filename = paste0(FIGURES_DIR, "icc_by_variation_type.pdf"),
   plot = p1,
   dpi = 320,
   width = 8,
@@ -623,7 +621,7 @@ ggsave(
 
 # Save Plot 2: ICC by Tenor
 ggsave(
-  filename = paste0(output_dir, "robustness/icc_by_tenor.pdf"),
+  filename = paste0(FIGURES_DIR, "icc_by_tenor.pdf"),
   plot = p2,
   dpi = 320,
   width = 8,
@@ -633,7 +631,7 @@ ggsave(
 
 # Save Plot 3: Minor vs Medium by Tenor (your robustness plot)
 ggsave(
-  filename = paste0(output_dir, "robustness/icc_robustness_minor_vs_medium.pdf"),
+  filename = paste0(FIGURES_DIR, "icc_robustness_minor_vs_medium.pdf"),
   plot = p3,
   dpi = 320,
   width = 10,
@@ -666,7 +664,7 @@ if(overall_avg >= 0.7) {
 # Table: all prompt variations
 
 
-library(xtable)
+pacman::p_load(xtable)
 
 # Create data ----
 prompt_variations <- data.frame(

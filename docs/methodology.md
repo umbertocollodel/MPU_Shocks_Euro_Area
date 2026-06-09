@@ -42,12 +42,18 @@ Uncertainty_surprises/
 ├── code/                          # All R scripts (run from here as working directory)
 │   ├── 01create_MPU.R
 │   ├── 02plot_MPU_and_compare_with_MP_surprises.R
-│   ├── 03appendix_run_exogeneity_tests_MPU.R
-│   ├── 03.1appendix_create_mp_daily.R
-│   ├── 03.2relationship_liquidity_mpu_testing.R
-│   ├── 03.3check_swaption_correlation.R
-│   ├── 03.3running_placebo.R
-│   ├── 20temperature_robustness.R
+│   ├── 03relationship_liquidity_mpu_testing.R
+│   ├── 04appendix_exogeneity_tests_MPU.R
+│   ├── 05mpu_all_days_vs_govc.R
+│   ├── 06get_calendar_us_releases.R
+│   ├── 07scraping_ecb_pressconf.R
+│   ├── 08calculate_complexity_documents.R
+│   ├── 09run_full_ensemble_p1.R   # LLM ensemble — main results
+│   ├── 10post_zero_shot_p1.R
+│   ├── 11–17 …                    # Robustness scripts
+│   ├── 18regression_ois_on_synthetic_measures.R
+│   ├── poster/                    # Conference poster assets
+│   ├── archive/                   # Deprecated scripts
 │   ├── docs/
 │   │   └── methodology.md         # This file
 │   └── segoeui.ttf                # Font file (optional, see §3)
@@ -90,11 +96,10 @@ The pipeline uses `pacman` to install and load all packages automatically. Each 
 | stargazer  | 02                   | LaTeX table export                 |
 | xtable     | 02                   | LaTeX correlation matrix table     |
 | Hmisc      | 01                   | Miscellaneous statistics           |
-| broom      | 03                   | Tidy regression output             |
-| lubridate  | 02, 03.1, 03.2, 03.3 | Date parsing                       |
+| broom      | 04                   | Tidy regression output             |
+| lubridate  | 02, 03, 04, 05       | Date parsing                       |
 | showtext   | all                  | Custom font rendering              |
 | sysfonts   | all                  | Font loading                       |
-| patchwork  | 03.3running_placebo  | Multi-panel figure composition     |
 
 ### Font
 
@@ -104,12 +109,13 @@ Scripts use **Segoe UI Light** for publication-quality figures. Place `segoeui.t
 
 All scripts use relative paths (`../raw_data/`, `../output/`, etc.) and **must be sourced with `code/` as the working directory**. In RStudio: use an RStudio Project rooted at `code/`, or call `setwd("path/to/code")` before sourcing.
 
-### API keys (scripts 02 and 20 only)
+### API keys
 
 | Key                  | Script | How to set                                                        |
 |----------------------|--------|-------------------------------------------------------------------|
 | `REFINITIV_API_KEY`  | 02     | `Sys.setenv(REFINITIV_API_KEY = "key")` in `.Renviron`. LSEG Workspace desktop app must be running. Section can be commented out if unavailable. |
-| `OPENROUTER_API_KEY` | 20     | `Sys.setenv(OPENROUTER_API_KEY = "key")` in `.Renviron`.         |
+| `GEMINI_API_KEY`     | 09–17  | `Sys.setenv(GEMINI_API_KEY = "key")` in `.Renviron`.             |
+| `OPENROUTER_API_KEY` | src/run_model_openrouter.R | `Sys.setenv(OPENROUTER_API_KEY = "key")` in `.Renviron`. |
 
 ---
 
@@ -127,17 +133,17 @@ RAW DATA
     ├──► [02] plot_MPU_and_compare_with_MP_surprises.R
     │         Descriptive figures and tables
     │
-    ├──► [03] appendix_run_exogeneity_tests_MPU.R
+    ├──► [03] relationship_liquidity_mpu_testing.R
+    │         Ask-bid spread change vs MPU
+    │
+    ├──► [04] appendix_exogeneity_tests_MPU.R
     │         AR(3) serial correlation test
     │
-    ├──► [03.1] appendix_create_mp_daily.R
-    │           Daily-window MP surprise; exports mp_daily_df.rds
+    ├──► [05] mpu_all_days_vs_govc.R
+    │         Distributional comparison: GovC days vs all other days
     │
-    ├──► [03.2] relationship_liquidity_mpu_testing.R
-    │           Ask-bid spread change vs MPU
-    │
-    └──► [03.3] running_placebo.R
-                Placebo test — 1000 draws of non-announcement days
+    └──► [06] get_calendar_us_releases.R
+              US release calendar — systematic confounding check
 ```
 
 ---
@@ -210,7 +216,23 @@ RAW DATA
 
 ---
 
-### 5.3 `03appendix_run_exogeneity_tests_MPU.R` — Serial Correlation Test
+### 5.3 `03relationship_liquidity_mpu_testing.R` — Liquidity vs MPU
+
+**Purpose:** Test whether MPU reflects bid-ask spread widening (reduced liquidity) rather than genuine uncertainty.
+
+**Formula:**
+```
+spread        = ask_close − bid_close
+liq_measure   = avg(spread, 3 trading days post) − avg(spread, 3 trading days pre)
+```
+
+**Inputs:** `raw_data/daily_OIS_updated15Sept_2025..xls` (bid close), `raw_data/ask_quotes_daily.xlsx`.
+
+**Outputs:** `output/figures/liquidity_vs_mpu_scatter.pdf`
+
+---
+
+### 5.4 `04appendix_exogeneity_tests_MPU.R` — Serial Correlation Test
 
 **Purpose:** AR(3) test for serial correlation in MPU surprises. Unpredictability supports treating MPU as an exogenous shock.
 
@@ -224,7 +246,7 @@ RAW DATA
 
 ---
 
-### 5.4 `03.1appendix_create_mp_daily.R` — Daily-Window MP Surprise
+### 5.5 `05mpu_all_days_vs_govc.R` — Distributional Comparison
 
 **Purpose:** Construct an MP direction surprise using the same 3-day window as MPU (using the closing bid rate), and validate against the ECB MPD 1-day surprise.
 
@@ -243,7 +265,7 @@ Windows use the 3 nearest **trading days** before/after (not calendar days).
 
 ---
 
-### 5.5 `03.2relationship_liquidity_mpu_testing.R` — Liquidity vs MPU
+### 5.6 `06get_calendar_us_releases.R` — US Release Calendar
 
 **Purpose:** Test whether MPU reflects bid-ask spread widening (reduced liquidity) rather than genuine uncertainty.
 
@@ -268,7 +290,7 @@ liq_measure   = avg(spread, 3 trading days post) − avg(spread, 3 trading days 
 
 ---
 
-### 5.6 `03.3running_placebo.R` — Placebo Test
+### (removed — see archive/)
 
 **Purpose:** Show MPU is specific to ECB announcement days. 1000 draws of non-announcement weekdays; tests both mean and % positive of pooled MPU.
 
@@ -331,11 +353,8 @@ liq_measure   = avg(spread, 3 trading days post) − avg(spread, 3 trading days 
 | `mpu_all.png` | 02 | Post-GovC OIS volatility, 3M/2Y/10Y |
 | `CESIUSD_vs_mpu_scatter.pdf` | 02 | Citi ESI vs MPU (requires Refinitiv) |
 | `correlation_uncertainty_cleaned_mp_surprises.pdf` | 02 | Pure MP vs MPU scatter |
-| `autocorrelation_surprises.pdf` | 03 | AR(3) exogeneity test |
-| `mp_daily_vs_ecb_scatter.pdf` | 03.1 | Daily-window MP vs ECB MPD |
-| `liquidity_vs_mpu_scatter.pdf` | 03.2 | Bid-ask spread change vs MPU |
-| `placebo_1000_draws_by_tenor.pdf` | 03.3 | Placebo test, by tenor |
-| `placebo_1000_draws_pooled.pdf` | 03.3 | Placebo test, pooled |
+| `autocorrelation_surprises.pdf` | 04 | AR(3) exogeneity test |
+| `liquidity_vs_mpu_scatter.pdf` | 03 | Bid-ask spread change vs MPU |
 
 ### Tables (`output/tables/`)
 

@@ -20,9 +20,7 @@ if (!file.exists("../intermediate_data")) {
        "Current directory: ", getwd())
 }
 
-# API keys from .Renviron - Make sure to add ANTHROPIC_API_KEY to your .Renviron file
-Sys.setenv(OPENAI_API_KEY = Sys.getenv("OPENAI_API_KEY"))
-Sys.setenv(CLAUDE_API_KEY = Sys.getenv("CLAUDE_API_KEY"))
+# API keys read from .Renviron — add OPENAI_API_KEY, CLAUDE_API_KEY there
 
 TEMPERATURE <- 1.0
 TARGET_TENORS <- c("3M", "2Y", "10Y")
@@ -316,14 +314,6 @@ call_all_llm_responses <- function(transcript_data, models = c("chatgpt", "claud
 # =============================================================================
 # STEP 4: PARSING (completely separate from API calling)
 # =============================================================================
-# Fixed Cross-LLM Parsing Functions with Better Error Handling
-# ==============================================================
-
-# Fixed Cross-LLM Parsing Functions with Better Error Handling
-# ==============================================================
-
-# Fixed Cross-LLM Parsing Functions with Better Error Handling
-# ==============================================================
 
 parse_markdown_table <- function(markdown_string) {
   if (is.null(markdown_string) || is.na(markdown_string) || nzchar(markdown_string) == FALSE) {
@@ -956,13 +946,7 @@ print(pairwise_correlations %>% arrange(desc(correlation)))
 
 # Color palette for visualizations
 color_palette <- c("3M" = "#91bfdb", "2Y" = "#4575b4", "10Y" = "#d73027")
-model_colors <- c("chatgpt" = "#10a37f", "claude" = "#d97706", "gemini" = "#4285f4")
-
-# Create simple, clear visualizations that tell a story
-
-# Define standard colors
-color_palette <- c("3M" = "#91bfdb", "2Y" = "#4575b4", "10Y" = "#d73027")
-model_colors <- c("chatgpt" = "#91bfdb", "claude" = "#4575b4", "gemini" = "#d73027")
+model_colors  <- c("chatgpt" = "#91bfdb", "claude" = "#4575b4", "gemini" = "#d73027")
 
 # Plot 1: Model disagreement scatter with 45-degree line and dates as labels
 biggest_differences <- model_stability_data %>%
@@ -984,7 +968,7 @@ biggest_differences <- model_stability_data %>%
 
 # --- Plot 1: Model disagreement vs average uncertainty ---
 p1 <- ggplot(biggest_differences, aes(x = avg_val, y = difference)) +
-  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "grey50", size = 0.8) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "grey50", linewidth = 0.8) +
   geom_text(aes(label = date_label, color = factor(tenor, levels = c("3M", "2Y", "10Y"))),
             size = 3, alpha = 0.7, check_overlap = TRUE) +
   scale_color_manual(values = c("3M" = "#91bfdb", "2Y" = "#4575b4", "10Y" = "#d73027"), name = "Tenor") +

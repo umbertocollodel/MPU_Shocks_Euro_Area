@@ -6,10 +6,8 @@
 #
 # Output: ../output/tables/table3_volatility_persistence.tex
 
-library(tidyverse)
-library(readxl)
-library(stargazer)
-library(sandwich)  # vcovCL for clustered SEs
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(tidyverse, readxl, stargazer, sandwich)
 
 #------------------------------------------------------------------------------
 ## 1. LOAD SIMULATION DATA
@@ -25,7 +23,7 @@ ensemble_sd_df <- readRDS("../intermediate_data/p1/p1_ensemble_sd.rds") %>%
 ## 2. LOAD ACTUAL OIS DATA
 #------------------------------------------------------------------------------
 
-ois_df <- read_rds("../intermediate_data/range_difference_df.rds") %>%
+ois_df <- readRDS("../intermediate_data/range_difference_df.rds") %>%
   mutate(tenor = case_when(tenor == "3mnt" ~ "3M", TRUE ~ tenor)) %>%
   select(tenor, date, correct_pre_mean_3, correct_post_mean_1) %>%
   mutate(date = as.Date(date))
@@ -45,7 +43,7 @@ cat("\n=== NUMBER OF OBSERVATIONS BY TENOR ===\n")
 print(table(regression_df$tenor))
 
 output_dir <- "../output/tables"
-if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
 #------------------------------------------------------------------------------
 ## 4. LOAD POLICY SURPRISE DATA

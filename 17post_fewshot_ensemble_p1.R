@@ -9,7 +9,7 @@
 if (!require("pacman")) install.packages("pacman")
 pacman::p_load(tidyverse, writexl, showtext, scales, stargazer)
 
-font_add("Segoe UI", regular = "segoeui.ttf")
+if (file.exists("segoeui.ttf")) font_add("Segoe UI", regular = "segoeui.ttf")
 showtext_auto()
 
 BASE_FONT    <- "Segoe UI"

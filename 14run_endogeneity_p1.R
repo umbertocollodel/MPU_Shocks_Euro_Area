@@ -678,7 +678,7 @@ completed_grid <- tibble(stem = tools::file_path_sans_ext(completed_files)) %>%
   ) %>%
   mutate(run = as.integer(run))
 
-full_grid_check <- expand_grid(date = the_dates, run = 1:5)
+full_grid_check <- expand_grid(date = the_dates, run = 1:10)
 missing_grid    <- anti_join(full_grid_check, completed_grid, by = c("date", "run"))
 
 cat("\n", strrep("=", 60), "\n")

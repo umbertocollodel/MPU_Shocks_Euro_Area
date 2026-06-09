@@ -3,12 +3,8 @@
 # Uses precomputed R=10 ensemble from P1 pipeline
 # ============================================================================
 
-library(tidyverse)
-library(readr)
-library(lubridate)
-library(writexl)
-library(scales)
-library(showtext)
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(tidyverse, readr, lubridate, writexl, scales, showtext, ggrepel)
 
 # ============================================================================
 # 0. SAFETY CHECKS
@@ -74,7 +70,7 @@ print(test_disagreement)
 # 3. MARKET VOLATILITY DATA
 # ============================================================================
 
-market_vol <- read_rds("../intermediate_data/range_difference_df.rds") %>%
+market_vol <- readRDS("../intermediate_data/range_difference_df.rds") %>%
   mutate(
     tenor = case_when(tenor == "3mnt" ~ "3M", TRUE ~ tenor),
     date  = as.Date(date)
@@ -114,7 +110,7 @@ write_xlsx(
 # 6. PLOT: DISAGREEMENT OVER TIME
 # ============================================================================
 
-font_add("Segoe UI", regular = "segoeui.ttf")
+if (file.exists("segoeui.ttf")) font_add("Segoe UI", regular = "segoeui.ttf")
 showtext_auto()
 
 colors <- c("10Y" = "#d73027",
@@ -152,8 +148,6 @@ ggsave(
 # ============================================================================
 # CLEAN SCATTER WITH REGRESSION + NON-OVERLAPPING LABELS
 # ============================================================================
-
-library(ggrepel)
 
 comparison <- comparison %>%
   mutate(
