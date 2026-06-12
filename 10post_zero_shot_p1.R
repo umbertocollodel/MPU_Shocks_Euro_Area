@@ -706,9 +706,9 @@ stab_quantiles <- stab_df %>%
 
 fig_stab <- ggplot(stab_quantiles, aes(x = run)) +
   geom_hline(yintercept = 1.00, linetype = "dashed",
-             colour = "grey30", linewidth = 0.6) +
+             colour = "black", linewidth = 0.6) +
   geom_hline(yintercept = c(0.95, 1.05), linetype = "dotted",
-             colour = "grey60", linewidth = 0.4) +
+             colour = "black", linewidth = 0.6) +
   geom_ribbon(aes(ymin = p05, ymax = p95, fill = tenor), alpha = 0.15) +
   geom_ribbon(aes(ymin = p25, ymax = p75, fill = tenor), alpha = 0.30) +
   geom_line(aes(y = p50, colour = tenor), linewidth = 1.2) +
