@@ -1,5 +1,13 @@
 ######## Analyze the readability of ECB press conferences over time
 
+pacman::p_load(
+  tidyverse, quanteda, quanteda.textstats, readtext,
+  textdata, showtext, ggplot2, stargazer, glue
+)
+
+font_add("Segoe UI Light", "C:/Windows/Fonts/segoeuil.ttf")
+showtext_auto()
+
 # Load data: ----
 
 ecb_pressconf_final <- list.files("../intermediate_data/texts/") %>% 
@@ -222,6 +230,10 @@ complexity_df$`Whole text` %>%
 # NEW: Market-based uncertainty vs Flesch-Kincaid complexity
 # =============================================================================
 
+# Load IS Novelty measure (from 07b)
+is_novelty_df <- read_rds("../intermediate_data/is_novelty_df.rds") %>%
+  select(date, is_novelty_tfidf)
+
 # Load market-based disagreement data
 range_df <- read_rds("../intermediate_data/range_difference_df.rds") %>%
   mutate(tenor = case_when(tenor == "3mnt" ~ "3M", TRUE ~ tenor)) %>%
@@ -241,6 +253,7 @@ complexity_volatility_by_tenor <- readability_df %>%
          hawkish_dovish_score = hawkish_dovish_score_vector[whole_text_idx]) %>%
   inner_join(range_df, by = "date") %>%
   drop_na() %>%
+  left_join(is_novelty_df, by = "date") %>%
   mutate(tenor = factor(tenor, levels = c("3M", "2Y", "10Y")))
 
 # Calculate correlations by tenor for all three variables
@@ -262,6 +275,15 @@ cor_by_tenor <- complexity_volatility_by_tenor %>%
     # Hawkish-Dovish score
     hd_spearman = cor(hawkish_dovish_score, market_volatility, method = "spearman"),
     hd_pval = cor.test(hawkish_dovish_score, market_volatility, method = "spearman")$p.value,
+    # IS Novelty (TF-IDF) — NA for first meeting, use complete cases
+    nov_tfidf_spearman = {
+      d <- na.omit(cbind(is_novelty_tfidf, market_volatility))
+      cor(d[, 1], d[, 2], method = "spearman")
+    },
+    nov_tfidf_pval = {
+      d <- na.omit(cbind(is_novelty_tfidf, market_volatility))
+      cor.test(d[, 1], d[, 2], method = "spearman")$p.value
+    },
     n = n(),
     .groups = "drop"
   )
@@ -309,6 +331,15 @@ cor_by_tenor_robust <- complexity_volatility_filtered %>%
     # Hawkish-Dovish score
     hd_spearman = cor(hawkish_dovish_score, market_volatility, method = "spearman"),
     hd_pval = cor.test(hawkish_dovish_score, market_volatility, method = "spearman")$p.value,
+    # IS Novelty (TF-IDF)
+    nov_tfidf_spearman = {
+      d <- na.omit(cbind(is_novelty_tfidf, market_volatility))
+      cor(d[, 1], d[, 2], method = "spearman")
+    },
+    nov_tfidf_pval = {
+      d <- na.omit(cbind(is_novelty_tfidf, market_volatility))
+      cor.test(d[, 1], d[, 2], method = "spearman")$p.value
+    },
     n = n(),
     .groups = "drop"
   )
@@ -382,16 +413,18 @@ add_stars <- function(pval) {
 # Reshape data: rows = variables, columns = tenors
 cor_table <- cor_by_tenor_robust %>%
   select(tenor, fk_spearman, fk_pval, wc_spearman, wc_pval,
-         hedge_spearman, hedge_pval, unc_spearman, unc_pval, hd_spearman, hd_pval) %>%
+         hedge_spearman, hedge_pval, unc_spearman, unc_pval, hd_spearman, hd_pval,
+         nov_tfidf_spearman, nov_tfidf_pval) %>%
   pivot_longer(cols = -tenor,
                names_to = c("variable", ".value"),
                names_pattern = "(.+)_(spearman|pval)") %>%
   mutate(variable = case_when(
-    variable == "fk" ~ "FK Complexity",
-    variable == "wc" ~ "Word Count",
-    variable == "hedge" ~ "Hedging Words",
-    variable == "unc" ~ "LM Uncertainty",
-    variable == "hd" ~ "Net Hawkish-Dovish Score"
+    variable == "fk"        ~ "FK Complexity",
+    variable == "wc"        ~ "Word Count",
+    variable == "hedge"     ~ "Hedging Words",
+    variable == "unc"       ~ "LM Uncertainty",
+    variable == "hd"        ~ "Net Hawkish-Dovish Score",
+    variable == "nov_tfidf" ~ "IS Novelty"
   )) %>%
   mutate(cor_with_sig = paste0(sprintf("%.3f", spearman), add_stars(pval))) %>%
   select(variable, tenor, cor_with_sig) %>%
