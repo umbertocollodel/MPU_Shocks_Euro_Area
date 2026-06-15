@@ -291,6 +291,9 @@ cor_by_tenor <- complexity_volatility_by_tenor %>%
 cat("\n=== Spearman Correlations: Text Variables vs Market-Based Disagreement by Tenor ===\n")
 print(cor_by_tenor)
 
+saveRDS(complexity_volatility_by_tenor, "../intermediate_data/text_measures_by_tenor.rds")
+cat("Saved: ../intermediate_data/text_measures_by_tenor.rds\n")
+
 # Identify and handle outliers
 # Calculate outliers by tenor (values beyond 99th percentile)
 outlier_threshold <- complexity_volatility_by_tenor %>%

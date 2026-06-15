@@ -81,7 +81,8 @@ planned_stems <- c(
   file.path(fig_dir,  "p1_fig_GR_full"),
   file.path(fig_dir,  "p1_fig_sd_stabilization"),
   file.path(data_dir, "p1_comparison_table"),
-  file.path(data_dir, "p1_directional_analysis")
+  file.path(data_dir, "p1_directional_analysis"),
+  file.path(data_dir, "p1_delta_rho_bootstrap")
 )
 invisible(lapply(planned_stems, assert_p1))
 cat("Prefix assertion passed for all", length(planned_stems), "output paths.\n\n")
@@ -871,7 +872,7 @@ llm_v6 <- function(tenor_val) {
 }
 
 fk  <- tc("fk");  wc  <- tc("wc");  hg  <- tc("hedge")
-unc <- tc("unc"); hd  <- tc("hd")
+unc <- tc("unc"); hd  <- tc("hd"); nov <- tc("nov_tfidf")
 
 comp_table <- bind_rows(
   make_row("FK Complexity",
@@ -898,6 +899,11 @@ comp_table <- bind_rows(
            hd$`3M`$rho,  hd$`3M`$pval,
            hd$`2Y`$rho,  hd$`2Y`$pval,
            hd$`10Y`$rho, hd$`10Y`$pval,
+           n_text, n_text, n_text),
+  make_row("IS Novelty",
+           nov$`3M`$rho,  nov$`3M`$pval,
+           nov$`2Y`$rho,  nov$`2Y`$pval,
+           nov$`10Y`$rho, nov$`10Y`$pval,
            n_text, n_text, n_text),
   make_row("LLM ensemble (R = 10)",
            llm_ens("3M")$rho,  llm_ens("3M")$pval,
@@ -935,7 +941,7 @@ latex_lines <- c(
 )
 
 text_block <- c("FK Complexity","Word Count","Hedging Words",
-                "LM Uncertainty Density","Net Hawkish-Dovish")
+                "LM Uncertainty Density","Net Hawkish-Dovish","IS Novelty")
 llm_block  <- c("LLM ensemble (R = 10)")
 
 emit_rows <- function(measures) {
@@ -1157,6 +1163,147 @@ writeLines(latex_lines, file.path(latex_dir, "p1_directional_analysis.tex"))
 cat(glue("  Saved: p1_directional_analysis (.rds / .xlsx / .tex)\n\n"))
 
 cat("Section 13 complete.\n\n")
+
+# ==============================================================================
+# 14. BOOTSTRAP Δρ TEST — LLM ensemble vs IS Novelty (paired, per tenor)
+# ==============================================================================
+# Resamples (σ̂, IS_novelty, vol_1d) tuples jointly per tenor so both ρ's share
+# the same resampled rows each iteration — this preserves their dependence and
+# nets out conference-level outliers that move both ρ's the same way.
+# Δ_b = ρ(LLM, vol)_b − ρ(IS Novelty, vol)_b; CI = [2.5th, 97.5th] percentile.
+
+cat("Section 14: Paired bootstrap Δρ test (LLM ensemble vs all text benchmarks)...\n")
+
+# Load raw per-conference text measures saved by 08calculate_complexity_documents.R.
+# This gives (date, tenor, fk, wc, hedge, unc, hd, nov) on the text-measure sample.
+text_measures_raw <- readRDS("../intermediate_data/text_measures_by_tenor.rds") %>%
+  mutate(
+    date  = as.Date(date),
+    tenor = as.character(tenor)
+  ) %>%
+  select(
+    date, tenor,
+    fk    = Flesch.Kincaid,
+    wc    = word_count,
+    hedge = hedging_count,
+    unc   = uncertainty_density,
+    hd    = hawkish_dovish_score,
+    nov   = is_novelty_tfidf
+  )
+
+# corr_data (Section 7): (date, tenor, sd_mean, vol_1d) — LLM ensemble ∩ market vol.
+# Join text measures on (date, tenor); vol_1d from corr_data is the shared outcome.
+# No outlier filter: both ρ's in each pair must be evaluated on identical rows.
+bootstrap_base <- corr_data %>%
+  mutate(tenor = as.character(tenor)) %>%
+  inner_join(text_measures_raw, by = c("date", "tenor")) %>%
+  filter(!is.na(sd_mean), !is.na(vol_1d))
+
+cat(glue(
+  "Bootstrap base: {nrow(bootstrap_base)} obs | ",
+  "{n_distinct(bootstrap_base$date)} dates | ",
+  "{n_distinct(bootstrap_base$tenor)} tenors\n"
+))
+
+benchmarks <- tibble(
+  label = c("FK Complexity", "Word Count", "Hedging Words",
+            "LM Uncertainty", "Net Hawkish-Dovish", "IS Novelty"),
+  col   = c("fk", "wc", "hedge", "unc", "hd", "nov")
+)
+
+set.seed(42)
+B_BOOT <- 5000
+
+paired_delta_rho <- function(df, bench_col, B) {
+  n   <- nrow(df)
+  out <- numeric(B)
+  for (b in seq_len(B)) {
+    idx   <- sample.int(n, n, replace = TRUE)
+    d     <- df[idx, ]
+    r_llm <- cor(d$sd_mean,      d$vol_1d, method = "spearman", use = "complete.obs")
+    r_bm  <- cor(d[[bench_col]], d$vol_1d, method = "spearman", use = "complete.obs")
+    out[b] <- r_llm - r_bm
+  }
+  out
+}
+
+run_one_benchmark <- function(bench_col, bench_label) {
+  df_clean <- bootstrap_base %>% filter(!is.na(.data[[bench_col]]))
+  map_dfr(tenor_levels, function(t) {
+    d       <- df_clean %>% filter(tenor == t)
+    r_llm   <- cor(d$sd_mean,      d$vol_1d, method = "spearman", use = "complete.obs")
+    r_bm    <- cor(d[[bench_col]], d$vol_1d, method = "spearman", use = "complete.obs")
+    boot_d  <- paired_delta_rho(d, bench_col, B_BOOT)
+    tibble(
+      label       = bench_label,
+      tenor       = t,
+      rho_llm     = r_llm,
+      rho_bm      = r_bm,
+      delta_point = r_llm - r_bm,
+      ci_low      = quantile(boot_d, 0.025),
+      ci_high     = quantile(boot_d, 0.975),
+      n           = nrow(d)
+    )
+  })
+}
+
+delta_rho_boot <- map2_dfr(benchmarks$col, benchmarks$label, run_one_benchmark) %>%
+  mutate(
+    tenor = factor(tenor, levels = tenor_levels),
+    label = factor(label, levels = benchmarks$label),
+    sig   = ci_low > 0 | ci_high < 0
+  ) %>%
+  arrange(label, tenor)
+
+cat("\nBootstrap Δρ (LLM ensemble − benchmark) by tenor:\n")
+print(delta_rho_boot %>% select(label, tenor, rho_llm, rho_bm, delta_point, ci_low, ci_high, n, sig))
+
+save_table(delta_rho_boot %>% mutate(across(where(is.factor), as.character)),
+           "p1_delta_rho_bootstrap")
+
+# ---- LaTeX companion table (Table 1b / appendix) ----
+fmt_delta <- function(delta, lo, hi, sig) {
+  star <- if (sig) "$^{*}$" else ""
+  sprintf("%.3f%s [%.3f,\\;%.3f]", delta, star, lo, hi)
+}
+
+delta_wide <- delta_rho_boot %>%
+  mutate(cell = pmap_chr(list(delta_point, ci_low, ci_high, sig), fmt_delta)) %>%
+  select(label, tenor, cell) %>%
+  pivot_wider(names_from = tenor, values_from = cell) %>%
+  mutate(label = factor(label, levels = benchmarks$label)) %>%
+  arrange(label)
+
+delta_rows_latex <- delta_wide %>%
+  mutate(line = glue("{label} & {`3M`} & {`2Y`} & {`10Y`} \\\\")) %>%
+  pull(line)
+
+delta_latex <- c(
+  "\\begin{table}[htbp]",
+  "\\centering",
+  "\\caption{Bootstrap test of LLM advantage: $\\Delta\\rho = \\rho(\\text{LLM ensemble}, \\text{vol}) - \\rho(\\text{benchmark}, \\text{vol})$}",
+  "\\label{tab:p1_delta_rho}",
+  "\\begin{tabular}{lccc}",
+  "\\toprule",
+  "Benchmark & 3M & 2Y & 10Y \\\\",
+  "\\midrule",
+  delta_rows_latex,
+  "\\bottomrule",
+  "\\multicolumn{4}{p{13cm}}{\\footnotesize",
+  "  $\\Delta\\rho$ is the point estimate on the common sample; both Spearman correlations are recomputed",
+  "  on the same resampled conferences each bootstrap iteration ($B = 5{,}000$), preserving their dependence.",
+  "  95\\% CI from [2.5th, 97.5th] percentiles of the $\\Delta$ distribution.",
+  "  $^{*}$ CI excludes zero (significant LLM advantage at the 5\\% level).",
+  "  Sample: LLM ensemble $\\cap$ market vol $\\cap$ text measure available dates, per tenor.",
+  "} \\\\",
+  "\\end{tabular}",
+  "\\end{table}"
+)
+
+writeLines(delta_latex, "../output/tables/p1_delta_rho_table.tex")
+cat("  Saved: p1_delta_rho_table.tex\n")
+
+cat("Section 14 complete.\n\n")
 
 #===============================================================================
 # END OF SCRIPT
