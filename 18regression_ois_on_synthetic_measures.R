@@ -155,14 +155,27 @@ m6 <- lm(correct_post_mean_1 ~ synthetic_sd + correct_pre_mean_3 +
            spread_std + synthetic_sd:spread_std + abs_surprise + factor(tenor),
          data = regression_df_all)
 
-se_list <- lapply(list(m1, m2, m3, m4, m5, m6), clust_se)
+# (7) Log DV — same as (6) [log-level robustness]
+# Restrict to positive vol observations; log(0) = -Inf is not handled by na.omit.
+regression_df_m7 <- regression_df_all %>% filter(correct_post_mean_1 > 0)
+cat(sprintf("\nm7 sample: %d rows dropped (zero post-vol); %d remaining.\n",
+            nrow(regression_df_all) - nrow(regression_df_m7), nrow(regression_df_m7)))
+
+m7 <- lm(log(correct_post_mean_1) ~ synthetic_sd + correct_pre_mean_3 +
+           spread_std + synthetic_sd:spread_std + abs_surprise + factor(tenor),
+         data = regression_df_m7)
+
+se_list <- c(
+  lapply(list(m1, m2, m3, m4, m5, m6), clust_se),
+  list(sqrt(diag(vcovCL(m7, cluster = ~date, data = regression_df_m7))))
+)
 
 # Two-way clustering robustness for preferred spec (not in main table)
 se_m5_2w <- sqrt(diag(vcovCL(m5, cluster = ~date + tenor,
                               data = regression_df_all)))
 
 cat("\n=== SYNTHETIC SD COEFFICIENT ACROSS SPECS ===\n")
-for (i in 1:6) {
+for (i in 1:7) {
   mod_i <- get(sprintf("m%d", i))
   cat(sprintf("Spec (%d): coef = %+.5f  SE = %.5f\n",
               i, coef(mod_i)["synthetic_sd"], se_list[[i]]["synthetic_sd"]))
@@ -170,10 +183,10 @@ for (i in 1:6) {
 cat(sprintf("Spec (5) 2W: coef = %+.5f  SE = %.5f  [two-way cluster robustness]\n",
             coef(m5)["synthetic_sd"], se_m5_2w["synthetic_sd"]))
 
-stargazer(m1, m2, m3, m4, m5, m6,
+stargazer(m1, m2, m3, m4, m5, m6, m7,
           type = "latex",
           title = "Post-Conference OIS Volatility: Synthetic Disagreement, Policy Surprise, and Liquidity",
-          dep.var.labels = "Post-conf.\\ OIS high-low range, 1-day",
+          dep.var.labels = c("Post-conf.\\ OIS high-low range, 1-day", "Log"),
           order = c("^synthetic_sd$", "correct_pre_mean_3", "^spread_std$",
                     "synthetic_sd:spread_std", "abs_surprise"),
           covariate.labels = c("Synthetic SD",
@@ -184,8 +197,8 @@ stargazer(m1, m2, m3, m4, m5, m6,
           se      = se_list,
           omit    = "factor\\(tenor\\)",
           add.lines = list(
-            c("Maturity FE",        "No",  "No",  "Yes", "Yes", "Yes", "Yes"),
-            c("Date-clustered SE",  "Yes", "Yes", "Yes", "Yes", "Yes", "Yes")
+            c("Maturity FE",        "No",  "No",  "Yes", "Yes", "Yes", "Yes", "Yes"),
+            c("Date-clustered SE",  "Yes", "Yes", "Yes", "Yes", "Yes", "Yes", "Yes")
           ),
           out      = file.path(output_dir, "table3_volatility_persistence.tex"),
           no.space = TRUE,
@@ -194,7 +207,8 @@ stargazer(m1, m2, m3, m4, m5, m6,
             "Date-clustered SEs in parentheses. ",
             "Surprise = conference-window OIS change (bps) $\\div$ 100. ",
             "Bid-ask spread standardised within each tenor (mean 0, SD 1). ",
-            "Column (6) includes all controls simultaneously."
+            "Column (6) includes all controls simultaneously. ",
+            "Column (7) replicates (6) with log post-conference OIS volatility as dependent variable."
           ),
           notes.append = FALSE)
 
